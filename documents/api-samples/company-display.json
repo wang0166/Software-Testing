@@ -1,0 +1,261 @@
+{
+  "baseUrl": "http://localhost:8080/api",
+  "description": "公司十大重要事项与公司十大重要任务接口请求/响应样例（依据《后端接口文档》§9.2–§9.3）。两类内容均为独立展示数据，不写入任务表、不参与统计、数据地图或日历。所有请求需携带 Authorization: Bearer <accessToken>。",
+  "cases": [
+    {
+      "name": "查看公司十大重要事项",
+      "request": {
+        "method": "GET",
+        "path": "/company-matters",
+        "headers": { "Authorization": "Bearer <EMPLOYEE_TOKEN>" }
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "code": 0,
+          "message": "ok",
+          "data": {
+            "items": [
+              {
+                "id": 1,
+                "title": "完成年度营收目标",
+                "content": "全年营收同比增长不低于 20%",
+                "sortOrder": 1,
+                "updatedAt": "2026-10-01T09:00:00+08:00"
+              },
+              {
+                "id": 2,
+                "title": "组织架构优化",
+                "content": "完成部门与团队职责边界梳理",
+                "sortOrder": 2,
+                "updatedAt": "2026-10-02T10:30:00+08:00"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "name": "新增公司十大重要事项（管理员）",
+      "request": {
+        "method": "POST",
+        "path": "/company-matters",
+        "headers": {
+          "Authorization": "Bearer <ADMIN_TOKEN>",
+          "Content-Type": "application/json"
+        },
+        "body": {
+          "title": "客户满意度提升",
+          "content": "年度客户满意度达到 90 分以上",
+          "sortOrder": 3
+        }
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "code": 0,
+          "message": "ok",
+          "data": {
+            "id": 3,
+            "title": "客户满意度提升",
+            "content": "年度客户满意度达到 90 分以上",
+            "sortOrder": 3,
+            "updatedAt": "2026-10-18T10:00:00+08:00"
+          }
+        }
+      }
+    },
+    {
+      "name": "新增公司十大重要事项字段为空",
+      "request": {
+        "method": "POST",
+        "path": "/company-matters",
+        "headers": {
+          "Authorization": "Bearer <ADMIN_TOKEN>",
+          "Content-Type": "application/json"
+        },
+        "body": { "title": "  ", "content": "", "sortOrder": 3 }
+      },
+      "response": {
+        "status": 400,
+        "body": {
+          "code": 40001,
+          "message": "title: 标题不能为空; content: 内容不能为空",
+          "data": null
+        }
+      }
+    },
+    {
+      "name": "非管理员维护公司十大重要事项",
+      "request": {
+        "method": "POST",
+        "path": "/company-matters",
+        "headers": {
+          "Authorization": "Bearer <EMPLOYEE_TOKEN>",
+          "Content-Type": "application/json"
+        },
+        "body": {
+          "title": "客户满意度提升",
+          "content": "年度客户满意度达到 90 分以上",
+          "sortOrder": 3
+        }
+      },
+      "response": {
+        "status": 403,
+        "body": { "code": 40314, "message": "无权维护该展示内容", "data": null }
+      }
+    },
+    {
+      "name": "编辑公司十大重要事项（管理员）",
+      "request": {
+        "method": "PUT",
+        "path": "/company-matters/3",
+        "headers": {
+          "Authorization": "Bearer <ADMIN_TOKEN>",
+          "Content-Type": "application/json"
+        },
+        "body": {
+          "title": "客户满意度提升",
+          "content": "年度客户满意度达到 92 分以上",
+          "sortOrder": 3
+        }
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "code": 0,
+          "message": "ok",
+          "data": {
+            "id": 3,
+            "title": "客户满意度提升",
+            "content": "年度客户满意度达到 92 分以上",
+            "sortOrder": 3,
+            "updatedAt": "2026-10-18T10:05:00+08:00"
+          }
+        }
+      }
+    },
+    {
+      "name": "公司十大重要事项不存在",
+      "request": {
+        "method": "PUT",
+        "path": "/company-matters/999",
+        "headers": {
+          "Authorization": "Bearer <ADMIN_TOKEN>",
+          "Content-Type": "application/json"
+        },
+        "body": { "title": "不存在", "content": "不存在", "sortOrder": 9 }
+      },
+      "response": {
+        "status": 404,
+        "body": { "code": 40401, "message": "资源不存在或不可见", "data": null }
+      }
+    },
+    {
+      "name": "查看公司十大重要任务",
+      "request": {
+        "method": "GET",
+        "path": "/company-important-tasks",
+        "headers": { "Authorization": "Bearer <EMPLOYEE_TOKEN>" }
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "code": 0,
+          "message": "ok",
+          "data": {
+            "items": [
+              {
+                "id": 1,
+                "title": "完成新市场开拓",
+                "content": "第四季度进入两个新城市",
+                "sortOrder": 1,
+                "updatedAt": "2026-10-01T09:00:00+08:00"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "name": "新增公司十大重要任务（创始人）",
+      "request": {
+        "method": "POST",
+        "path": "/company-important-tasks",
+        "headers": {
+          "Authorization": "Bearer <FOUNDER_TOKEN>",
+          "Content-Type": "application/json"
+        },
+        "body": {
+          "title": "核心系统重构",
+          "content": "完成订单系统服务化改造",
+          "sortOrder": 2
+        }
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "code": 0,
+          "message": "ok",
+          "data": {
+            "id": 2,
+            "title": "核心系统重构",
+            "content": "完成订单系统服务化改造",
+            "sortOrder": 2,
+            "updatedAt": "2026-10-18T10:10:00+08:00"
+          }
+        }
+      }
+    },
+    {
+      "name": "非创始人维护公司十大重要任务",
+      "request": {
+        "method": "POST",
+        "path": "/company-important-tasks",
+        "headers": {
+          "Authorization": "Bearer <DEPT_MANAGER_TOKEN>",
+          "Content-Type": "application/json"
+        },
+        "body": {
+          "title": "核心系统重构",
+          "content": "完成订单系统服务化改造",
+          "sortOrder": 2
+        }
+      },
+      "response": {
+        "status": 403,
+        "body": { "code": 40314, "message": "无权维护该展示内容", "data": null }
+      }
+    },
+    {
+      "name": "编辑公司十大重要任务（创始人）",
+      "request": {
+        "method": "PUT",
+        "path": "/company-important-tasks/2",
+        "headers": {
+          "Authorization": "Bearer <FOUNDER_TOKEN>",
+          "Content-Type": "application/json"
+        },
+        "body": {
+          "title": "核心系统重构",
+          "content": "完成订单系统服务化改造并通过压测",
+          "sortOrder": 2
+        }
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "code": 0,
+          "message": "ok",
+          "data": {
+            "id": 2,
+            "title": "核心系统重构",
+            "content": "完成订单系统服务化改造并通过压测",
+            "sortOrder": 2,
+            "updatedAt": "2026-10-18T10:15:00+08:00"
+          }
+        }
+      }
+    }
+  ]
+}

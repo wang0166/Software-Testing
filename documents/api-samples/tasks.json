@@ -1,0 +1,450 @@
+{
+  "baseUrl": "http://localhost:8080/api",
+  "description": "任务派发、接收、进度与检查接口请求/响应样例（依据《后端接口文档》§7–§8）。当前 change 仅交付认证纵切，本文件作为后续 Sprint 的契约样例，所有请求需携带 Authorization: Bearer <accessToken>。",
+  "cases": [
+    {
+      "name": "查询可派发的直接下级（部门老总）",
+      "request": {
+        "method": "GET",
+        "path": "/tasks/recipients",
+        "headers": { "Authorization": "Bearer <DEPT_MANAGER_TOKEN>" }
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "code": 0,
+          "message": "ok",
+          "data": {
+            "items": [
+              { "id": 12, "realName": "李四", "role": "TEAM_LEADER", "departmentId": 3, "teamId": 8 }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "name": "查询可派发的直接下级（员工无权限）",
+      "request": {
+        "method": "GET",
+        "path": "/tasks/recipients",
+        "headers": { "Authorization": "Bearer <EMPLOYEE_TOKEN>" }
+      },
+      "response": {
+        "status": 403,
+        "body": { "code": 40310, "message": "无权限执行该操作", "data": null }
+      }
+    },
+    {
+      "name": "派发任务成功",
+      "request": {
+        "method": "POST",
+        "path": "/tasks",
+        "headers": {
+          "Authorization": "Bearer <TEAM_LEADER_TOKEN>",
+          "Content-Type": "application/json"
+        },
+        "body": {
+          "name": "完成10月经营分析",
+          "details": "汇总各团队数据并输出报告",
+          "startDate": "2026-10-20",
+          "deadline": "2026-10-25",
+          "urgency": "URGENT",
+          "assigneeIds": [12, 13]
+        }
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "code": 0,
+          "message": "ok",
+          "data": { "taskId": 501, "assigneeCount": 2 }
+        }
+      }
+    },
+    {
+      "name": "派发任务字段校验失败",
+      "request": {
+        "method": "POST",
+        "path": "/tasks",
+        "headers": {
+          "Authorization": "Bearer <TEAM_LEADER_TOKEN>",
+          "Content-Type": "application/json"
+        },
+        "body": {
+          "name": "  ",
+          "details": "汇总各团队数据并输出报告",
+          "startDate": "2026-10-25",
+          "deadline": "2026-10-20",
+          "urgency": "URGENT",
+          "assigneeIds": []
+        }
+      },
+      "response": {
+        "status": 400,
+        "body": {
+          "code": 40002,
+          "message": "name: 任务名称不能为空; deadline: 截止日期不得早于开始日期; assigneeIds: 接收人不能为空",
+          "data": null
+        }
+      }
+    },
+    {
+      "name": "派发任务存在非直接下级",
+      "request": {
+        "method": "POST",
+        "path": "/tasks",
+        "headers": {
+          "Authorization": "Bearer <TEAM_LEADER_TOKEN>",
+          "Content-Type": "application/json"
+        },
+        "body": {
+          "name": "完成10月经营分析",
+          "details": "汇总各团队数据并输出报告",
+          "startDate": "2026-10-20",
+          "deadline": "2026-10-25",
+          "urgency": "URGENT",
+          "assigneeIds": [99]
+        }
+      },
+      "response": {
+        "status": 403,
+        "body": { "code": 40310, "message": "接收人不是当前用户的直接下级", "data": null }
+      }
+    },
+    {
+      "name": "派发任务列表",
+      "request": {
+        "method": "GET",
+        "path": "/tasks/dispatched?page=1&size=20",
+        "headers": { "Authorization": "Bearer <TEAM_LEADER_TOKEN>" }
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "code": 0,
+          "message": "ok",
+          "data": {
+            "total": 1,
+            "page": 1,
+            "size": 20,
+            "items": [
+              {
+                "id": 501,
+                "name": "完成10月经营分析",
+                "startDate": "2026-10-20",
+                "deadline": "2026-10-25",
+                "urgency": "URGENT",
+                "assigneeCount": 2,
+                "completedCount": 1,
+                "pendingReviewCount": 1,
+                "createdAt": "2026-10-18T09:30:00+08:00"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "name": "派发任务详情",
+      "request": {
+        "method": "GET",
+        "path": "/tasks/501",
+        "headers": { "Authorization": "Bearer <TEAM_LEADER_TOKEN>" }
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "code": 0,
+          "message": "ok",
+          "data": {
+            "id": 501,
+            "name": "完成10月经营分析",
+            "details": "汇总各团队数据并输出报告",
+            "startDate": "2026-10-20",
+            "deadline": "2026-10-25",
+            "urgency": "URGENT",
+            "assignments": [
+              {
+                "assignmentId": 9101,
+                "assignee": { "id": 12, "realName": "李四" },
+                "executionStatus": "COMPLETED",
+                "reviewStatus": "PENDING",
+                "updatedAt": "2026-10-24T18:00:00+08:00"
+              },
+              {
+                "assignmentId": 9102,
+                "assignee": { "id": 13, "realName": "王五" },
+                "executionStatus": "IN_PROGRESS",
+                "reviewStatus": "NONE",
+                "updatedAt": "2026-10-23T10:00:00+08:00"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "name": "非派发人访问任务详情",
+      "request": {
+        "method": "GET",
+        "path": "/tasks/501",
+        "headers": { "Authorization": "Bearer <OTHER_USER_TOKEN>" }
+      },
+      "response": {
+        "status": 403,
+        "body": { "code": 40311, "message": "无权访问该任务", "data": null }
+      }
+    },
+    {
+      "name": "任务不存在或不可见",
+      "request": {
+        "method": "GET",
+        "path": "/tasks/999999",
+        "headers": { "Authorization": "Bearer <TEAM_LEADER_TOKEN>" }
+      },
+      "response": {
+        "status": 404,
+        "body": { "code": 40410, "message": "任务不存在", "data": null }
+      }
+    },
+    {
+      "name": "编辑任务内容",
+      "request": {
+        "method": "PUT",
+        "path": "/tasks/501",
+        "headers": {
+          "Authorization": "Bearer <TEAM_LEADER_TOKEN>",
+          "Content-Type": "application/json"
+        },
+        "body": {
+          "name": "完成10月经营分析与复盘",
+          "details": "汇总各团队数据，输出报告并组织复盘",
+          "startDate": "2026-10-20",
+          "deadline": "2026-10-27",
+          "urgency": "NOT_URGENT"
+        }
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "code": 0,
+          "message": "ok",
+          "data": {
+            "id": 501,
+            "name": "完成10月经营分析与复盘",
+            "details": "汇总各团队数据，输出报告并组织复盘",
+            "startDate": "2026-10-20",
+            "deadline": "2026-10-27",
+            "urgency": "NOT_URGENT",
+            "updatedAt": "2026-10-19T11:00:00+08:00"
+          }
+        }
+      }
+    },
+    {
+      "name": "本人接收任务列表",
+      "request": {
+        "method": "GET",
+        "path": "/tasks/received?status=IN_PROGRESS&reviewStatus=PENDING&page=1&size=20",
+        "headers": { "Authorization": "Bearer <EMPLOYEE_TOKEN>" }
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "code": 0,
+          "message": "ok",
+          "data": {
+            "total": 1,
+            "page": 1,
+            "size": 20,
+            "items": [
+              {
+                "assignmentId": 9101,
+                "taskId": 501,
+                "name": "完成10月经营分析",
+                "details": "汇总各团队数据并输出报告",
+                "startDate": "2026-10-20",
+                "deadline": "2026-10-25",
+                "urgency": "URGENT",
+                "executionStatus": "COMPLETED",
+                "reviewStatus": "PENDING",
+                "sender": { "id": 9, "realName": "赵六" },
+                "updatedAt": "2026-10-24T18:00:00+08:00"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "name": "接收任务详情（含检查历史）",
+      "request": {
+        "method": "GET",
+        "path": "/tasks/assignments/9101",
+        "headers": { "Authorization": "Bearer <EMPLOYEE_TOKEN>" }
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "code": 0,
+          "message": "ok",
+          "data": {
+            "assignmentId": 9101,
+            "taskId": 501,
+            "name": "完成10月经营分析",
+            "details": "汇总各团队数据并输出报告",
+            "startDate": "2026-10-20",
+            "deadline": "2026-10-25",
+            "urgency": "URGENT",
+            "executionStatus": "COMPLETED",
+            "reviewStatus": "PENDING",
+            "sender": { "id": 9, "realName": "赵六" },
+            "reviews": [
+              { "action": "INVITED", "actorId": 12, "comment": null, "createdAt": "2026-10-24T18:00:00+08:00" }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "name": "更新本人进度",
+      "request": {
+        "method": "PATCH",
+        "path": "/tasks/assignments/9102/progress",
+        "headers": {
+          "Authorization": "Bearer <EMPLOYEE_13_TOKEN>",
+          "Content-Type": "application/json"
+        },
+        "body": { "status": "IN_PROGRESS" }
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "code": 0,
+          "message": "ok",
+          "data": {
+            "assignmentId": 9102,
+            "executionStatus": "IN_PROGRESS",
+            "reviewStatus": "NONE",
+            "updatedAt": "2026-10-23T10:00:00+08:00"
+          }
+        }
+      }
+    },
+    {
+      "name": "非法进度转换",
+      "request": {
+        "method": "PATCH",
+        "path": "/tasks/assignments/9102/progress",
+        "headers": {
+          "Authorization": "Bearer <EMPLOYEE_13_TOKEN>",
+          "Content-Type": "application/json"
+        },
+        "body": { "status": "COMPLETED" }
+      },
+      "response": {
+        "status": 409,
+        "body": { "code": 40910, "message": "任务状态不允许该操作", "data": null }
+      }
+    },
+    {
+      "name": "发起检查邀约",
+      "request": {
+        "method": "POST",
+        "path": "/tasks/assignments/9101/review-invitations",
+        "headers": { "Authorization": "Bearer <EMPLOYEE_TOKEN>" }
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "code": 0,
+          "message": "ok",
+          "data": {
+            "assignmentId": 9101,
+            "executionStatus": "COMPLETED",
+            "reviewStatus": "PENDING",
+            "updatedAt": "2026-10-24T18:00:00+08:00"
+          }
+        }
+      }
+    },
+    {
+      "name": "重复邀约检查",
+      "request": {
+        "method": "POST",
+        "path": "/tasks/assignments/9101/review-invitations",
+        "headers": { "Authorization": "Bearer <EMPLOYEE_TOKEN>" }
+      },
+      "response": {
+        "status": 409,
+        "body": { "code": 40911, "message": "任务已处于待检查状态", "data": null }
+      }
+    },
+    {
+      "name": "派发人通过检查",
+      "request": {
+        "method": "POST",
+        "path": "/tasks/assignments/9101/review",
+        "headers": {
+          "Authorization": "Bearer <TEAM_LEADER_TOKEN>",
+          "Content-Type": "application/json"
+        },
+        "body": { "result": "APPROVED", "comment": "数据准确，通过" }
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "code": 0,
+          "message": "ok",
+          "data": {
+            "assignmentId": 9101,
+            "executionStatus": "COMPLETED",
+            "reviewStatus": "APPROVED",
+            "updatedAt": "2026-10-25T09:00:00+08:00"
+          }
+        }
+      }
+    },
+    {
+      "name": "派发人退回检查",
+      "request": {
+        "method": "POST",
+        "path": "/tasks/assignments/9102/review",
+        "headers": {
+          "Authorization": "Bearer <TEAM_LEADER_TOKEN>",
+          "Content-Type": "application/json"
+        },
+        "body": { "result": "RETURNED", "comment": "缺少环比数据，请补充" }
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "code": 0,
+          "message": "ok",
+          "data": {
+            "assignmentId": 9102,
+            "executionStatus": "IN_PROGRESS",
+            "reviewStatus": "RETURNED",
+            "updatedAt": "2026-10-25T09:10:00+08:00"
+          }
+        }
+      }
+    },
+    {
+      "name": "非派发人检查",
+      "request": {
+        "method": "POST",
+        "path": "/tasks/assignments/9101/review",
+        "headers": {
+          "Authorization": "Bearer <OTHER_USER_TOKEN>",
+          "Content-Type": "application/json"
+        },
+        "body": { "result": "APPROVED", "comment": "数据准确，通过" }
+      },
+      "response": {
+        "status": 403,
+        "body": { "code": 40313, "message": "仅任务派发人可执行检查", "data": null }
+      }
+    }
+  ]
+}

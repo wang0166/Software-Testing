@@ -1,0 +1,141 @@
+{
+  "baseUrl": "http://localhost:8080/api",
+  "description": "日历读取接口请求/响应样例（依据《后端接口文档》§10.2）。仅聚合当前用户的日志与接收任务，自建任务和公司展示内容不参与。所有请求需携带 Authorization: Bearer <accessToken>。",
+  "cases": [
+    {
+      "name": "读取月度日历",
+      "request": {
+        "method": "GET",
+        "path": "/calendar?from=2026-10-01&to=2026-10-31",
+        "headers": { "Authorization": "Bearer <EMPLOYEE_TOKEN>" }
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "code": 0,
+          "message": "ok",
+          "data": {
+            "days": [
+              {
+                "date": "2026-10-20",
+                "logCount": 0,
+                "taskCount": 1,
+                "mark": "GREEN",
+                "logs": [],
+                "tasks": [
+                  {
+                    "taskId": 501,
+                    "assignmentId": 9101,
+                    "name": "完成10月经营分析",
+                    "executionStatus": "IN_PROGRESS",
+                    "reviewStatus": "NONE"
+                  }
+                ]
+              },
+              {
+                "date": "2026-10-21",
+                "logCount": 1,
+                "taskCount": 0,
+                "mark": "RED",
+                "logs": [{ "logId": 88, "authorId": 12, "status": "SUBMITTED" }],
+                "tasks": []
+              },
+              {
+                "date": "2026-10-22",
+                "logCount": 1,
+                "taskCount": 1,
+                "mark": "GREEN",
+                "logs": [{ "logId": 89, "authorId": 12, "status": "SUBMITTED" }],
+                "tasks": [
+                  {
+                    "taskId": 501,
+                    "assignmentId": 9101,
+                    "name": "完成10月经营分析",
+                    "executionStatus": "IN_PROGRESS",
+                    "reviewStatus": "NONE"
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "name": "空日历区间",
+      "request": {
+        "method": "GET",
+        "path": "/calendar?from=2026-11-01&to=2026-11-02",
+        "headers": { "Authorization": "Bearer <EMPLOYEE_TOKEN>" }
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "code": 0,
+          "message": "ok",
+          "data": { "days": [] }
+        }
+      }
+    },
+    {
+      "name": "开始日期晚于结束日期",
+      "request": {
+        "method": "GET",
+        "path": "/calendar?from=2026-10-31&to=2026-10-01",
+        "headers": { "Authorization": "Bearer <EMPLOYEE_TOKEN>" }
+      },
+      "response": {
+        "status": 400,
+        "body": {
+          "code": 40001,
+          "message": "to: 结束日期不得早于开始日期",
+          "data": null
+        }
+      }
+    },
+    {
+      "name": "查询范围超过 31 天",
+      "request": {
+        "method": "GET",
+        "path": "/calendar?from=2026-10-01&to=2026-12-01",
+        "headers": { "Authorization": "Bearer <EMPLOYEE_TOKEN>" }
+      },
+      "response": {
+        "status": 400,
+        "body": {
+          "code": 40001,
+          "message": "to: 查询范围不得超过 31 天",
+          "data": null
+        }
+      }
+    },
+    {
+      "name": "缺少必填日期参数",
+      "request": {
+        "method": "GET",
+        "path": "/calendar",
+        "headers": { "Authorization": "Bearer <EMPLOYEE_TOKEN>" }
+      },
+      "response": {
+        "status": 400,
+        "body": {
+          "code": 40001,
+          "message": "from: 开始日期不能为空; to: 结束日期不能为空",
+          "data": null
+        }
+      }
+    },
+    {
+      "name": "管理员调用日历任务读取",
+      "request": {
+        "method": "GET",
+        "path": "/calendar?from=2026-10-01&to=2026-10-31",
+        "headers": { "Authorization": "Bearer <ADMIN_TOKEN>" }
+      },
+      "response": {
+        "status": 403,
+        "body": { "code": 40310, "message": "当前角色无权访问日历任务", "data": null }
+      }
+    }
+  ]
+}
