@@ -1,10 +1,12 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 
-// 通用异步状态：loading/error/data 三态，列表页统一用，不用每个页手写
+// 通用异步状态：loading/error/data 三态 + reload 手动刷新，列表页统一用
 export function useAsync<T>(fn: () => Promise<T>, deps: unknown[] = []) {
   const [data, setData] = useState<T | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [tick, setTick] = useState(0);
+  const reload = useCallback(() => setTick((t) => t + 1), []);
   useEffect(() => {
     let alive = true;
     setLoading(true);
@@ -15,8 +17,8 @@ export function useAsync<T>(fn: () => Promise<T>, deps: unknown[] = []) {
       .finally(() => alive && setLoading(false));
     return () => { alive = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, deps);
-  return { data, loading, error, setData };
+  }, [...deps, tick]);
+  return { data, loading, error, setData, reload };
 }
 
 // 简单防抖：搜索框输入不抖动，300ms 后才过滤
