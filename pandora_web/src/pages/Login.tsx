@@ -79,6 +79,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
           {link('/org', '组织 / 角色 / 配置', '🏢')}
           {link('/logs', '日志只读', '📝')}
           {link('/stats', '统计只读', '📊')}
+          {link('/debug', '联调自检', '🔌')}
         </div>
         <div className="pd-side-foot">
           <button className="pd-btn" style={{ width: '100%', justifyContent: 'center', background: 'rgba(255,255,255,0.14)', border: 'none', color: '#fff' }} onClick={() => { api.logout(); toast.push('info', '已退出登录'); nav('/login'); }}>退出登录</button>
