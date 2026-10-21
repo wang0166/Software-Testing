@@ -66,51 +66,87 @@ class ProgressDonut extends StatelessWidget {
 }
 class TrendBars extends StatelessWidget {
   final List<TrendPoint> points;
-  const TrendBars({super.key,required this.points});
-  @override Widget build(BuildContext context){
-    if(points.isEmpty)return const EmptyPanel(title:'暂无趋势',subtitle:'有日志后会自动生成统计趋势');
-    final data=points.length>7?points.sublist(points.length-7):points;
-    final maxVal=math.max(1,data.fold<int>(0,(m,e)=>math.max(m,e.count)));
-    return SizedBox(
-      height: 145,
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.end,
-        children: [
-          for (final p in data)
-            Expanded(
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 4),
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.end,
-                  children: [
-                    Text('${p.count}', style: const TextStyle(fontSize: 10, color: Palette.muted)),
-                    const SizedBox(height: 6),
-                    Flexible(
-                      child: Align(
-                        alignment: Alignment.bottomCenter,
-                        child: FractionallySizedBox(
-                          heightFactor: math.max(.07, p.count / maxVal),
-                          child: Container(
-                            decoration: BoxDecoration(
-                              color: p.day == todayChina ? Palette.primary : const Color(0xFFAFE2D1),
-                              borderRadius: BorderRadius.circular(8),
+  final int maxBars;
+  const TrendBars({super.key, required this.points, this.maxBars = 7});
+
+  @override
+  Widget build(BuildContext context) {
+    if (points.isEmpty) {
+      return const EmptyPanel(
+        title: '暂无趋势',
+        subtitle: '有日志后会自动生成统计趋势',
+      );
+    }
+    final limit = maxBars < 1 ? 1 : maxBars;
+    final data = points.length > limit
+        ? points.sublist(points.length - limit)
+        : points;
+    final maxVal = math.max(1, data.fold<int>(0, (m, e) => math.max(m, e.count)));
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        // A 30-day trend keeps readable labels and can be swiped horizontally.
+        final chartWidth = data.length > 8
+            ? math.max(constraints.maxWidth, data.length * 38.0)
+            : constraints.maxWidth;
+        return SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: SizedBox(
+            width: chartWidth,
+            height: 145,
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                for (final point in data)
+                  Expanded(
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 3),
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.end,
+                        children: [
+                          Text('${point.count}',
+                              style: const TextStyle(
+                                  fontSize: 10, color: Palette.muted)),
+                          const SizedBox(height: 6),
+                          Flexible(
+                            child: Align(
+                              alignment: Alignment.bottomCenter,
+                              child: FractionallySizedBox(
+                                heightFactor: math.max(.07, point.count / maxVal),
+                                child: Container(
+                                  decoration: BoxDecoration(
+                                    color: point.day == todayChina
+                                        ? Palette.primary
+                                        : const Color(0xFFAFE2D1),
+                                    borderRadius: BorderRadius.circular(8),
+                                  ),
+                                ),
+                              ),
                             ),
                           ),
-                        ),
+                          const SizedBox(height: 9),
+                          Text(
+                            friendlyDate(point.day)
+                                .replaceAll('月', '/')
+                                .replaceAll('日', ''),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                                fontSize: 10, color: Palette.muted),
+                          ),
+                        ],
                       ),
                     ),
-                    const SizedBox(height: 9),
-                    Text(friendlyDate(p.day).replaceAll('月', '/').replaceAll('日', ''),
-                      style: const TextStyle(fontSize: 10, color: Palette.muted)),
-                  ],
-                ),
-              ),
+                  ),
+              ],
             ),
-        ],
-      ),
+          ),
+        );
+      },
     );
   }
 }
+
 class PageHeading extends StatelessWidget {
   final String overline,title,description;
   const PageHeading({super.key,required this.overline,required this.title,required this.description});

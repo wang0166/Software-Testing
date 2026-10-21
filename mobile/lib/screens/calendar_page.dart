@@ -5,6 +5,7 @@ import '../core/models.dart';
 import '../core/theme.dart';
 import '../widgets/task_gantt_chart.dart';
 import '../widgets/ui.dart';
+import '../widgets/redesign.dart';
 
 /// Month/week/day calendar plus a date-range Gantt chart for assigned tasks.
 /// Existing green/red date marks are preserved, and self-created tasks are
@@ -91,6 +92,15 @@ class _CalendarPageState extends State<CalendarPage> {
     });
   }
 
+  void _goToday() {
+    final now = chinaNow;
+    setState(() {
+      _selected = DateTime(now.year, now.month, now.day);
+      _month = DateTime(now.year, now.month);
+      _reload();
+    });
+  }
+
   Future<void> _refresh() async {
     setState(_reload);
     try {
@@ -113,17 +123,18 @@ class _CalendarPageState extends State<CalendarPage> {
 
   @override
   Widget build(BuildContext context) => Scaffold(
-        appBar: AppBar(title: const Text('日历 · 任务甘特图')),
+        appBar: AppBar(title: const Text('日历计划')),
         body: SafeArea(
           child: RefreshIndicator(
             onRefresh: _refresh,
             child: ListView(
-              padding: const EdgeInsets.fromLTRB(20, 12, 20, 38),
+              padding: const EdgeInsets.fromLTRB(18, 12, 18, 36),
               children: [
-                const PageHeading(
-                  overline: 'YOUR TIMELINE',
-                  title: '工作时间轴',
-                  description: '日历标记与任务甘特图，让工作安排更清晰',
+                const CanvasHeader(
+                  eyebrow: 'PANDORA  /  CALENDAR',
+                  title: '时间日历',
+                  subtitle: '把每一天都安排得刚刚好',
+                  icon: Icons.calendar_month_rounded,
                 ),
                 const SizedBox(height: 18),
                 _controls(),
@@ -150,7 +161,9 @@ class _CalendarPageState extends State<CalendarPage> {
         ),
       );
 
-  Widget _controls() => SoftCard(
+  Widget _controls() => StoryCard(
+        color: const Color(0xFFE9F6F0),
+        padding: const EdgeInsets.fromLTRB(14, 12, 14, 15),
         child: Column(
           children: [
             Row(
@@ -166,6 +179,16 @@ class _CalendarPageState extends State<CalendarPage> {
                     textAlign: TextAlign.center,
                     style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w900, color: Palette.deep),
                   ),
+                ),
+                TextButton(
+                  onPressed: _goToday,
+                  style: TextButton.styleFrom(
+                    minimumSize: Size.zero,
+                    padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 8),
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    foregroundColor: Palette.primary,
+                  ),
+                  child: const Text('今天', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w800)),
                 ),
                 IconButton(
                   tooltip: '下一时间段',
@@ -189,7 +212,7 @@ class _CalendarPageState extends State<CalendarPage> {
                           alignment: Alignment.center,
                           padding: const EdgeInsets.symmetric(vertical: 11),
                           decoration: BoxDecoration(
-                            color: _mode == i ? Palette.primary : const Color(0xFFF1F6F3),
+                            color: _mode == i ? Palette.deep : Colors.white,
                             borderRadius: BorderRadius.circular(12),
                           ),
                           child: Text(
@@ -275,7 +298,8 @@ class _CalendarPageState extends State<CalendarPage> {
         ? 7
         : ((_monthLast.day + _month.weekday - 1 + 6) ~/ 7) * 7;
     final numberOfWeeks = totalDays ~/ 7;
-    return SoftCard(
+    return StoryCard(
+      padding: const EdgeInsets.fromLTRB(12, 17, 12, 18),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -287,8 +311,8 @@ class _CalendarPageState extends State<CalendarPage> {
                     child: Text(
                       name,
                       style: const TextStyle(
-                        color: Palette.muted,
-                        fontSize: 11,
+                        color: Palette.deep,
+                        fontSize: 10,
                         fontWeight: FontWeight.w700,
                       ),
                     ),
@@ -358,14 +382,14 @@ class _CalendarPageState extends State<CalendarPage> {
     final usedLanes = endByLane.length;
     final barsHeight = usedLanes == 0 ? 12.0 : usedLanes * 26.0 + 7.0;
     return Container(
-      padding: const EdgeInsets.only(bottom: 9, top: 9),
+      padding: const EdgeInsets.only(bottom: 5, top: 6),
       decoration: const BoxDecoration(
         border: Border(bottom: BorderSide(color: Palette.divider)),
       ),
       child: Column(
         children: [
           SizedBox(
-            height: 43,
+            height: 41,
             child: Row(
               children: [
                 for (var dayIndex = 0; dayIndex < 7; dayIndex++)

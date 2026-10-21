@@ -265,19 +265,36 @@ class _TaskGanttChartState extends State<TaskGanttChart> {
             top: 16,
             width: barWidth - 6,
             height: 27,
-            child: Material(
-              color: Palette.primary,
-              borderRadius: BorderRadius.circular(10),
-              child: InkWell(
-                key: ValueKey('gantt_task_${span.task.id}'),
+            child: Tooltip(
+              message: span.task.name,
+              waitDuration: const Duration(milliseconds: 450),
+              child: Material(
+                color: Palette.primary,
                 borderRadius: BorderRadius.circular(10),
-                onTap: () => widget.onTaskTap(span.task),
-                child: barWidth >= 90
-                    ? const Center(
-                        child: Text('任务周期',
-                            style: TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.w800)),
-                      )
-                    : const SizedBox.expand(),
+                clipBehavior: Clip.antiAlias,
+                child: InkWell(
+                  key: ValueKey('gantt_task_${span.task.id}'),
+                  borderRadius: BorderRadius.circular(10),
+                  onTap: () => widget.onTaskTap(span.task),
+                  child: barWidth >= 66
+                      ? Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 5),
+                          child: Center(
+                            child: Text(
+                              span.task.name,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              textAlign: TextAlign.center,
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 10,
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                          ),
+                        )
+                      : const SizedBox.expand(),
+                ),
               ),
             ),
           ),
