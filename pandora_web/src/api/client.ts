@@ -22,6 +22,7 @@ export interface LoginResponse {
 
 const USER_KEY = 'pandora-user';
 const ROLE_KEY = 'pandora-role';
+const PERM_KEY = 'pandora-permissions';
 
 // ---------------- mock 数据（无后端也能演示） ----------------
 export const mockUsers: UserRow[] = [
@@ -106,6 +107,13 @@ export const mockConfigs: Record<string, string> = { log_deadline: '22:00' };
 // ---------------- 接口方法 ----------------
 const useMock = isMock;
 
+/** 列表接口兼容：后端可能返回裸数组，也可能返回 {items:[...]}（文档第1.1节分页信封） */
+function toItems<T>(d: unknown): T[] {
+  if (Array.isArray(d)) return d as T[];
+  const items = (d as { items?: T[] } | null)?.items;
+  return Array.isArray(items) ? items : [];
+}
+
 export const api = {
   // ===== 第2节 认证 =====
   /** POST /auth/login —— 返回 accessToken/refreshToken/tokenType/expiresIn/user */
@@ -119,8 +127,7 @@ export const api = {
       localStorage.setItem(USER_KEY, d.user.realName || d.user.username);
       localStorage.setItem(ROLE_KEY, d.user.role);
       return d.user;
-    }
-    await sleep();
+    }    await sleep();
     const u = mockUsers.find((x) => x.username === clean);
     if (!u) throw new Error('用户名或密码错误');
     if (u.status === '停用') throw new Error('账号已锁定或停用，请联系管理员'); // 对应 40103
@@ -138,10 +145,18 @@ export const api = {
     localStorage.removeItem(USER_KEY);
     localStorage.removeItem(ROLE_KEY);
   },
-  /** GET /auth/me —— 权限以服务端为准 */
+  /** GET /auth/me —— 返回权限码数组（api-samples 实测：permissions: [...]），存本地供页面判断 */
   async me() {
-    if (useMock()) return { username: localStorage.getItem(USER_KEY) ?? '', role: localStorage.getItem(ROLE_KEY) ?? 'ADMIN' };
-    return request<{ id: string; username: string; realName: string; role: string }>('/auth/me');
+    if (useMock()) {
+      return { username: localStorage.getItem(USER_KEY) ?? '', role: localStorage.getItem(ROLE_KEY) ?? 'ADMIN', permissions: [] as string[] };
+    }
+    const d = await request<{ id: number; username: string; realName: string; role: string; permissions?: string[] }>('/auth/me');
+    localStorage.setItem(ROLE_KEY, d.role);
+    localStorage.setItem(PERM_KEY, JSON.stringify(d.permissions ?? []));
+    return d;
+  },
+  permissions(): string[] {
+    try { return JSON.parse(localStorage.getItem(PERM_KEY) ?? '[]') as string[]; } catch { return []; }
   },
   currentUser() { return getToken() ? localStorage.getItem(USER_KEY) ?? '' : ''; },
   currentRole() { return localStorage.getItem(ROLE_KEY) ?? ''; },
@@ -210,14 +225,15 @@ export const api = {
   },
 
   // ===== 第3节 组织 =====
-  /** GET /departments、GET /teams */
+  /** GET /departments */
   async listDepartments(): Promise<OrgUnit[]> {
-    if (!useMock()) { const d = await request<OrgUnit[]>('/departments'); return d; }
+    if (!useMock()) return toItems<OrgUnit>(await request('/departments'));
     await sleep(150);
     return [...mockDepartments];
   },
+  /** GET /teams */
   async listTeams(): Promise<OrgUnit[]> {
-    if (!useMock()) { const d = await request<OrgUnit[]>('/teams'); return d; }
+    if (!useMock()) return toItems<OrgUnit>(await request('/teams'));
     await sleep(150);
     return [...mockTeams];
   },
@@ -239,13 +255,13 @@ export const api = {
   async listRoles(): Promise<RolePerm[]> {
     if (!useMock()) {
       const d = await request<{ code: string; permissions?: string[] }[]>('/roles');
-      return d.map((r) => ({ roleCode: r.code, label: r.code, permissions: r.permissions ?? [] }));
+      return toItems<{ code: string; permissions?: string[] }>(d).map((r) => ({ roleCode: r.code, label: r.code, permissions: r.permissions ?? [] }));
     }
     await sleep(150);
     return [...mockRolePerms];
   },
   async listPermissions(): Promise<{ code: string; name?: string; module?: string }[]> {
-    if (!useMock()) return request<{ code: string; name?: string; module?: string }[]>('/permissions');
+    if (!useMock()) return toItems<{ code: string; name?: string; module?: string }>(await request('/permissions'));
     await sleep(150);
     return ['task:dispatch', 'task:execute', 'task:self', 'content:read', 'company-matter:manage', 'company-task:manage'].map((code) => ({ code }));
   },
@@ -288,8 +304,9 @@ export const api = {
   },
 
   // ===== 第9.2节 公司十大重要事项（仅管理员维护） =====
+  /** GET /company-matters —— 实测返回 {items:[...]}，不是裸数组 */
   async listMatters(): Promise<CompanyMatter[]> {
-    if (!useMock()) return request<CompanyMatter[]>('/company-matters');
+    if (!useMock()) return toItems<CompanyMatter>(await request('/company-matters'));
     await sleep(150);
     return [...mockMatters];
   },
@@ -314,8 +331,7 @@ export const api = {
     }
     await sleep(150);
     return { ...mockConfigs };
-  },
-  async setConfig(key: string, value: string) {
+  },  async setConfig(key: string, value: string) {
     if (!useMock()) return request<Record<string, never>>(`/configs/${key}`, { method: 'PUT', body: JSON.stringify({ value }) });
     await sleep(150); mockConfigs[key] = value; return {};
   },

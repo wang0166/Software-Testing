@@ -55,8 +55,15 @@ export function statusValue(label: string): 0 | 1 {
 export const LOG_STATUS: Record<string, string> = { DRAFT: '草稿', SUBMITTED: '已提交', NOT_SUBMITTED: '未提交' };
 export function logStatusLabel(v: string): string { return LOG_STATUS[v] ?? v; }
 
-// 文档第1.3节权限码
+// 权限码：来源 documents/接口文档.md 第1.3节 + documents/api-samples/auth.json 实测 /auth/me 返回
 export const PERMISSION_CODES = [
+  { code: 'user:manage', label: '用户管理', desc: '创建、编辑、停用账号与重置密码', defaults: 'ADMIN' },
+  { code: 'org:manage', label: '组织管理', desc: '维护公司、部门、团队', defaults: 'ADMIN' },
+  { code: 'role:manage', label: '角色权限管理', desc: '设置角色权限码', defaults: 'ADMIN' },
+  { code: 'config:manage', label: '系统配置', desc: '修改提交截止时间等配置', defaults: 'ADMIN' },
+  { code: 'audit:read', label: '审计查询', desc: '查询管理操作审计记录', defaults: 'ADMIN' },
+  { code: 'log:write', label: '写日志', desc: '新建草稿、提交当日日志', defaults: 'EMPLOYEE、TEAM_LEADER、DEPT_MANAGER、FOUNDER' },
+  { code: 'log:comment', label: '点评', desc: '直属上级点评、作者回复', defaults: 'TEAM_LEADER、DEPT_MANAGER、FOUNDER' },
   { code: 'task:dispatch', label: '任务派发', desc: '查询直接下级、派发、编辑任务内容、查看派发列表、检查接收人', defaults: 'TEAM_LEADER、DEPT_MANAGER、FOUNDER' },
   { code: 'task:execute', label: '任务接收', desc: '查看本人接收任务、更新本人进度、发起检查邀约', defaults: 'EMPLOYEE、TEAM_LEADER、DEPT_MANAGER、FOUNDER' },
   { code: 'task:self', label: '自建任务', desc: '新增、查看、编辑本人自建任务', defaults: 'EMPLOYEE、TEAM_LEADER、DEPT_MANAGER、FOUNDER' },
