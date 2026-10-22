@@ -1,0 +1,94 @@
+{
+  "baseUrl": "http://localhost:8080/api",
+  "description": "数据地图只读聚合接口请求/响应样例（依据《后端接口文档》§10.1）。数据来源仅为当前用户收到的派发任务与本人自建任务，不包含本人派发给他人的任务和公司展示内容。所有请求需携带 Authorization: Bearer <accessToken>。",
+  "cases": [
+    {
+      "name": "读取数据地图",
+      "request": {
+        "method": "GET",
+        "path": "/task-map?page=1&size=20",
+        "headers": { "Authorization": "Bearer <EMPLOYEE_TOKEN>" }
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "code": 0,
+          "message": "ok",
+          "data": {
+            "total": 2,
+            "page": 1,
+            "size": 20,
+            "items": [
+              {
+                "source": "DISPATCHED",
+                "taskId": 501,
+                "assignmentId": 9101,
+                "personalTaskId": null,
+                "name": "完成10月经营分析",
+                "deadline": "2026-10-25",
+                "urgency": "URGENT",
+                "executionStatus": "IN_PROGRESS",
+                "reviewStatus": "NONE"
+              },
+              {
+                "source": "PERSONAL",
+                "taskId": null,
+                "assignmentId": null,
+                "personalTaskId": 77,
+                "name": "整理客户回访记录",
+                "deadline": null,
+                "urgency": null,
+                "executionStatus": "NOT_STARTED",
+                "reviewStatus": null
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "name": "空数据地图",
+      "request": {
+        "method": "GET",
+        "path": "/task-map?page=1&size=20",
+        "headers": { "Authorization": "Bearer <NEW_EMPLOYEE_TOKEN>" }
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "code": 0,
+          "message": "ok",
+          "data": { "total": 0, "page": 1, "size": 20, "items": [] }
+        }
+      }
+    },
+    {
+      "name": "管理员调用数据地图",
+      "request": {
+        "method": "GET",
+        "path": "/task-map?page=1&size=20",
+        "headers": { "Authorization": "Bearer <ADMIN_TOKEN>" }
+      },
+      "response": {
+        "status": 403,
+        "body": { "code": 40310, "message": "当前角色无权访问数据地图", "data": null }
+      }
+    },
+    {
+      "name": "分页参数超限",
+      "request": {
+        "method": "GET",
+        "path": "/task-map?page=0&size=200",
+        "headers": { "Authorization": "Bearer <EMPLOYEE_TOKEN>" }
+      },
+      "response": {
+        "status": 400,
+        "body": {
+          "code": 40001,
+          "message": "page: 页码必须大于等于 1; size: 每页数量不得超过 100",
+          "data": null
+        }
+      }
+    }
+  ]
+}
