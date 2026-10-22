@@ -1,12 +1,14 @@
 import { useState } from 'react';
 import { useNavigate, Link, useLocation } from 'react-router-dom';
 import { api } from '../api/client';
+import { isMock, setMockMode } from '../api/http';
 import { useToast } from '../components/ui';
 
 export function Login() {
   const [name, setName] = useState(localStorage.getItem('pandora-remember') ?? 'admin');
   const [password, setPassword] = useState('');
   const [remember, setRemember] = useState(() => localStorage.getItem('pandora-remember') != null);
+  const [demo, setDemo] = useState(isMock());
   const [err, setErr] = useState('');
   const [busy, setBusy] = useState(false);
   const nav = useNavigate();
@@ -16,6 +18,8 @@ export function Login() {
     try {
       setErr('');
       setBusy(true);
+      // 演示模式 = 用本地假数据，不需要后端
+      setMockMode(demo);
       await api.login(name, password);
       if (remember) localStorage.setItem('pandora-remember', name.trim());
       else localStorage.removeItem('pandora-remember');
@@ -34,15 +38,24 @@ export function Login() {
         <h2 style={{ margin: '0 0 4px', fontSize: 24 }}>潘多拉 Web 管理端</h2>
         <p className="pd-hint">管理员专用后台 · 账号用 username（英文）</p>
         <input className="pd-input" style={{ width: '100%', marginBottom: 10 }} value={name} onChange={(e) => setName(e.target.value)} placeholder="登录账号 username" onKeyDown={(e) => e.key === 'Enter' && login()} />
-        <input className="pd-input" style={{ width: '100%' }} type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="密码（演示任意填）" onKeyDown={(e) => e.key === 'Enter' && login()} />
-        <label style={{ display: 'flex', gap: 7, alignItems: 'center', marginTop: 10, fontSize: 13, color: '#5b5880', cursor: 'pointer' }}>
-          <input type="checkbox" checked={remember} onChange={(e) => setRemember(e.target.checked)} /> 记住账号
-        </label>
+        <input className="pd-input" style={{ width: '100%' }} type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="密码" onKeyDown={(e) => e.key === 'Enter' && login()} />
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 10 }}>
+          <label style={{ display: 'flex', gap: 7, alignItems: 'center', fontSize: 13, color: '#5b5880', cursor: 'pointer' }}>
+            <input type="checkbox" checked={remember} onChange={(e) => setRemember(e.target.checked)} /> 记住账号
+          </label>
+          <label style={{ display: 'flex', gap: 7, alignItems: 'center', fontSize: 13, color: demo ? '#b3541e' : '#5b5880', cursor: 'pointer', fontWeight: demo ? 800 : 400 }}>
+            <input type="checkbox" checked={demo} onChange={(e) => setDemo(e.target.checked)} /> 演示模式（不连后端）
+          </label>
+        </div>
         <button className="pd-btn primary" style={{ width: '100%', marginTop: 14, justifyContent: 'center' }} disabled={busy} onClick={login}>
           {busy ? <><span className="pd-spinner" /> 登录中…</> : '登 录'}
         </button>
         {err && <p className="pd-err" style={{ marginBottom: 0 }}>⚠ {err}</p>}
-        <p className="pd-hint" style={{ margin: '12px 0 0' }}>演示提示：输 <b>zuyuan_c</b>（停用）会被拦住。</p>
+        <p className="pd-hint" style={{ margin: '12px 0 0' }}>
+          {demo
+            ? '当前是演示模式，用的是本地假数据。想连后端就把勾去掉。'
+            : '当前连真后端。后端没起来就勾上「演示模式」。'}
+        </p>
       </div>
     </div>
   );

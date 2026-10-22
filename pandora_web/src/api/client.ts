@@ -1,6 +1,6 @@
 // 数据访问层：路径与出入参严格对齐 documents/接口文档.md
 // mock 只在 VITE_USE_MOCK（默认 true）时兜底，后端一起来就切真接口，页面不用动
-import { request, requestPage, clearTokens, getToken, setTokens, sleep, type PageData } from './http';
+import { request, requestPage, clearTokens, getToken, isMock, setTokens, sleep, type PageData } from './http';
 import { labelToCode, statusLabel, statusValue } from '../constants/roles';
 
 export interface UserRow { id: string; username: string; name: string; dept: string; team: string; role: string; status: string }
@@ -104,7 +104,7 @@ export const mockRolePerms: RolePerm[] = [
 export const mockConfigs: Record<string, string> = { log_deadline: '22:00' };
 
 // ---------------- 接口方法 ----------------
-function useMock() { return (import.meta.env.VITE_USE_MOCK as string | undefined) !== 'false'; }
+const useMock = isMock;
 
 export const api = {
   // ===== 第2节 认证 =====

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { API_BASE, USE_MOCK, getToken } from '../api/http';
+import { API_BASE, getToken, isMock, setMockMode } from '../api/http';
 
 interface Probe {
   key: string;
@@ -36,6 +36,7 @@ export function Debug() {
   const [results, setResults] = useState<Record<string, Result>>({});
   const [running, setRunning] = useState(false);
   const [token, setToken] = useState(getToken());
+  const [mockNow, setMockNow] = useState(isMock());
 
   const runOne = async (p: Probe) => {
     const t0 = performance.now();
@@ -94,19 +95,20 @@ export function Debug() {
         <h2>🔌 联调自检</h2>
         <p>点一下把所有接口跑一遍，看哪条通、哪条不通、返回什么。周四联调先跑这个。</p>
         <div className="pd-hero-chips">
-          <span className="pd-hero-chip">模式：{USE_MOCK ? 'Mock（未连后端）' : '真接口'}</span>
+          <span className="pd-hero-chip">模式：{mockNow ? 'Mock（未连后端）' : '真接口'}</span>
           <span className="pd-hero-chip">前缀：{API_BASE}</span>
           <span className="pd-hero-chip">已测 {done.length}/{PROBES.length}</span>
           <span className="pd-hero-chip">通过 {pass}</span>
         </div>
       </div>
 
-      {USE_MOCK && (
+      {mockNow && (
         <div className="pd-card" style={{ borderColor: '#ffd4d6', background: '#fff8f8' }}>
-          <b style={{ color: 'var(--danger)' }}>⚠ 现在是 Mock 模式，不会真的发请求到后端。</b>
-          <p className="pd-hint" style={{ margin: '6px 0 0' }}>
-            联调前先把 <code>.env.local</code> 里 <code>VITE_USE_MOCK</code> 改成 <code>false</code>，然后重启 <code>npm run dev</code>。
+          <b style={{ color: 'var(--danger)' }}>⚠ 现在是演示模式（Mock），自检页不会真的请求后端。</b>
+          <p className="pd-hint" style={{ margin: '6px 0 10px' }}>
+            点下面按钮切到真接口模式，再重新登录一次即可。
           </p>
+          <button className="pd-btn primary" onClick={() => { setMockMode(false); setMockNow(false); }}>切到真接口模式</button>
         </div>
       )}
 

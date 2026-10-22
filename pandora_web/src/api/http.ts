@@ -7,7 +7,22 @@ export interface Envelope<T> { code: number; message: string; data: T }
 export interface PageData<T> { items: T[]; page: number; size: number; total: number }
 
 export const API_BASE = (import.meta.env.VITE_API_BASE as string | undefined) ?? '/api';
-export const USE_MOCK = (import.meta.env.VITE_USE_MOCK as string | undefined) !== 'false';
+
+/**
+ * 是否走 mock（假数据）。
+ * 优先级：登录页勾了"演示模式" > .env 里的 VITE_USE_MOCK > 默认 true
+ * 这样后端没起来也能用演示模式应付，起来了就切真接口。
+ */
+export function isMock(): boolean {
+  const forced = localStorage.getItem('pandora-mock');
+  if (forced === '1') return true;
+  if (forced === '0') return false;
+  return (import.meta.env.VITE_USE_MOCK as string | undefined) !== 'false';
+}
+
+export function setMockMode(on: boolean) {
+  localStorage.setItem('pandora-mock', on ? '1' : '0');
+}
 
 const TOKEN_KEY = 'pandora-access-token';
 const REFRESH_KEY = 'pandora-refresh-token';
