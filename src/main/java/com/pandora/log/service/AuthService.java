@@ -14,6 +14,7 @@ import com.pandora.log.dto.TokenResponse;
 import com.pandora.log.dto.UserSummary;
 import com.pandora.log.entity.RefreshToken;
 import com.pandora.log.entity.User;
+import com.pandora.log.mapper.PermissionMapper;
 import com.pandora.log.mapper.UserMapper;
 import com.pandora.log.security.JwtService;
 import com.pandora.log.security.PasswordService;
@@ -25,6 +26,7 @@ public class AuthService {
     private static final String INVALID_REFRESH_TOKEN_MESSAGE = "刷新令牌无效或过期";
 
     private final UserMapper userMapper;
+    private final PermissionMapper permissionMapper;
     private final PasswordService passwordService;
     private final JwtService jwtService;
     private final RefreshTokenService refreshTokenService;
@@ -32,12 +34,14 @@ public class AuthService {
     private final SystemConfigService systemConfigService;
 
     public AuthService(UserMapper userMapper,
+            PermissionMapper permissionMapper,
             PasswordService passwordService,
             JwtService jwtService,
             RefreshTokenService refreshTokenService,
             LoginAttemptPolicy loginAttemptPolicy,
             SystemConfigService systemConfigService) {
         this.userMapper = userMapper;
+        this.permissionMapper = permissionMapper;
         this.passwordService = passwordService;
         this.jwtService = jwtService;
         this.refreshTokenService = refreshTokenService;
@@ -81,7 +85,7 @@ public class AuthService {
                 tokens.refreshToken(),
                 tokens.tokenType(),
                 tokens.expiresIn(),
-                UserSummary.from(user));
+                UserSummary.from(user, permissionMapper.findPermissionCodesByRole(user.getRoleCode())));
     }
 
     @Transactional
