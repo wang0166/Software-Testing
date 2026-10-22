@@ -87,6 +87,9 @@ class AuthContractTest extends EmbeddedPostgresSupport {
 
     @BeforeEach
     void resetFixtures() {
+        jdbcTemplate.update("UPDATE companies SET founder_id = NULL");
+        jdbcTemplate.update("UPDATE departments SET manager_id = NULL");
+        jdbcTemplate.update("UPDATE teams SET leader_id = NULL");
         jdbcTemplate.update("DELETE FROM refresh_tokens");
         jdbcTemplate.update("DELETE FROM users WHERE role_code <> 'ADMIN'");
         jdbcTemplate.update("DELETE FROM teams");

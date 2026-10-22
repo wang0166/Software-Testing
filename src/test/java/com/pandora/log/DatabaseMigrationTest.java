@@ -39,12 +39,12 @@ class DatabaseMigrationTest extends EmbeddedPostgresSupport {
 
     @Test
     void migratesEmptyDatabaseToLatestVersion() {
-        assertThat(firstRun.migrationsExecuted).isEqualTo(4);
+        assertThat(firstRun.migrationsExecuted).isEqualTo(5);
 
         Flyway flyway = flyway(jdbcUrl);
         MigrationInfo current = flyway.info().current();
         assertThat(current).isNotNull();
-        assertThat(current.getVersion().getVersion()).isEqualTo("4");
+        assertThat(current.getVersion().getVersion()).isEqualTo("5");
         assertThat(current.getState().isApplied()).isTrue();
         assertThat(flyway.info().pending()).isEmpty();
     }
@@ -55,6 +55,8 @@ class DatabaseMigrationTest extends EmbeddedPostgresSupport {
         assertThat(count("permissions")).isEqualTo(15);
         assertThat(count("role_permissions")).isEqualTo(41);
         assertThat(count("system_configs")).isEqualTo(5);
+        assertThat(count("users WHERE role_code IN "
+                + "('FOUNDER', 'DEPT_MANAGER', 'TEAM_LEADER', 'EMPLOYEE')")).isEqualTo(4);
 
         assertThat(count("role_permissions WHERE role_code = 'ADMIN' AND permission_code LIKE 'task:%'"))
                 .isZero();
