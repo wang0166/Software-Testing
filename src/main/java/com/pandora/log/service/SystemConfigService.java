@@ -1,5 +1,7 @@
 package com.pandora.log.service;
 
+import java.time.LocalTime;
+
 import org.springframework.stereotype.Service;
 
 import com.pandora.log.mapper.SystemConfigMapper;
@@ -11,6 +13,7 @@ public class SystemConfigService {
     public static final String LOGIN_LOCK_MINUTES = "login_lock_minutes";
     public static final String ACCESS_TOKEN_TTL_MINUTES = "access_token_ttl_minutes";
     public static final String REFRESH_TOKEN_TTL_DAYS = "refresh_token_ttl_days";
+    public static final String LOG_DEADLINE = "log_deadline";
 
     private final SystemConfigMapper systemConfigMapper;
 
@@ -44,5 +47,17 @@ public class SystemConfigService {
 
     public int refreshTokenTtlDays() {
         return intValue(REFRESH_TOKEN_TTL_DAYS, 7);
+    }
+
+    public LocalTime logDeadline() {
+        String value = systemConfigMapper.findValue(LOG_DEADLINE);
+        if (value == null || value.isBlank()) {
+            return LocalTime.of(22, 0);
+        }
+        try {
+            return LocalTime.parse(value.trim());
+        } catch (RuntimeException exception) {
+            return LocalTime.of(22, 0);
+        }
     }
 }
