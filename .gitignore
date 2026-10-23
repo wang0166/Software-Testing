@@ -10,3 +10,14 @@ target/
 *.log
 hs_err_pid*
 .DS_Store
+
+# Local environment secrets
+.env
+
+# Frontend build/dependencies
+node_modules/
+pandora_web/node_modules/
+pandora_web/dist/
+
+# Docker/local temp
+*.tar
