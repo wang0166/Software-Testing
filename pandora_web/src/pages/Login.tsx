@@ -1,8 +1,9 @@
-import { useState } from 'react';
-import { useNavigate, Link, useLocation } from 'react-router-dom';
+import { useEffect, useState } from 'react';
+import { useNavigate, Link, useLocation, Navigate } from 'react-router-dom';
 import { api } from '../api/client';
 import { isMock, setMockMode } from '../api/http';
 import { useToast } from '../components/ui';
+import { useAsync } from '../hooks/hooks';
 
 export function Login() {
   const [name, setName] = useState(localStorage.getItem('pandora-remember') ?? 'admin');
@@ -53,8 +54,8 @@ export function Login() {
         {err && <p className="pd-err" style={{ marginBottom: 0 }}>⚠ {err}</p>}
         <p className="pd-hint" style={{ margin: '12px 0 0' }}>
           {demo
-            ? '当前是演示模式，用的是本地假数据。想连后端就把勾去掉。'
-            : '当前连真后端。后端没起来就勾上「演示模式」。'}
+            ? '演示模式仅用于界面预览：使用 admin 和任意非空密码，不验证真实密码，不保存到后端。'
+            : '真实接口模式：仅管理员可登录，失败时不会切换为模拟成功。'}
         </p>
       </div>
     </div>
@@ -66,16 +67,18 @@ export function Layout({ children }: { children: React.ReactNode }) {
   const loc = useLocation();
   const user = api.currentUser();
   const toast = useToast();
+  const session = useAsync(() => api.me());
+  useEffect(() => {
+    const expired = () => nav('/login', { replace: true });
+    window.addEventListener('pandora-session-expired', expired);
+    return () => window.removeEventListener('pandora-session-expired', expired);
+  }, [nav]);
   if (!user) {
-    return (
-      <div className="pd-login">
-        <div className="pd-login-card">
-          <p>尚未登录，请先登录。</p>
-          <button className="pd-btn primary" style={{ width: '100%', justifyContent: 'center' }} onClick={() => nav('/login')}>去登录</button>
-        </div>
-      </div>
-    );
+    return <Navigate to="/login" replace />;
   }
+  if (session.loading) return <div className="pd-card">正在核对登录状态…</div>;
+  if (session.error) return <div className="pd-card" role="alert"><p>{session.error}</p><button className="pd-btn" onClick={session.reload}>重试</button><button className="pd-btn" onClick={() => nav('/login')}>重新登录</button></div>;
+  if (session.data?.role !== 'ADMIN') return <Navigate to="/login" replace />;
   const link = (to: string, label: string, ico: string) => (
     <Link to={to} className={loc.pathname === to ? 'active' : ''}><span className="ico">{ico}</span>{label}</Link>
   );
@@ -86,19 +89,22 @@ export function Layout({ children }: { children: React.ReactNode }) {
           <div className="mark">🟣</div>
           <div><b>潘多拉</b><small>Web 管理端</small></div>
         </div>
-        <p className="me">当前：{user} · 管理员 · 只读日志</p>
+        <p className="me">当前：{user} · 管理员</p>
         <div className="pd-nav">
           {link('/users', '用户管理', '👥')}
           {link('/org', '组织 / 角色 / 配置', '🏢')}
-          {link('/logs', '日志只读', '📝')}
-          {link('/stats', '统计只读', '📊')}
           {link('/debug', '联调自检', '🔌')}
         </div>
         <div className="pd-side-foot">
-          <button className="pd-btn" style={{ width: '100%', justifyContent: 'center', background: 'rgba(255,255,255,0.14)', border: 'none', color: '#fff' }} onClick={() => { api.logout(); toast.push('info', '已退出登录'); nav('/login'); }}>退出登录</button>
+          <button className="pd-btn" style={{ width: '100%', justifyContent: 'center', background: 'rgba(255,255,255,0.14)', border: 'none', color: '#fff' }} onClick={async () => {
+            try { await api.logout(); toast.push('info', '已退出登录'); }
+            catch { toast.push('info', '本地登录已退出，服务端注销未确认'); }
+            finally { nav('/login', { replace: true }); }
+          }}>退出登录</button>
         </div>
       </nav>
       <main className="pd-main">
+        {isMock() && <div className="pd-card" role="status">演示模式：本地模拟数据，不代表服务器已保存；组织、权限和事项演示改动刷新后重置。</div>}
         <div key={loc.pathname} className="pd-page">{children}</div>
       </main>
     </div>

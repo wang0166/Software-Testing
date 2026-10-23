@@ -1,44 +1,82 @@
-# 潘多拉 Web 管理端（成员3）
+# 潘多拉 Web 管理端
 
-React18 + Router6 + Vite5，管理员专用后台。
+React 18 + TypeScript + Vite，系统管理员专用。日志与统计页面不在当前 Web 交付范围内，Android 功能由移动端负责。
 
-## 跑起来
+## 本地运行
 
-```bash
-npm install
+已有依赖时运行：
+
+```powershell
+cd pandora_web
 npm run dev
 ```
 
-浏览器开 `http://localhost:5174`，演示账号 `admin` / `123456`。
+默认访问 http://localhost:5174。首次安装依赖使用 `npm ci`。
 
-## 接口对接（严格对齐 documents/接口文档.md）
+真实后端推荐配置：
 
-- 统一壳 `{code, message, data}`，`code===0` 为成功
-- 分页 `data: {items, page, size, total}`（文档第1.1节）
-- 角色传输用英文枚举（`EMPLOYEE`/`TEAM_LEADER`/`DEPT_MANAGER`/`FOUNDER`/`ADMIN`），界面显示中文
-- HTTP 管协议层，`code` 是业务错误码（40103/40301/40901等），`ApiError` 统一处理
-- 切真后端：`.env.local` 设 `VITE_API_BASE=http://localhost:8080/api` + `VITE_USE_MOCK=false`
+```dotenv
+VITE_API_BASE=/api
+VITE_USE_MOCK=false
+VITE_PROXY_TARGET=http://localhost:8080
+```
+
+`/api` 通过 Vite 代理访问后端。管理员密码由后端 `ADMIN_INIT_PASSWORD` 初始化，不在前端预置。个人 `.env.local` 不应随本次改动提交；此文件历史上已被跟踪，不能只靠忽略规则阻止提交。
+
+## 当前能力与接口缺口
+
+依据当前合入的 main 控制器实现核对：
+
+| 功能 | 真实后端 | 前端行为 |
+| --- | --- | --- |
+| 登录、当前身份、退出 | 已实现 | 真实请求，限制 ADMIN；过期后清理身份并回登录 |
+| 公司重要事项查询 | 已实现 | 使用服务端分页，只读查看 |
+| 公司重要事项新增、编辑、删除 | 未实现 | 真实模式禁止提交 |
+| 用户、组织、角色权限、配置、审计管理 | 未实现 | 真实模式说明接口缺口，不使用模拟数据兜底 |
+| 公司事项截止日期、组织介绍、用户扩展资料写入 | 尚无对应管理接口支持 | 仅保留演示用途，不声称后端已保存 |
+
+已有接口遵循 `documents/后端接口文档.md` 的 `{code,message,data}` 响应；分页为 `{items,page,size,total}`。HTTP 失败、业务失败、HTML 或不完整分页都会显示错误，不能变成空列表或成功提示。
+
+后端补齐管理接口后，需先核对请求及响应契约，再更新 `src/api/capabilities.ts` 的对应能力开关并联调；不能仅因文档列出接口就开放入口。角色权限是否允许修改仍需与后端约定。
+
+## 演示模式
+
+在登录页主动勾选“演示模式”，使用 admin 和任意非空密码。该模式不验证真实密码，不访问后端。页面始终显示演示标识。
+
+- 用户演示新增、编辑、启停、移除状态保存在本地浏览器，可用“回到基线”清除；不能作为服务器数据或安全验证证据。
+- 组织、角色权限、配置和事项演示修改在当前页面会话内有效，刷新后恢复默认模拟数据。
+- 切换真实/演示模式会清理身份，必须重新登录。
+- 只有演示提供“移除用户”，真实后端无用户删除接口。
+- 联调自检仅测试已实现的只读接口，演示模式下不执行。不会显示令牌、密码和原始个人资料。
 
 ## 路由
 
-- `/login` 登录（POST /auth/login）
-- `/users` 用户管理（GET/POST /users，PATCH /users/{id}/status，PUT /users/{id}/password）
-- `/org` 组织/角色/配置（/departments、/teams、/roles、/permissions、/configs、/company-matters）
-- `/logs` 日志只读（GET /logs，管理员不可改删）
-- `/stats` 统计只读（GET /stats/overview、/stats/unsubmitted、/audits）
+- `/login`：登录。
+- `/users`：用户管理或接口待接入提示。
+- `/org`：组织、角色权限、公司事项、配置、审计。
+- `/debug`：已实现接口的只读自检。
+- 原 `/logs`、`/stats` 不恢复，访问按不存在页面处理。
 
-## 目录
+## 验证
 
-```
-src/api/http.ts    统一请求：Bearer、响应壳解包、错误码映射、分页
-src/api/client.ts  各接口方法 + mock 数据（VITE_USE_MOCK 控制切换）
-src/constants/roles.ts  5角色中文/英文映射、归属约束、权限码
-src/components/ui.tsx    Toast/Modal/StatCard/Ring/Empty/Skeleton
-src/theme.css            视觉 v3 主题
+```powershell
+npm test
+npm run build
 ```
 
-## 联调清单
+测试覆盖模式隔离、管理员限制、权限缓存清理、分页、无效响应、403/500/网络错误和模拟数据更新。测试使用现有 Vite 依赖中的 esbuild 与 Node 内置测试工具，无新增测试框架。
 
-- 成员1：后端接口就绪后改 `.env.local` 两个环境变量即可，页面不动
-- 成员5：DDL 确认后对照 `users.status`（1启用/0停用）校验
-- 成员4：用例可按本页 5 个路由覆盖功能点
+## 人工验收清单
+
+1. 真实管理员能登录，普通角色不能进入 Web；错误密码和网络失败不进入演示。
+2. 真实模式公司事项能翻页；无数据、无权限、服务故障各自显示正确状态。
+3. 真实模式未实现模块说明缺口，不发管理请求、不提供可提交入口。
+4. 令牌过期后回登录，权限和身份缓存清除；退出失败时仍清理本地会话并提示。
+5. 演示中新建、编辑、启停用户，部门/团队归属正确；密码生成和重置交互可用。
+6. 演示中新建部门、团队，编辑角色权限和配置；新增、编辑、取消事项弹窗均正常。
+7. 导航与自检没有日志、统计入口；审计在独立标签中。
+8. 浏览器窄窗口下检查导航、表格滚动和弹窗。
+
+## 本地开发记录
+
+个人 AGENTS.md、docs/PROGRESS.md 由本地 Git exclude 排除。接口缺口与本使用说明属于协作所需资料，随前端改动交付。

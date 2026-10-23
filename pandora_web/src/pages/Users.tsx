@@ -4,22 +4,56 @@ import { ROLE_ICON, ROLE_META, ROLES, USER_STATUS } from '../constants/roles';
 import { useAsync, useDebounce, useLocalStorage } from '../hooks/hooks';
 import { downloadCSV, writeOpLog } from '../utils/export';
 import { Empty, Modal, Skeleton, StatCard, useConfirm, useToast } from '../components/ui';
+import { supports } from '../api/capabilities';
+import { Unavailable } from '../components/Unavailable';
 
 const PAGE_SIZE = 6;
-const DEPT_OPTS = ['产品部', '技术部', '总部'];
-const TEAM_OPTS = ['如来佛组', '观音组', '平台组', '架构组'];
+
+/**
+ * 生成 16 位随机强密码：大小写字母 + 数字 + 特殊字符各至少 1 位，其余随机补齐
+ * 用途：新建员工时点「生成」按钮自动填入初始密码，后端收到后 BCrypt 加密存储
+ *
+ * @returns {string} 16 位强密码字符串
+ */
+function generateStrongPassword(): string {
+    // 四类字符池：保证生成的密码每类都至少出现一次
+    const LOWER = 'abcdefghijkmnpqrstuvwxyz';
+    const UPPER = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
+    const DIGITS = '23456789';
+    const SPECIAL = '!@#$%^&*';
+    // 用 crypto.getRandomValues 取随机数，比 Math.random 更安全（密码学随机源）
+    const pick = (pool: string) => pool[crypto.getRandomValues(new Uint32Array(1))[0] % pool.length];
+    // 先各取一位保证复杂度，再从全池随机补到 16 位，最后洗牌避免固定分布
+    const all = LOWER + UPPER + DIGITS + SPECIAL;
+    const chars = [pick(LOWER), pick(UPPER), pick(DIGITS), pick(SPECIAL)];
+    while (chars.length < 16) chars.push(pick(all));
+    for (let i = chars.length - 1; i > 0; i--) {
+        const j = crypto.getRandomValues(new Uint32Array(1))[0] % (i + 1);
+        [chars[i], chars[j]] = [chars[j], chars[i]];
+    }
+    return chars.join('');
+}
 
 export function Users() {
+  return supports('users') ? <UsersContent /> : <><div className="pd-hero"><h2>👥 用户管理</h2><p>管理员账号与组织归属维护</p></div><Unavailable feature="用户管理" /></>;
+}
+
+function UsersContent() {
   const { data, loading, error } = useAsync(() => api.listUsers());
+  const departments = useAsync(() => api.listDepartments());
+  const teams = useAsync(() => api.listTeams());
   const [local, setLocal] = useLocalStorage<UserRow[]>('pandora-web-users-local', []);
   const [removed, setRemoved] = useLocalStorage<string[]>('pandora-web-users-removed', []);
   const [statusPatch, setStatusPatch] = useLocalStorage<Record<string, string>>('pandora-web-users-status', {});
+  const [edits, setEdits] = useLocalStorage<Record<string, Partial<UserRow>>>('pandora-web-users-edits', {});
+  const [editing, setEditing] = useState<UserRow | null>(null);
+  const [saving, setSaving] = useState(false);
   const [q, setQ] = useState('');
   const [roleFilter, setRoleFilter] = useState('全部');
   const [statusFilter, setStatusFilter] = useState('全部');
   const [page, setPage] = useState(1);
   const [showAdd, setShowAdd] = useState(false);
-  const [form, setForm] = useState({ username: '', name: '', password: '123456', dept: '产品部', team: '如来佛组', role: '组员' });
+  const [form, setForm] = useState({ username: '', name: '', password: '', dept: '产品部', team: '如来佛组', role: '组员', idNumber: '', gender: '男', phone: '' });
   const [formErr, setFormErr] = useState('');
   const [detail, setDetail] = useState<UserRow | null>(null);
   const [pwTarget, setPwTarget] = useState<UserRow | null>(null);
@@ -31,7 +65,7 @@ export function Users() {
   const rows = useMemo(() => {
     const base = [...(data?.items ?? []), ...local]
       .filter((u) => !removed.includes(u.id))
-      .map((u) => (statusPatch[u.id] ? { ...u, status: statusPatch[u.id] } : u));
+      .map((u) => ({ ...u, ...edits[u.id], ...(statusPatch[u.id] ? { status: statusPatch[u.id] } : {}) }));
     const key = dq.trim().toLowerCase();
     return base.filter((u) => {
       if (roleFilter !== '全部' && u.role !== roleFilter) return false;
@@ -39,7 +73,7 @@ export function Users() {
       if (!key) return true;
       return `${u.username}${u.name}${u.dept}${u.team}${u.role}${u.status}`.toLowerCase().includes(key);
     });
-  }, [data, local, removed, statusPatch, dq, roleFilter, statusFilter]);
+  }, [data, local, removed, statusPatch, edits, dq, roleFilter, statusFilter]);
 
   const pages = Math.max(1, Math.ceil(rows.length / PAGE_SIZE));
   const safePage = Math.min(page, pages);
@@ -52,33 +86,48 @@ export function Users() {
   const teamLocked = roleMeta?.teamId === '必须为空';
 
   const add = async () => {
+    if (saving) return;
     const username = form.username.trim().toLowerCase();
     const name = form.name.trim();
     if (!username) return setFormErr('请输入登录账号（username，英文）');
     if (!/^[a-z0-9_]{3,20}$/.test(username)) return setFormErr('账号 3~20 位英文小写/数字/下划线');
     if (!name) return setFormErr('请输入姓名');
     if (name.length > 20) return setFormErr('姓名最多 20 字');
-    if (!form.password.trim()) return setFormErr('请设置初始密码');
-    if (rows.some((u) => u.username === username)) return setFormErr('该账号已存在，换一个');
-    if (rows.some((u) => u.name === name)) return setFormErr('该姓名已存在，换一个');
+    if (!editing && form.password.length < 6) return setFormErr('请设置初始密码');
+    if (form.idNumber && !/^\d{17}[\dXx]$/.test(form.idNumber.trim())) return setFormErr('身份证号应为 18 位（末位可为 X）');
+    if (form.phone && !/^1\d{10}$/.test(form.phone.trim())) return setFormErr('电话号码应为 11 位手机号');
+    if (rows.some((u) => u.username === username && u.id !== editing?.id)) return setFormErr('该账号已存在，换一个');
+    const department = departments.data?.find(d => d.name === form.dept);
+    const team = teams.data?.find(t => t.name === form.team && t.parentId === department?.id);
+    if (!deptLocked && !department) return setFormErr('请选择有效部门');
+    if (!teamLocked && !team) return setFormErr('请选择该部门下的团队');
     setFormErr('');
     try {
+      setSaving(true);
+      if (editing) {
+        await api.updateUser(editing.id, { realName: name, role: form.role, departmentId: deptLocked ? null : Number(department!.id), teamId: teamLocked ? null : Number(team!.id) });
+        setEdits(v => ({ ...v, [editing.id]: { name, role: form.role, dept: deptLocked ? '-' : form.dept, team: teamLocked ? '-' : form.team } }));
+        toast.push('ok', '演示用户已更新'); setShowAdd(false); setEditing(null); return;
+      }
       const r = await api.createUser({
         username,
         password: form.password,
         realName: name,
         role: form.role,
-        departmentId: deptLocked ? null : 1,
-        teamId: teamLocked ? null : 1,
+        departmentId: deptLocked ? null : Number(department!.id),
+        teamId: teamLocked ? null : Number(team!.id),
+        idNumber: form.idNumber.trim(),
+        gender: form.gender,
+        phone: form.phone.trim(),
       });
-      setLocal((v) => [...v, { id: String(r?.id ?? `u-local-${Date.now()}`), username, name, dept: deptLocked ? '总部' : form.dept, team: teamLocked ? '-' : form.team, role: form.role, status: '启用' }]);
+      setLocal((v) => [...v, { id: String(r?.id ?? `u-local-${Date.now()}`), username, name, dept: deptLocked ? '总部' : form.dept, team: teamLocked ? '-' : form.team, role: form.role, status: '启用', idNumber: form.idNumber.trim(), gender: form.gender, phone: form.phone.trim() }]);
       writeOpLog('创建用户', `${name}(${username})`);
       toast.push('ok', `已创建账号 ${name}`);
-      setForm({ username: '', name: '', password: '123456', dept: '产品部', team: '如来佛组', role: '组员' });
+      setForm({ username: '', name: '', password: '', dept: '产品部', team: '如来佛组', role: '组员', idNumber: '', gender: '男', phone: '' });
       setShowAdd(false);
     } catch (e) {
       setFormErr(e instanceof Error ? e.message : '创建失败');
-    }
+    } finally { setSaving(false); }
   };
 
   const toggleStatus = async (u: UserRow) => {
@@ -95,7 +144,7 @@ export function Users() {
   };
 
   const remove = async (u: UserRow) => {
-    const ok = await confirm({ title: `删除用户「${u.name}」？`, desc: '本地演示删除，接真接口后走真删除。', okText: '删除', danger: true });
+    const ok = await confirm({ title: `删除用户「${u.name}」？`, desc: '仅移除本地演示数据；后端未提供删除接口。', okText: '删除', danger: true });
     if (!ok) return;
     writeOpLog('删除用户', u.name);
     if (u.id.startsWith('u-local-')) setLocal((v) => v.filter((x) => x.id !== u.id));
@@ -120,7 +169,7 @@ export function Users() {
   const resetLocal = async () => {
     const ok = await confirm({ title: '回到 mock 基线？', desc: '清空本地新增/删除/停用状态。' });
     if (!ok) return;
-    setLocal([]); setRemoved([]); setStatusPatch({}); setPage(1);
+    setLocal([]); setRemoved([]); setStatusPatch({}); setEdits({}); setPage(1);
     toast.push('info', '已回到基线');
   };
 
@@ -155,7 +204,7 @@ export function Users() {
           <select className="pd-select" value={statusFilter} onChange={(e) => { setStatusFilter(e.target.value); setPage(1); }}>
             {['全部', ...USER_STATUS].map((s) => <option key={s} value={s}>{s}</option>)}
           </select>
-          <button className="pd-btn primary" onClick={() => setShowAdd(true)}>＋ 新增用户</button>
+          <button className="pd-btn primary" onClick={() => { setEditing(null); setFormErr(''); setForm({ username: '', name: '', password: '', dept: departments.data?.[0]?.name ?? '', team: '', role: '组员', idNumber: '', gender: '男', phone: '' }); setShowAdd(true); }}>＋ 新增用户</button>
           <button className="pd-btn" onClick={() => { downloadCSV('users.csv', [['账号', '姓名', '部门', '团队', '角色', '状态'], ...rows.map((u) => [u.username, u.name, u.dept, u.team, u.role, u.status])]); toast.push('ok', '已导出 users.csv'); }}>⤓ 导出</button>
           <button className="pd-btn" onClick={resetLocal}>↺ 回到基线</button>
         </div>
@@ -173,9 +222,11 @@ export function Users() {
                   <td>{u.dept}</td><td>{u.team}</td><td><span className="pd-pill">{u.role}</span></td>
                   <td><span className={`pd-pill ${u.status === '启用' ? 'green' : 'red'}`}><span className="pd-dot" style={{ background: u.status === '启用' ? '#17b58b' : '#e5484d' }} />{u.status}</span></td>
                   <td>
+                    <button className="pd-btn" onClick={() => setDetail(u)}>详情</button>{' '}
+                    <button className="pd-btn" onClick={() => { setEditing(u); setFormErr(''); setForm({ username: u.username, name: u.name, password: '', dept: u.dept, team: u.team, role: u.role, idNumber: u.idNumber ?? '', gender: u.gender ?? '男', phone: u.phone ?? '' }); setShowAdd(true); }}>编辑</button>{' '}
                     <button className="pd-btn" onClick={() => toggleStatus(u)}>{u.status === '启用' ? '停用' : '启用'}</button>{' '}
                     <button className="pd-btn" onClick={() => setPwTarget(u)}>重置密码</button>{' '}
-                    <button className="pd-btn danger" onClick={() => remove(u)}>删除</button>
+                    <button className="pd-btn danger" onClick={() => remove(u)}>演示移除</button>
                   </td>
                 </tr>
               ))}
@@ -193,21 +244,31 @@ export function Users() {
       </div>
 
       {showAdd && (
-        <Modal title="新增用户（POST /users）" onClose={() => { setShowAdd(false); setFormErr(''); }}
-          footer={<><button className="pd-btn" onClick={() => { setShowAdd(false); setFormErr(''); }}>取消</button><button className="pd-btn primary" onClick={add}>保存</button></>}>
+        <Modal title={editing ? '编辑演示用户' : '新增演示用户'} onClose={() => { setShowAdd(false); setFormErr(''); }}
+          footer={<><button className="pd-btn" onClick={() => { setShowAdd(false); setFormErr(''); }}>取消</button><button className="pd-btn primary" disabled={saving} onClick={add}>{saving ? '保存中…' : '保存'}</button></>}>
           <div style={{ display: 'grid', gap: 10 }}>
-            <input className="pd-input" value={form.username} onChange={(e) => setForm({ ...form, username: e.target.value })} placeholder="账号 username（必填，英文 3~20 位）" />
+            <input className="pd-input" disabled={!!editing} value={form.username} onChange={(e) => setForm({ ...form, username: e.target.value })} placeholder="账号 username（必填，英文 3~20 位）" />
             <input className="pd-input" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="姓名 realName（必填，最多 20 字）" />
-            <input className="pd-input" type="password" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} placeholder="初始密码（服务端 BCrypt 存储）" />
+            <div className="pd-row" style={{ marginBottom: 0, display: editing ? 'none' : undefined }}>
+              <input className="pd-input" style={{ flex: 1 }} type="password" autoComplete="new-password" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} placeholder="初始密码（点右侧按钮自动生成）" />
+              <button className="pd-btn" type="button" onClick={() => { const pwd = generateStrongPassword(); setForm({ ...form, password: pwd }); toast.push('ok', '已生成强密码，请及时复制告知员工'); }}>🎲 生成强密码</button>
+            </div>
+            <input className="pd-input" disabled={!!editing} value={form.idNumber} onChange={(e) => setForm({ ...form, idNumber: e.target.value })} placeholder="身份证号（演示资料，可选）" maxLength={18} />
+            <div className="pd-row" style={{ marginBottom: 0 }}>
+              <select className="pd-select" disabled={!!editing} value={form.gender} onChange={(e) => setForm({ ...form, gender: e.target.value })} style={{ flex: 1 }}>
+                {['男', '女'].map((g) => <option key={g} value={g}>性别：{g}</option>)}
+              </select>
+              <input className="pd-input" style={{ flex: 2 }} disabled={!!editing} value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} placeholder="电话号码（演示资料，可选）" maxLength={11} />
+            </div>
             <div className="pd-row" style={{ marginBottom: 0 }}>
               <select className="pd-select" value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })}>
                 {ROLES.map((r) => <option key={r} value={r}>{r}</option>)}
               </select>
-              <select className="pd-select" value={form.dept} disabled={deptLocked} onChange={(e) => setForm({ ...form, dept: e.target.value })}>
-                {(deptLocked ? ['-'] : DEPT_OPTS).map((d) => <option key={d} value={d}>{d}</option>)}
+              <select className="pd-select" value={form.dept} disabled={deptLocked} onChange={(e) => setForm({ ...form, dept: e.target.value, team: '' })}>
+                {(deptLocked ? ['-'] : ['', ...(departments.data ?? []).map(d => d.name)]).map((d) => <option key={d} value={d}>{d}</option>)}
               </select>
               <select className="pd-select" value={form.team} disabled={teamLocked} onChange={(e) => setForm({ ...form, team: e.target.value })}>
-                {(teamLocked ? ['-'] : TEAM_OPTS).map((t) => <option key={t} value={t}>{t}</option>)}
+                {(teamLocked ? ['-'] : ['', ...(teams.data ?? []).filter(t => t.parentId === departments.data?.find(d => d.name === form.dept)?.id).map(t => t.name)]).map((t) => <option key={t} value={t}>{t}</option>)}
               </select>
             </div>
             <p className="pd-hint" style={{ margin: 0 }}>
@@ -229,14 +290,14 @@ export function Users() {
       {detail && (
         <Modal title={`用户详情 · ${detail.name}`} onClose={() => setDetail(null)} footer={<button className="pd-btn" onClick={() => setDetail(null)}>关闭</button>}>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 12 }}>
-            {[['账号', detail.username], ['姓名', detail.name], ['部门', detail.dept], ['团队', detail.team], ['角色', detail.role], ['状态', detail.status]].map(([k, v]) => (
+            {[['账号', detail.username], ['姓名', detail.name], ['性别', detail.gender ?? '-'], ['电话号码', detail.phone ?? '-'], ['身份证号', detail.idNumber ?? '-'], ['部门', detail.dept], ['团队', detail.team], ['角色', detail.role], ['状态', detail.status]].map(([k, v]) => (
               <div key={k} className="pd-card" style={{ margin: 0, padding: 14 }}>
                 <div className="pd-hint" style={{ margin: 0 }}>{k}</div>
                 <div style={{ fontWeight: 900, fontSize: 16 }}>{v}</div>
               </div>
             ))}
           </div>
-          <p className="pd-hint" style={{ margin: '12px 0 0' }}>详情来自 GET /users/{"{id}"}（不含凭据），关联日志与点评待联调展示。</p>
+          <p className="pd-hint" style={{ margin: '12px 0 0' }}>当前详情来自本地演示数据；不表示后端已提供用户详情接口。</p>
         </Modal>
       )}
     </div>

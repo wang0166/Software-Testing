@@ -1,4 +1,4 @@
-// 对齐 documents/接口文档.md 第1节：统一响应壳、Bearer、分页信封、错误码
+// 对齐 documents/后端接口文档.md：统一响应、Bearer、分页及错误处理。
 // 成功 {"code":0,"message":"ok","data":{...}}
 // 分页 data: {"items":[],"page":1,"size":20,"total":0}
 // HTTP 状态码表达协议层结果，code 是稳定业务错误码（40001/40101/40103/40301/40901...）
@@ -10,17 +10,18 @@ export const API_BASE = (import.meta.env.VITE_API_BASE as string | undefined) ??
 
 /**
  * 是否走 mock（假数据）。
- * 优先级：登录页勾了"演示模式" > .env 里的 VITE_USE_MOCK > 默认 true
- * 这样后端没起来也能用演示模式应付，起来了就切真接口。
+ * 优先级：登录页明确选择 > 环境变量 > 默认真实模式。
+ * 切换模式需要重新登录，真实接口失败不得自动转入演示。
  */
 export function isMock(): boolean {
   const forced = localStorage.getItem('pandora-mock');
   if (forced === '1') return true;
   if (forced === '0') return false;
-  return (import.meta.env.VITE_USE_MOCK as string | undefined) !== 'false';
+  return (import.meta.env.VITE_USE_MOCK as string | undefined) === 'true';
 }
 
 export function setMockMode(on: boolean) {
+  if (on !== isMock()) clearTokens();
   localStorage.setItem('pandora-mock', on ? '1' : '0');
 }
 
@@ -40,6 +41,7 @@ export function getRefreshToken() { return localStorage.getItem(REFRESH_KEY) ?? 
 export function clearTokens() {
   localStorage.removeItem(TOKEN_KEY);
   localStorage.removeItem(REFRESH_KEY);
+  for (const key of ['pandora-user', 'pandora-role', 'pandora-permissions']) localStorage.removeItem(key);
 }
 
 // 文档第12节错误码表：给前端一句人话，别把 40301 甩给用户
@@ -48,6 +50,7 @@ const CODE_TEXT: Record<number, string> = {
   40101: '用户名或密码错误',
   40102: '登录已过期，请重新登录',
   40103: '账号已锁定或停用，请联系管理员',
+  40104: '账号已停用，请联系管理员',
   40301: '无权访问该资源',
   40302: '只有直属上级才能点评',
   40310: '当前角色无此操作权限',
@@ -71,8 +74,8 @@ export class ApiError extends Error {
     super(message);
     this.name = 'ApiError';
   }
-  /** 40102 令牌失效、40103 账号停用，都需要清本地身份回登录页 */
-  get needLogin() { return this.httpStatus === 401; }
+  /** 令牌失效或账号停用需要重新登录；登录失败和禁止访问不是同一状态。 */
+  get needLogin() { return this.code === 40102 || this.code === 40104; }
 }
 
 async function parse(res: Response): Promise<Envelope<unknown> | null> {
@@ -83,7 +86,8 @@ async function parse(res: Response): Promise<Envelope<unknown> | null> {
 export async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   const headers: Record<string, string> = { 'Content-Type': 'application/json', ...(init.headers as Record<string, string> | undefined) };
   const token = getToken();
-  if (token) headers.Authorization = `Bearer ${token}`;
+  const publicAuth = ['/auth/login', '/auth/refresh'].includes(path);
+  if (token && !publicAuth) headers.Authorization = `Bearer ${token}`;
 
   let res: Response;
   try {
@@ -93,25 +97,35 @@ export async function request<T>(path: string, init: RequestInit = {}): Promise<
   }
 
   const body = await parse(res);
-  // HTTP 层失败：优先用业务 code 的文案
+  const expired = !publicAuth && (res.status === 401 || body?.code === 40102 || body?.code === 40104);
+  if (expired) {
+    clearTokens();
+    window.dispatchEvent(new Event('pandora-session-expired'));
+  }
+  // HTTP 层失败：优先保留后端业务错误，不把失败替换为假数据。
   if (!res.ok) {
     const code = body?.code ?? res.status;
     const msg = body?.message || CODE_TEXT[code] || `请求失败（HTTP ${res.status}）`;
-    if (res.status === 401) clearTokens();
     throw new ApiError(res.status, code, msg);
+  }
+  if (!body || typeof body.code !== 'number' || !Object.prototype.hasOwnProperty.call(body, 'data')) {
+    throw new ApiError(res.status, 0, '接口响应格式不正确，请检查服务地址和代理配置');
   }
   // HTTP 200 但 code 非 0，同样是业务错误
   if (body && body.code !== 0) {
-    if (body.code === 40102 || body.code === 40103) clearTokens();
     throw new ApiError(res.status, body.code, body.message || CODE_TEXT[body.code] || '操作失败');
   }
-  return (body?.data ?? null) as T;
+  return body.data as T;
 }
 
 /** 分页请求：文档规定 data 是 { items, page, size, total } */
 export async function requestPage<T>(path: string, init: RequestInit = {}): Promise<PageData<T>> {
   const d = await request<PageData<T>>(path, init);
-  return d ?? { items: [], page: 1, size: 20, total: 0 };
+  if (!d || !Array.isArray(d.items) || !Number.isInteger(d.page) || d.page < 1 ||
+      !Number.isInteger(d.size) || d.size < 1 || !Number.isInteger(d.total) || d.total < 0) {
+    throw new ApiError(200, 0, '分页响应格式不正确');
+  }
+  return d;
 }
 
 export const sleep = (ms = 200) => new Promise((r) => setTimeout(r, ms));
