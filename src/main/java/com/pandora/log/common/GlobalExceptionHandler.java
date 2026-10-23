@@ -7,6 +7,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.validation.BindException;
+import org.springframework.web.HttpRequestMethodNotSupportedException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.MissingServletRequestParameterException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
@@ -50,6 +51,12 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ApiResponse<Void>> handleNotFound(NoResourceFoundException exception) {
         return ResponseEntity.status(ErrorCode.NOT_FOUND.getHttpStatus())
                 .body(ApiResponse.error(ErrorCode.NOT_FOUND));
+    }
+
+    @ExceptionHandler(HttpRequestMethodNotSupportedException.class)
+    public ResponseEntity<ApiResponse<Void>> handleMethodNotSupported(HttpRequestMethodNotSupportedException exception) {
+        return ResponseEntity.status(ErrorCode.METHOD_NOT_ALLOWED.getHttpStatus())
+                .body(ApiResponse.error(ErrorCode.METHOD_NOT_ALLOWED));
     }
 
     @ExceptionHandler(Exception.class)

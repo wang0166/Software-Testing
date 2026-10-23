@@ -1,7 +1,7 @@
 // 数据访问层：路径与出入参严格对齐 documents/接口文档.md
 // mock 只在 VITE_USE_MOCK（默认 true）时兜底，后端一起来就切真接口，页面不用动
 import { request, requestPage, clearTokens, getToken, isMock, setTokens, sleep, type PageData } from './http';
-import { labelToCode, statusLabel, statusValue } from '../constants/roles';
+import { codeToLabel, labelToCode, logStatusLabel, statusLabel, statusValue } from '../constants/roles';
 
 export interface UserRow { id: string; username: string; name: string; dept: string; team: string; role: string; status: string }
 export interface LogRow { id: string; author: string; date: string; summary: string; status: string; visible: string }
@@ -166,10 +166,10 @@ export const api = {
   async listUsers(params: { keyword?: string; role?: string; status?: string; page?: number; size?: number } = {}): Promise<PageData<UserRow>> {
     const q = new URLSearchParams({ page: String(params.page ?? 1), size: String(params.size ?? 100) });
     if (params.keyword) q.set('keyword', params.keyword);
-    if (params.role) q.set('role', params.role);
+    if (params.role) q.set('role', labelToCode(params.role) ?? params.role);
     if (params.status) q.set('status', params.status);
     if (!useMock()) {
-      const d = await requestPage<UserRow>(`/users?${q}`);
+      const d = await requestPage<RawUser>(`/users?${q}`);
       return { ...d, items: d.items.map(mapUser) };
     }
     await sleep();
@@ -278,8 +278,20 @@ export const api = {
     if (params.status) q.set('status', params.status);
     if (params.authorId) q.set('authorId', params.authorId);
     if (!useMock()) {
-      const d = await requestPage<LogRow>(`/logs?${q}`);
-      return { ...d, items: d.items.map((l) => ({ ...l, status: l.status === 'SUBMITTED' ? '已提交' : l.status === 'DRAFT' ? '草稿' : l.status })) };
+      const d = await requestPage<{
+        id: number; authorName?: string; logDate?: string; content?: string; status?: string;
+      }>(`/logs?${q}`);
+      return {
+        ...d,
+        items: d.items.map((l) => ({
+          id: String(l.id),
+          author: l.authorName ?? '',
+          date: l.logDate ?? '',
+          summary: l.content ?? '',
+          status: logStatusLabel(l.status ?? ''),
+          visible: l.status === 'SUBMITTED' ? '直接上级可见' : l.status === 'DRAFT' ? '仅自己' : '-',
+        })),
+      };
     }
     await sleep(280);
     const items = mockLogs.filter((l) => (params.status ? l.status === params.status : true));
@@ -289,7 +301,15 @@ export const api = {
   // ===== 第6节 统计 =====
   /** GET /stats/overview —— 应提交人数、已提交人数、提交率、未提交人数 */
   async stats(): Promise<StatsData> {
-    if (!useMock()) return request<StatsData>('/stats/overview');
+    if (!useMock()) {
+      const d = await request<{ expected?: number; submitted?: number; rate?: number }>('/stats/overview');
+      return {
+        submitRate: Math.round(d.rate ?? 0),
+        total: d.expected ?? 0,
+        submitted: d.submitted ?? 0,
+        unsubmitted: [],
+      };
+    }
     await sleep();
     return { ...mockStats, unsubmitted: [...mockStats.unsubmitted] };
   },
@@ -341,8 +361,18 @@ export const api = {
     if (params.actor) q.set('actor', params.actor);
     if (params.action) q.set('action', params.action);
     if (!useMock()) {
-      const d = await requestPage<AuditRow>(`/audits?${q}`);
-      return d;
+      const d = await requestPage<{ id: number; actor?: string; action?: string; target?: string; time?: string; result?: string }>(`/audits?${q}`);
+      return {
+        ...d,
+        items: d.items.map((a) => ({
+          id: String(a.id),
+          actor: a.actor ?? '',
+          action: a.action ?? '',
+          target: a.target ?? '-',
+          time: a.time ?? '',
+          result: a.result === 'SUCCESS' ? '成功' : a.result ?? '',
+        })),
+      };
     }
     await sleep(180);
     const items = mockAudits.filter((a) => (params.actor ? a.actor.includes(params.actor) : true) && (params.action ? a.action.includes(params.action) : true));
@@ -350,15 +380,27 @@ export const api = {
   },
 };
 
-// users 表返回 role 是英文码、status 是 SMALLINT，统一映射成中文展示
-function mapUser(u: { realName?: string; username?: string; role?: string; status?: unknown; departmentId?: number | null; teamId?: number | null }): UserRow {
+// users 表返回 role 是英文码、status 是 ACTIVE/DISABLED，统一映射成中文展示
+interface RawUser {
+  id?: number;
+  username?: string;
+  realName?: string;
+  role?: string;
+  status?: unknown;
+  departmentId?: number | null;
+  departmentName?: string | null;
+  teamId?: number | null;
+  teamName?: string | null;
+}
+
+function mapUser(u: RawUser): UserRow {
   return {
     id: String(u.username ?? ''),
     username: u.username ?? '',
     name: u.realName ?? '',
-    dept: u.departmentId ? `部门${u.departmentId}` : '-',
-    team: u.teamId ? `团队${u.teamId}` : '-',
-    role: u.role ?? '',
+    dept: u.departmentName ?? '-',
+    team: u.teamName ?? '-',
+    role: codeToLabel(u.role ?? ''),
     status: statusLabel(u.status),
   };
 }
