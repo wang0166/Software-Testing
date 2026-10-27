@@ -21,3 +21,7 @@ pandora_web/dist/
 
 # Docker/local temp
 *.tar
+
+.env
+.env.local
+.env.cloud
