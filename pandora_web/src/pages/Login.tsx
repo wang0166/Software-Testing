@@ -37,8 +37,8 @@ export function Login() {
       <div className="pd-login-card">
         <div className="pd-login-mark">🟣</div>
         <h2 style={{ margin: '0 0 4px', fontSize: 24 }}>潘多拉 Web 管理端</h2>
-        <p className="pd-hint">管理员专用后台 · 账号用 username（英文）</p>
-        <input className="pd-input" style={{ width: '100%', marginBottom: 10 }} value={name} onChange={(e) => setName(e.target.value)} placeholder="登录账号 username" onKeyDown={(e) => e.key === 'Enter' && login()} />
+        <p className="pd-hint">管理员专用后台 · 使用开户时确认的账户名，默认取手机号</p>
+        <input className="pd-input" style={{ width: '100%', marginBottom: 10 }} value={name} onChange={(e) => setName(e.target.value)} placeholder="登录账户名（默认手机号，也支持已有账号）" onKeyDown={(e) => e.key === 'Enter' && login()} />
         <input className="pd-input" style={{ width: '100%' }} type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="密码" onKeyDown={(e) => e.key === 'Enter' && login()} />
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 10 }}>
           <label style={{ display: 'flex', gap: 7, alignItems: 'center', fontSize: 13, color: '#5b5880', cursor: 'pointer' }}>

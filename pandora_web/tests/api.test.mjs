@@ -7,7 +7,7 @@ import { resolve } from 'node:path';
 const outfile = resolve('dist/tests/api-bundle.mjs');
 await build({ stdin: { contents: "export * from './src/api/client'; export * from './src/api/http'; export * from './src/api/capabilities';", resolveDir: process.cwd() },
   bundle: true, platform: 'node', format: 'esm', outfile, define: { 'import.meta.env': '{"VITE_API_BASE":"/api","VITE_USE_MOCK":"false"}' } });
-const { api, request, requestPage, setTokens, getToken, setMockMode, supports } = await import(new URL('../dist/tests/api-bundle.mjs', import.meta.url));
+const { api, request, requestPage, setTokens, getToken, setMockMode, supports, BACKEND_CAPABILITIES } = await import(new URL('../dist/tests/api-bundle.mjs', import.meta.url));
 const memory = new Map();
 globalThis.localStorage = { getItem: key => memory.get(key) ?? null, setItem: (key, value) => memory.set(key, String(value)), removeItem: key => memory.delete(key) };
 globalThis.window = new EventTarget();
@@ -88,4 +88,43 @@ test('切换模式清理身份；演示事项新增编辑和组织新增能够�
   assert.ok((await api.listDepartments()).some(x => x.id === String(unit.id)));
   await api.deleteUnit('departments', String(unit.id));
   assert.ok(!(await api.listDepartments()).some(x => x.id === String(unit.id)));
+});
+
+test('创建请求同时携带手机号、手动账户名和原样初始密码，不额外发送表单状态', async () => {
+  // 仅对内存中的测试模块临时开放，生产能力开关不变；测试不访问真实后端。
+  BACKEND_CAPABILITIES.users = true;
+  const initialPassword = 'Test-only!Pass42#';
+  let called = false;
+  globalThis.fetch = async (url, init) => {
+    called = true;
+    assert.equal(url, '/api/users'); assert.equal(init.method, 'POST');
+    assert.deepEqual(JSON.parse(init.body), {
+      username: 'custom_account', password: initialPassword, realName: '测试用户', role: 'EMPLOYEE',
+      phone: '13000000000', departmentId: 2, teamId: 3, idNumber: '', gender: '女',
+    });
+    return response({ id: 123 });
+  };
+  try {
+    assert.deepEqual(await api.createUser({ username: ' custom_account ', password: initialPassword,
+      realName: ' 测试用户 ', role: '组员', phone: ' 13000000000 ', departmentId: 2, teamId: 3,
+      idNumber: '', gender: '女', usernameEdited: true }), { id: 123 });
+    assert.ok(called);
+    assert.ok(!JSON.stringify([...memory]).includes(initialPassword));
+  } finally { BACKEND_CAPABILITIES.users = false; }
+});
+
+test('用户详情与列表保留扩展资料，同时丢弃响应中的凭据字段', async () => {
+  BACKEND_CAPABILITIES.users = true;
+  const raw = { id: 123, username: 'custom_account', realName: '测试用户', role: 'EMPLOYEE', status: 'ACTIVE',
+    departmentId: 2, teamId: 3, phone: '13000000000', gender: '女', idNumber: '', passwordHash: 'must-not-escape' };
+  globalThis.fetch = async url => response(url.includes('?') ? { items: [raw], page: 1, size: 20, total: 1 } : raw);
+  try {
+    const detail = await api.getUser('123');
+    const row = (await api.listUsers()).items[0];
+    for (const item of [detail, row]) {
+      assert.equal(item.id, '123'); assert.equal(item.phone, raw.phone); assert.equal(item.gender, raw.gender);
+      assert.equal(item.idNumber, raw.idNumber); assert.equal(item.username, 'custom_account');
+      assert.equal(item.status, '启用'); assert.equal('passwordHash' in item, false); assert.equal('password' in item, false);
+    }
+  } finally { BACKEND_CAPABILITIES.users = false; }
 });

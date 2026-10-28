@@ -11,7 +11,7 @@ const PAGE_SIZE = 6;
 
 /**
  * 生成 16 位随机强密码：大小写字母 + 数字 + 特殊字符各至少 1 位，其余随机补齐
- * 用途：新建员工时点「生成」按钮自动填入初始密码，后端收到后 BCrypt 加密存储
+ * 用途：新建员工时自动填入初始密码；真实接口接入后由后端使用 BCrypt 哈希存储。
  *
  * @returns {string} 16 位强密码字符串
  */
@@ -54,6 +54,8 @@ function UsersContent() {
   const [page, setPage] = useState(1);
   const [showAdd, setShowAdd] = useState(false);
   const [form, setForm] = useState({ username: '', name: '', password: '', dept: '产品部', team: '如来佛组', role: '组员', idNumber: '', gender: '男', phone: '' });
+  const [usernameEdited, setUsernameEdited] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
   const [formErr, setFormErr] = useState('');
   const [detail, setDetail] = useState<UserRow | null>(null);
   const [pwTarget, setPwTarget] = useState<UserRow | null>(null);
@@ -62,18 +64,19 @@ function UsersContent() {
   const toast = useToast();
   const { confirm } = useConfirm();
 
-  const rows = useMemo(() => {
-    const base = [...(data?.items ?? []), ...local]
+  const allRows = useMemo(() => [...(data?.items ?? []), ...local]
       .filter((u) => !removed.includes(u.id))
-      .map((u) => ({ ...u, ...edits[u.id], ...(statusPatch[u.id] ? { status: statusPatch[u.id] } : {}) }));
+      .map((u) => ({ ...u, ...edits[u.id], ...(statusPatch[u.id] ? { status: statusPatch[u.id] } : {}) })),
+    [data, local, removed, statusPatch, edits]);
+  const rows = useMemo(() => {
     const key = dq.trim().toLowerCase();
-    return base.filter((u) => {
+    return allRows.filter((u) => {
       if (roleFilter !== '全部' && u.role !== roleFilter) return false;
       if (statusFilter !== '全部' && u.status !== statusFilter) return false;
       if (!key) return true;
       return `${u.username}${u.name}${u.dept}${u.team}${u.role}${u.status}`.toLowerCase().includes(key);
     });
-  }, [data, local, removed, statusPatch, edits, dq, roleFilter, statusFilter]);
+  }, [allRows, dq, roleFilter, statusFilter]);
 
   const pages = Math.max(1, Math.ceil(rows.length / PAGE_SIZE));
   const safePage = Math.min(page, pages);
@@ -85,18 +88,33 @@ function UsersContent() {
   const deptLocked = roleMeta?.departmentId === '必须为空';
   const teamLocked = roleMeta?.teamId === '必须为空';
 
+  const changePhone = (phone: string) => {
+    // 用户接管账号后，不再用手机号覆盖；已有账号保持不变。
+    setForm(current => ({ ...current, phone, username: !editing && !usernameEdited ? phone.trim() : current.username }));
+  };
+  const closeUserForm = () => {
+    if (saving) return;
+    setShowAdd(false); setFormErr(''); setShowPassword(false);
+    setForm(current => ({ ...current, password: '' }));
+  };
+  const copyPassword = async () => {
+    if (!form.password) return toast.push('err', '请先生成或填写初始密码');
+    try { await navigator.clipboard.writeText(form.password); toast.push('ok', '初始密码已复制，请通过安全渠道交付'); }
+    catch { toast.push('err', '无法复制，可点击显示后手动复制'); }
+  };
+
   const add = async () => {
     if (saving) return;
     const username = form.username.trim().toLowerCase();
     const name = form.name.trim();
-    if (!username) return setFormErr('请输入登录账号（username，英文）');
+    if (!username) return setFormErr('请输入手机号自动填入账号，或手动填写账户名');
     if (!/^[a-z0-9_]{3,20}$/.test(username)) return setFormErr('账号 3~20 位英文小写/数字/下划线');
     if (!name) return setFormErr('请输入姓名');
     if (name.length > 20) return setFormErr('姓名最多 20 字');
-    if (!editing && form.password.length < 6) return setFormErr('请设置初始密码');
+    if (!editing && (form.password.length < 6 || !form.password.trim())) return setFormErr('初始密码至少 6 位且不能全为空格');
     if (form.idNumber && !/^\d{17}[\dXx]$/.test(form.idNumber.trim())) return setFormErr('身份证号应为 18 位（末位可为 X）');
-    if (form.phone && !/^1\d{10}$/.test(form.phone.trim())) return setFormErr('电话号码应为 11 位手机号');
-    if (rows.some((u) => u.username === username && u.id !== editing?.id)) return setFormErr('该账号已存在，换一个');
+    if ((!editing || form.phone) && !/^1\d{10}$/.test(form.phone.trim())) return setFormErr('请输入有效的 11 位手机号');
+    if (allRows.some((u) => u.username === username && u.id !== editing?.id)) return setFormErr('该账号已存在，换一个');
     const department = departments.data?.find(d => d.name === form.dept);
     const team = teams.data?.find(t => t.name === form.team && t.parentId === department?.id);
     if (!deptLocked && !department) return setFormErr('请选择有效部门');
@@ -121,10 +139,12 @@ function UsersContent() {
         phone: form.phone.trim(),
       });
       setLocal((v) => [...v, { id: String(r?.id ?? `u-local-${Date.now()}`), username, name, dept: deptLocked ? '总部' : form.dept, team: teamLocked ? '-' : form.team, role: form.role, status: '启用', idNumber: form.idNumber.trim(), gender: form.gender, phone: form.phone.trim() }]);
-      writeOpLog('创建用户', `${name}(${username})`);
+      // 不将手机号账号或初始密码写进本地操作日志。
+      writeOpLog('创建用户', '本地演示账号');
       toast.push('ok', `已创建账号 ${name}`);
       setForm({ username: '', name: '', password: '', dept: '产品部', team: '如来佛组', role: '组员', idNumber: '', gender: '男', phone: '' });
       setShowAdd(false);
+      setUsernameEdited(false); setShowPassword(false);
     } catch (e) {
       setFormErr(e instanceof Error ? e.message : '创建失败');
     } finally { setSaving(false); }
@@ -134,7 +154,7 @@ function UsersContent() {
     const next = u.status === '启用' ? '停用' : '启用';
     try {
       await api.setUserStatus(u.id, next === '启用');
-      writeOpLog(next === '启用' ? '启用账号' : '停用账号', `${u.name}(${u.username})`);
+      writeOpLog(next === '启用' ? '启用账号' : '停用账号', '本地演示操作');
       if (u.id.startsWith('u-local-')) setLocal((v) => v.map((x) => (x.id === u.id ? { ...x, status: next } : x)));
       else setStatusPatch((m) => ({ ...m, [u.id]: next }));
       toast.push(next === '启用' ? 'ok' : 'info', `已${next} ${u.name}`);
@@ -146,7 +166,7 @@ function UsersContent() {
   const remove = async (u: UserRow) => {
     const ok = await confirm({ title: `删除用户「${u.name}」？`, desc: '仅移除本地演示数据；后端未提供删除接口。', okText: '删除', danger: true });
     if (!ok) return;
-    writeOpLog('删除用户', u.name);
+    writeOpLog('删除用户', '本地演示操作');
     if (u.id.startsWith('u-local-')) setLocal((v) => v.filter((x) => x.id !== u.id));
     else setRemoved((v) => (v.includes(u.id) ? v : [...v, u.id]));
     if (detail?.id === u.id) setDetail(null);
@@ -158,7 +178,7 @@ function UsersContent() {
     if (pwValue.length < 6) return toast.push('err', '密码至少 6 位');
     try {
       await api.resetPassword(pwTarget.id, pwValue);
-      writeOpLog('重置密码', pwTarget.name);
+      writeOpLog('重置密码', '本地演示操作');
       toast.push('ok', `已重置 ${pwTarget.name} 的密码`);
       setPwTarget(null); setPwValue('');
     } catch (e) {
@@ -204,7 +224,7 @@ function UsersContent() {
           <select className="pd-select" value={statusFilter} onChange={(e) => { setStatusFilter(e.target.value); setPage(1); }}>
             {['全部', ...USER_STATUS].map((s) => <option key={s} value={s}>{s}</option>)}
           </select>
-          <button className="pd-btn primary" onClick={() => { setEditing(null); setFormErr(''); setForm({ username: '', name: '', password: '', dept: departments.data?.[0]?.name ?? '', team: '', role: '组员', idNumber: '', gender: '男', phone: '' }); setShowAdd(true); }}>＋ 新增用户</button>
+          <button className="pd-btn primary" onClick={() => { setEditing(null); setFormErr(''); setUsernameEdited(false); setShowPassword(false); setForm({ username: '', name: '', password: '', dept: departments.data?.[0]?.name ?? '', team: '', role: '组员', idNumber: '', gender: '男', phone: '' }); setShowAdd(true); }}>＋ 新增用户</button>
           <button className="pd-btn" onClick={() => { downloadCSV('users.csv', [['账号', '姓名', '部门', '团队', '角色', '状态'], ...rows.map((u) => [u.username, u.name, u.dept, u.team, u.role, u.status])]); toast.push('ok', '已导出 users.csv'); }}>⤓ 导出</button>
           <button className="pd-btn" onClick={resetLocal}>↺ 回到基线</button>
         </div>
@@ -223,7 +243,7 @@ function UsersContent() {
                   <td><span className={`pd-pill ${u.status === '启用' ? 'green' : 'red'}`}><span className="pd-dot" style={{ background: u.status === '启用' ? '#17b58b' : '#e5484d' }} />{u.status}</span></td>
                   <td>
                     <button className="pd-btn" onClick={() => setDetail(u)}>详情</button>{' '}
-                    <button className="pd-btn" onClick={() => { setEditing(u); setFormErr(''); setForm({ username: u.username, name: u.name, password: '', dept: u.dept, team: u.team, role: u.role, idNumber: u.idNumber ?? '', gender: u.gender ?? '男', phone: u.phone ?? '' }); setShowAdd(true); }}>编辑</button>{' '}
+                    <button className="pd-btn" onClick={() => { setEditing(u); setFormErr(''); setUsernameEdited(true); setShowPassword(false); setForm({ username: u.username, name: u.name, password: '', dept: u.dept, team: u.team, role: u.role, idNumber: u.idNumber ?? '', gender: u.gender ?? '男', phone: u.phone ?? '' }); setShowAdd(true); }}>编辑</button>{' '}
                     <button className="pd-btn" onClick={() => toggleStatus(u)}>{u.status === '启用' ? '停用' : '启用'}</button>{' '}
                     <button className="pd-btn" onClick={() => setPwTarget(u)}>重置密码</button>{' '}
                     <button className="pd-btn danger" onClick={() => remove(u)}>演示移除</button>
@@ -244,21 +264,29 @@ function UsersContent() {
       </div>
 
       {showAdd && (
-        <Modal title={editing ? '编辑演示用户' : '新增演示用户'} onClose={() => { setShowAdd(false); setFormErr(''); }}
-          footer={<><button className="pd-btn" onClick={() => { setShowAdd(false); setFormErr(''); }}>取消</button><button className="pd-btn primary" disabled={saving} onClick={add}>{saving ? '保存中…' : '保存'}</button></>}>
+        <Modal title={editing ? '编辑演示用户' : '新增演示用户'} onClose={closeUserForm}
+          footer={<><button className="pd-btn" disabled={saving} onClick={closeUserForm}>取消</button><button className="pd-btn primary" disabled={saving} onClick={add}>{saving ? '保存中…' : '保存'}</button></>}>
           <div style={{ display: 'grid', gap: 10 }}>
-            <input className="pd-input" disabled={!!editing} value={form.username} onChange={(e) => setForm({ ...form, username: e.target.value })} placeholder="账号 username（必填，英文 3~20 位）" />
+            <label>电话号码{!editing && '（必填）'}
+              <input className="pd-input" style={{ width: '100%' }} type="tel" inputMode="numeric" autoComplete="off" disabled={!!editing} value={form.phone} onChange={(e) => changePhone(e.target.value)} placeholder="电话号码（11 位手机号）" maxLength={11} />
+            </label>
+            <label>{editing ? '账户名（已有账号保持不变）' : '账户名（可手动修改）'}
+              <input className="pd-input" style={{ width: '100%' }} autoComplete="off" disabled={!!editing} value={form.username} onChange={(e) => { setUsernameEdited(true); setForm({ ...form, username: e.target.value }); }} placeholder="账户名（手机号自动填入，可修改）" />
+            </label>
+            {!editing && <div className="pd-row" style={{ marginBottom: 0 }}><span className="pd-hint" style={{ margin: 0 }}>{usernameEdited ? '已手动修改，手机号变化不会覆盖账户名。' : '输入手机号会自动填入账户名；也可手动修改为 3～20 位小写字母、数字或下划线。'}</span>{usernameEdited && <button className="pd-btn" type="button" onClick={() => { setUsernameEdited(false); setForm({ ...form, username: form.phone.trim() }); }}>恢复手机号</button>}</div>}
             <input className="pd-input" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="姓名 realName（必填，最多 20 字）" />
             <div className="pd-row" style={{ marginBottom: 0, display: editing ? 'none' : undefined }}>
-              <input className="pd-input" style={{ flex: 1 }} type="password" autoComplete="new-password" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} placeholder="初始密码（点右侧按钮自动生成）" />
-              <button className="pd-btn" type="button" onClick={() => { const pwd = generateStrongPassword(); setForm({ ...form, password: pwd }); toast.push('ok', '已生成强密码，请及时复制告知员工'); }}>🎲 生成强密码</button>
+              <input className="pd-input" style={{ flex: 1 }} type={showPassword ? 'text' : 'password'} autoComplete="new-password" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} placeholder="初始密码（点右侧按钮自动生成）" />
+              <button className="pd-btn" type="button" aria-pressed={showPassword} onClick={() => setShowPassword(v => !v)}>{showPassword ? '隐藏密码' : '显示密码'}</button>
+              <button className="pd-btn" type="button" onClick={() => { const pwd = generateStrongPassword(); setForm({ ...form, password: pwd }); setShowPassword(false); toast.push('ok', '已生成强密码，可复制后安全交付'); }}>🎲 生成强密码</button>
+              <button className="pd-btn" type="button" disabled={!form.password} onClick={copyPassword}>复制密码</button>
             </div>
+            {!editing && <p className="pd-hint" style={{ margin: 0 }}>请通过安全渠道交付初始密码。演示模式不会保存或验证密码，关闭表单后清除。</p>}
             <input className="pd-input" disabled={!!editing} value={form.idNumber} onChange={(e) => setForm({ ...form, idNumber: e.target.value })} placeholder="身份证号（演示资料，可选）" maxLength={18} />
             <div className="pd-row" style={{ marginBottom: 0 }}>
               <select className="pd-select" disabled={!!editing} value={form.gender} onChange={(e) => setForm({ ...form, gender: e.target.value })} style={{ flex: 1 }}>
                 {['男', '女'].map((g) => <option key={g} value={g}>性别：{g}</option>)}
               </select>
-              <input className="pd-input" style={{ flex: 2 }} disabled={!!editing} value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} placeholder="电话号码（演示资料，可选）" maxLength={11} />
             </div>
             <div className="pd-row" style={{ marginBottom: 0 }}>
               <select className="pd-select" value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })}>

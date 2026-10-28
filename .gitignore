@@ -10,3 +10,6 @@ target/
 *.log
 hs_err_pid*
 .DS_Store
+
+# 本项目个人档案仅留本地
+/个人资料/

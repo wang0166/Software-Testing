@@ -5,6 +5,10 @@ import { requireCapability } from './capabilities';
 import { labelToCode, codeToLabel, PERMISSION_CODES, statusLabel, statusValue } from '../constants/roles';
 
 export interface UserRow { id: string; username: string; name: string; dept: string; team: string; role: string; status: string; idNumber?: string; gender?: string; phone?: string }
+export interface CreateUserInput {
+  username: string; password: string; realName: string; role: string; phone: string;
+  departmentId?: number | null; teamId?: number | null; idNumber?: string; gender?: string;
+}
 export interface OrgUnit { id: string; name: string; parentId?: string; description?: string }
 /** 公司十大事项：title=名字，content=备注，deadline=截止日期（YYYY-MM-DD），派发后全员手机端可见 */
 export interface CompanyMatter { id: string; title: string; content: string; sortOrder: number; deadline?: string }
@@ -157,9 +161,16 @@ export const api = {
       (!params.status || u.status === params.status) &&
       (!key || (u.username + u.name + u.dept + u.team).toLowerCase().includes(key))), page, size);
   },
-  async createUser(p: { username: string; password: string; realName: string; role: string; departmentId?: number | null; teamId?: number | null; idNumber?: string; gender?: string; phone?: string }) {
+  async createUser(p: CreateUserInput) {
     requireCapability('users');
-    if (!useMock()) return request<{ id: string }>('/users', { method: 'POST', body: JSON.stringify({ ...p, role: labelToCode(p.role) ?? p.role }) });
+    if (!useMock()) return request<{ id: number | string }>('/users', {
+      method: 'POST',
+      // 密码原样提交，哈希由后端完成；明确字段以免误传表单内部状态。
+      body: JSON.stringify({ username: p.username.trim(), password: p.password, realName: p.realName.trim(),
+        role: labelToCode(p.role) ?? p.role, phone: p.phone.trim(),
+        departmentId: p.departmentId ?? null, teamId: p.teamId ?? null,
+        idNumber: p.idNumber?.trim(), gender: p.gender }),
+    });
     await sleep();
     if (mockUsers.some(u => u.username === p.username)) throw new Error('该账号已存在');
     return { id: 'u-local-' + Date.now() };
@@ -290,9 +301,11 @@ function toUnits(d: unknown, parent: 'companyId' | 'departmentId'): OrgUnit[] {
 interface RawUser {
   id: number | string; username: string; realName: string; role: string; status: unknown;
   departmentId?: number | null; teamId?: number | null; departmentName?: string; teamName?: string;
+  phone?: string; gender?: string; idNumber?: string;
 }
 function mapUser(u: RawUser): UserRow {
   return { id: String(u.id), username: u.username, name: u.realName, role: codeToLabel(u.role),
     dept: u.departmentName ?? (u.departmentId == null ? '-' : '部门' + u.departmentId),
-    team: u.teamName ?? (u.teamId == null ? '-' : '团队' + u.teamId), status: statusLabel(u.status) };
+    team: u.teamName ?? (u.teamId == null ? '-' : '团队' + u.teamId), status: statusLabel(u.status),
+    phone: u.phone, gender: u.gender, idNumber: u.idNumber };
 }
