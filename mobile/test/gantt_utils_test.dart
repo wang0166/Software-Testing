@@ -71,6 +71,14 @@ void main() {
     expect(span.inferredStart, isTrue);
   });
 
+  test('分钟级任务时间仍能进入甘特图', () {
+    final spans = buildGanttSpans([
+      received('精确任务', '2026-10-21T09:30:00', '2026-10-22T17:45:00')
+    ], DateTime.utc(2026,10,1), DateTime.utc(2026,10,31));
+    expect(spans.single.startColumn, 20);
+    expect(spans.single.dayCount, 2);
+  });
+
   test('跨夏令时边界仍按日历天数计算', () {
     final span = buildGanttSpans(
       [received('跨月时区', '2026-10-31', '2026-11-03')],
@@ -81,3 +89,5 @@ void main() {
     expect(span.dayCount, 3);
   });
 }
+
+// Minute-precision timestamps are normalized to calendar days for Gantt spans.

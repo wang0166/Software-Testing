@@ -4,32 +4,51 @@ import '../core/models.dart';
 import '../core/theme.dart';
 import '../widgets/ui.dart';
 
-/// 只读任务数据地图：仅显示本人接收的任务与本人自建任务。
+/// AI地图入口：现阶段使用现有任务数据绘制状态关系图，不虚构 AI 分析结果。
+/// 若需智能知识图谱，需要服务端提供 AI 分析/关联接口。
 class TaskMapPage extends StatefulWidget {
   final AppState app;
-  const TaskMapPage({super.key,required this.app});
-  @override State<TaskMapPage> createState()=>_TaskMapPageState();
+  const TaskMapPage({super.key, required this.app});
+  @override State<TaskMapPage> createState() => _TaskMapPageState();
 }
 class _TaskMapPageState extends State<TaskMapPage> {
-  late Future<List<TaskItem>> _items;
-  @override void initState(){super.initState();_reload();}
-  void _reload(){_items=widget.app.repo.taskMap();}
-  @override Widget build(BuildContext context)=>Scaffold(
-    appBar:AppBar(title:const Text('任务数据地图')),
-    body:RefreshIndicator(onRefresh:() async{setState(_reload);await _items;},child:ListView(padding:const EdgeInsets.fromLTRB(20,12,20,30),children:[
-      const PageHeading(overline:'MY TASK MAP',title:'任务全景',description:'重要进展集中呈现，修改请前往任务页面'),
-      const SizedBox(height:17),SoftCard(color:Palette.sage,child:const Row(children:[Icon(Icons.map_outlined,color:Palette.primary,size:28),SizedBox(width:13),Expanded(child:Text('这里仅展示你收到的任务和自己创建的任务，不包含公司展示项。',style:TextStyle(fontSize:12,color:Palette.deep,height:1.65)))])),
-      const SizedBox(height:17),FutureBuilder<List<TaskItem>>(future:_items,builder:(context,s){
-        if(s.connectionState!=ConnectionState.done)return const Padding(padding:EdgeInsets.all(30),child:Center(child:CircularProgressIndicator()));
-        if(s.hasError)return ErrorPanel(error:s.error!,onRetry:()=>setState(_reload));
-        final data=s.data??[];
-        if(data.isEmpty)return const EmptyPanel(title:'暂无任务',subtitle:'收到的任务和自建任务会出现在这里');
-        return Column(children:[for(final task in data) Padding(padding:const EdgeInsets.only(bottom:12),child:SoftCard(child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[
-          Row(children:[Expanded(child:Text(task.name,style:const TextStyle(fontWeight:FontWeight.w900,fontSize:16,color:Palette.deep))),StatusBadge(status:task.status)]),
-          const SizedBox(height:9),Text(task.details,maxLines:3,overflow:TextOverflow.ellipsis,style:const TextStyle(height:1.5,fontSize:13,color:Palette.muted)),
-          const SizedBox(height:12),Wrap(spacing:8,runSpacing:7,children:[Pill(text:task.source=='PERSONAL'?'个人自建':'上级派发'),if(task.urgency=='URGENT'&&task.source!='PERSONAL')const Pill(text:'紧急',color:Color(0xFFB45E46),background:Color(0xFFFDEEE8)),if(task.deadline!=null)Pill(text:'截止 ${task.deadline}',color:const Color(0xFF6C7790),background:const Color(0xFFF0F1F8))]),
-        ])))]);
-      }),
-    ])),
-  );
+  late Future<List<TaskItem>> _future;
+  @override void initState() {super.initState(); _reload();}
+  void _reload() => _future = widget.app.repo.taskMap();
+  @override Widget build(BuildContext context) => RefreshIndicator(onRefresh: () async {setState(_reload); await _future;}, child: ListView(padding: const EdgeInsets.fromLTRB(20, 24, 20, 35), children: [
+    const Text('PANDORA  /  AI MAP', style: TextStyle(color: Palette.primary, fontWeight: FontWeight.w800, fontSize: 11, letterSpacing: 2)),
+    const SizedBox(height: 8), const Text('AI地图', style: TextStyle(color: Palette.deep, fontSize: 30, fontWeight: FontWeight.w900)),
+    const SizedBox(height: 5), const Text('任务关系与执行状态可视化', style: TextStyle(color: Palette.muted)),
+    const SizedBox(height: 17),
+    FutureBuilder<List<TaskItem>>(future: _future, builder: (context, snap) {
+      if (snap.connectionState != ConnectionState.done) return const Padding(padding: EdgeInsets.all(50), child: Center(child: CircularProgressIndicator()));
+      if (snap.hasError) return ErrorPanel(error: snap.error!, onRetry: () => setState(_reload));
+      final tasks = (snap.data ?? []).where((task) => task.source == 'RECEIVED').toList();
+      if (tasks.isEmpty) return const EmptyPanel(title: '暂无任务节点', subtitle: '收到的任务将自动加入任务地图');
+      return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Container(padding: const EdgeInsets.all(18), decoration: BoxDecoration(color: Palette.deep, borderRadius: BorderRadius.circular(20)), child: Row(children: [
+          const CircleAvatar(backgroundColor: Colors.white24, child: Icon(Icons.hub_outlined, color: Colors.white)), const SizedBox(width: 12),
+          Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [const Text('我的任务节点', style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w900)),
+            Text('共 ${tasks.length} 个 · 数据来源：上级派发', style: const TextStyle(color: Color(0xFFC4DFD9), fontSize: 11))])),
+        ])),
+        const SizedBox(height: 12),
+        ...['NOT_STARTED', 'IN_PROGRESS', 'COMPLETED'].map((status) {
+          final nodes = tasks.where((e) => e.status == status).toList();
+          return Padding(padding: const EdgeInsets.only(bottom: 13), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Row(children: [Container(width: 11, height: 11, decoration: BoxDecoration(color: status == 'COMPLETED' ? Palette.primary : status == 'IN_PROGRESS' ? Palette.gold : Palette.muted, shape: BoxShape.circle)),
+              const SizedBox(width: 8), Text('${const {'NOT_STARTED':'待开始','IN_PROGRESS':'进行中','COMPLETED':'已完成'}[status]} · ${nodes.length}', style: const TextStyle(color: Palette.deep, fontWeight: FontWeight.w900))]),
+            const SizedBox(height: 7),
+            if (nodes.isEmpty) const Padding(padding: EdgeInsets.only(left: 19), child: Text('暂无节点', style: TextStyle(color: Palette.muted, fontSize: 12)))
+            else ...nodes.map((t) => Padding(padding: const EdgeInsets.only(left: 13, bottom: 7), child: Container(
+              decoration: const BoxDecoration(border: Border(left: BorderSide(color: Palette.sage, width: 3))),
+              child: Padding(padding: const EdgeInsets.only(left: 13), child: Material(color: Colors.white, borderRadius: BorderRadius.circular(16), child: ListTile(
+                title: Text(t.name, style: const TextStyle(color: Palette.deep, fontWeight: FontWeight.w800)),
+                subtitle: Text('截止 ${t.deadline ?? '未设置'}'), trailing: StatusBadge(status: t.status),
+              )))))),
+          ]));
+        }),
+        const Text('说明：当前展示为任务状态地图，暂未接入 AI 自动推理或关联分析服务。', style: TextStyle(color: Palette.muted, fontSize: 11, height: 1.5)),
+      ]);
+    }),
+  ]));
 }

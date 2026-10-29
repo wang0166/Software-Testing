@@ -24,6 +24,20 @@ void main() {
     final logs=await repo.logs();
     expect(logs.every((log)=>log.authorId==user.id),isTrue);
   });
+  test('创始人日志按部门包含多个组织', () async {
+    final repo = MockRepository();
+    await repo.login('founder', 'demo123456');
+    final logs = await repo.logs();
+    expect(logs.map((l) => l.departmentName).toSet(), containsAll(['技术研发部', '产品设计部']));
+  });
+  test('密码修改必须先提交审核申请', () async {
+    final repo = MockRepository();
+    await repo.login('demo001', 'demo123456');
+    expect(await repo.passwordChangeStatus(), 'NONE');
+    await repo.requestPasswordChange();
+    expect(await repo.passwordChangeStatus(), 'PENDING');
+    expect(() => repo.completePasswordChange('newSecurePassword123'), throwsA(isA<AppFailure>()));
+  });
   test('管理员不可写日志',() async {
     final repo=MockRepository();
     await repo.login('admin','demo123456');

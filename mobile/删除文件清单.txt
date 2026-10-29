@@ -1,0 +1,2 @@
+lib/pages/home/home_page.dart
+lib/services/mock_auth_service.dart

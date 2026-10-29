@@ -13,11 +13,13 @@ import '../widgets/redesign.dart';
 class CalendarPage extends StatefulWidget {
   final AppState app;
   final int initialMode; // 0 month, 1 week, 2 day, 3 gantt
+  final bool embedded;
 
   const CalendarPage({
     super.key,
     required this.app,
     this.initialMode = 0,
+    this.embedded = false,
   });
 
   @override
@@ -123,7 +125,7 @@ class _CalendarPageState extends State<CalendarPage> {
 
   @override
   Widget build(BuildContext context) => Scaffold(
-        appBar: AppBar(title: const Text('日历计划')),
+        appBar: widget.embedded ? null : AppBar(title: const Text('日历视图')),
         body: SafeArea(
           child: RefreshIndicator(
             onRefresh: _refresh,
@@ -161,6 +163,22 @@ class _CalendarPageState extends State<CalendarPage> {
         ),
       );
 
+  Future<void> _pickDate() async {
+    final picked = await showDatePicker(
+      context: context, initialDate: _selected,
+      firstDate: DateTime(2020), lastDate: DateTime(2100),
+      initialDatePickerMode: DatePickerMode.year,
+      helpText: '选择年、月、日',
+      cancelText: '取消', confirmText: '确定',
+    );
+    if (picked == null || !mounted) return;
+    setState(() {
+      _selected = picked;
+      _month = DateTime(picked.year, picked.month);
+      _reload();
+    });
+  }
+
   Widget _controls() => StoryCard(
         color: const Color(0xFFE9F6F0),
         padding: const EdgeInsets.fromLTRB(14, 12, 14, 15),
@@ -174,10 +192,14 @@ class _CalendarPageState extends State<CalendarPage> {
                   onPressed: () => _shift(-1),
                 ),
                 Expanded(
-                  child: Text(
-                    _periodText,
-                    textAlign: TextAlign.center,
-                    style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w900, color: Palette.deep),
+                  child: InkWell(
+                    key: const Key('calendar_date_picker'),
+                    onTap: _pickDate,
+                    borderRadius: BorderRadius.circular(12),
+                    child: Padding(padding: const EdgeInsets.symmetric(vertical: 9), child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+                      Flexible(child: Text(_periodText, textAlign: TextAlign.center, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w900, color: Palette.deep))),
+                      const SizedBox(width: 5), const Icon(Icons.arrow_drop_down_circle_outlined, size: 19, color: Palette.primary),
+                    ])),
                   ),
                 ),
                 TextButton(

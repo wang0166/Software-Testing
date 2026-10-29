@@ -10,6 +10,10 @@ abstract class PandoraRepository {
   Future<UserProfile?> restore();
   Future<UserProfile> login(String username,String password);
   Future<void> logout();
+  Future<void> requestPasswordReset(String username);
+  Future<void> requestPasswordChange();
+  Future<String> passwordChangeStatus();
+  Future<void> completePasswordChange(String newPassword);
   Future<List<WorkLog>> logs({String? date,String? status});
   Future<WorkLog> saveLog(String content,{int? id});
   Future<WorkLog> submitLog(int id);
