@@ -38,7 +38,7 @@
 ## 服务器交接
 
 1. 运维提供 PostgreSQL 数据库、连接用户与密码；后端配置 SPRING_DATASOURCE_URL、SPRING_DATASOURCE_USERNAME、SPRING_DATASOURCE_PASSWORD、JWT_SECRET、ADMIN_INIT_PASSWORD，敏感值由安全配置渠道提供。
-2. `mvn test` 验证后执行 `mvn package`，运行 `java -jar target/pandora-log-backend-0.1.0-SNAPSHOT.jar`。Flyway 按顺序应用 V1～V7，已有标准 V6 数据库只应用 V7，V5 数据库依次应用 V6/V7；不改旧迁移、不清历史数据。
+2. `mvn test` 验证后执行 `mvn package`，运行 `java -jar target/pandora-log-backend-0.1.0-SNAPSHOT.jar`。Flyway 按顺序应用 V1～V8，已有标准 V7 数据库只应用 V8，标准 V6 数据库依次应用 V7/V8，V5 数据库依次应用 V6/V7/V8；不改旧迁移、不清历史数据。
    - 服务器已有数据库时，先备份并检查 flyway_schema_history 的最近版本与迁移状态，再启动升级。
    - 如果是手工建表或没有 Flyway 历史，先对照 V1～V5 核对实际表结构，由部署同学确认接管方案；不要直接启用 baseline 或 clean，也不要删表重建。
    - V6 会检查用户角色字典、团队与部门一致性、父评论所属日志及提交时间；若已有数据不满足约束，先确认修复方案，不通过清库或伪造时间跳过。
@@ -56,3 +56,6 @@
 - 权限：未登录 401，非管理员管理请求 403，重复/关联冲突 409，参数错误 400；真实失败不回退演示或伪造成功。
 
 本轮 60 项后端测试包含真实 PostgreSQL 契约、V5→V7/标准 V6→V7 升级、旧本地 V6 校验和保留与并发负责人测试；浏览器通过实际 HTTP 连接后端完成主要流程。仍需服务器部署后的环境复验。
+
+
+新版移动端后端补齐新增 V8：任务日期升级为分钟时间并保留原日期覆盖范围、日志组织信息与截止处理、严格点评关系及密码申请审核。接口与实机交接见 [移动端新版后端对接与验收](移动端新版后端对接与验收.md)。上文 60 项为此前 Web 交付验证；新版自动化验证结果见本轮交付说明，不能据此宣称新版实机已通过。Web 审核 UI 不在本次后端改动范围。

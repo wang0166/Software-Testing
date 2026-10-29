@@ -32,6 +32,10 @@ public enum ErrorCode {
     TASK_STATUS_CONFLICT(40910, 409, "任务状态转换非法"),
     REVIEW_ALREADY_PENDING(40911, 409, "已存在待检查邀约"),
     REVIEW_ALREADY_HANDLED(40912, 409, "检查结果已处理或不可重复"),
+    PASSWORD_REQUEST_CONFLICT(40920, 409, "密码申请已存在、过期或已处理"),
+    PASSWORD_APPROVAL_REQUIRED(40320, 403, "需要有效的密码修改批准"),
+    PASSWORD_RESET_INVALID(40020, 400, "恢复凭据无效或已过期"),
+    TOO_MANY_REQUESTS(42901, 429, "请求过于频繁，请稍后重试"),
     INTERNAL_ERROR(50000, 500, "服务内部错误");
 
     private final int code;

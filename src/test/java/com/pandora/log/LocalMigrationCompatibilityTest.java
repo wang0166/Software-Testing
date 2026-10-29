@@ -22,17 +22,17 @@ class LocalMigrationCompatibilityTest extends EmbeddedPostgresSupport {
         var source = database("pandora_fresh_migration_test");
         String location = LocalMigrationCompatibility.location(source, directory.resolve("pgdata"));
         assertThat(location).isEqualTo("classpath:db/migration");
-        assertThat(Flyway.configure().dataSource(source).locations(location).load().migrate().migrationsExecuted).isEqualTo(7);
+        assertThat(Flyway.configure().dataSource(source).locations(location).load().migrate().migrationsExecuted).isEqualTo(8);
     }
 
-    @Test void serverVersionSixUpgradesByOneMigrationAndPreservesUsers() throws Exception {
+    @Test void serverVersionSixUpgradesAndPreservesUsers() throws Exception {
         var source = database("pandora_server_v6_test");
         Flyway.configure().dataSource(source).target("6").load().migrate();
         JdbcTemplate jdbc = new JdbcTemplate(source);
         Long users = jdbc.queryForObject("SELECT count(*) FROM users", Long.class);
         String location = LocalMigrationCompatibility.location(source, directory.resolve("pgdata"));
         assertThat(location).isEqualTo("classpath:db/migration");
-        assertThat(Flyway.configure().dataSource(source).locations(location).load().migrate().migrationsExecuted).isEqualTo(1);
+        assertThat(Flyway.configure().dataSource(source).locations(location).load().migrate().migrationsExecuted).isEqualTo(2);
         assertThat(jdbc.queryForObject("SELECT count(*) FROM users", Long.class)).isEqualTo(users);
         assertThat(jdbc.queryForObject("SELECT count(*) FROM information_schema.columns WHERE table_name='users' AND column_name='phone'", Long.class)).isEqualTo(1);
     }
@@ -46,7 +46,7 @@ class LocalMigrationCompatibilityTest extends EmbeddedPostgresSupport {
         String location = LocalMigrationCompatibility.location(source, directory.resolve("pgdata"));
         assertThat(location).startsWith("filesystem:");
         Flyway flyway = Flyway.configure().dataSource(source).locations(location).load();
-        assertThat(flyway.migrate().migrationsExecuted).isEqualTo(1);
+        assertThat(flyway.migrate().migrationsExecuted).isEqualTo(2);
         assertThat(jdbc.queryForMap("SELECT script, checksum FROM flyway_schema_history WHERE version='6'")).isEqualTo(before);
         assertThat(jdbc.queryForList("SELECT id, username, password_hash FROM users ORDER BY id")).isEqualTo(users);
         assertThat(jdbc.queryForObject("SELECT count(*) FROM pg_constraint WHERE conname='fk_users_team_department'", Long.class)).isEqualTo(1);
@@ -68,7 +68,7 @@ class LocalMigrationCompatibilityTest extends EmbeddedPostgresSupport {
         Path oldFiles = directory.resolve("legacy-input"); Files.createDirectories(oldFiles);
         for (var resource : new PathMatchingResourcePatternResolver().getResources("classpath*:db/migration/V*__*.sql")) {
             String name = resource.getFilename();
-            if (name.startsWith("V6__") || name.startsWith("V7__")) continue;
+            if (!name.matches("V[1-5]__.*")) continue;
             try (var input = resource.getInputStream()) { Files.write(oldFiles.resolve(name), input.readAllBytes()); }
         }
         String original = new ClassPathResource("local-web-legacy/V6__web_admin_management.sql").getContentAsString(java.nio.charset.StandardCharsets.UTF_8);

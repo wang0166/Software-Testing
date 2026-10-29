@@ -10,6 +10,7 @@ import org.springframework.web.servlet.HandlerInterceptor;
 import org.springframework.web.servlet.config.annotation.InterceptorRegistry;
 import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 import com.pandora.log.controller.AdminController;
+import com.pandora.log.controller.PasswordController;
 import com.pandora.log.common.CurrentUser;
 import com.pandora.log.security.CurrentUserContext;
 import jakarta.servlet.http.HttpServletRequest;
@@ -24,13 +25,16 @@ public class AdminAuditInterceptor implements HandlerInterceptor, WebMvcConfigur
     public AdminAuditInterceptor(JdbcTemplate jdbc, CurrentUserContext context) { this.jdbc = jdbc; this.context = context; }
     @Override public void addInterceptors(InterceptorRegistry registry) { registry.addInterceptor(this).addPathPatterns("/api/**"); }
     @Override public void afterCompletion(HttpServletRequest request, HttpServletResponse response, Object handler, Exception error) {
-        if (!(handler instanceof HandlerMethod method) || method.getBeanType() != AdminController.class
+        if (!(handler instanceof HandlerMethod method)
+                || (method.getBeanType() != AdminController.class && method.getBeanType() != PasswordController.class)
                 || !Set.of("POST", "PUT", "PATCH", "DELETE").contains(request.getMethod()) || response.getStatus() < 400) return;
         String[] parts = request.getRequestURI().split("/");
         String resource = parts.length > 2 ? parts[2] : "unknown";
         String id = parts.length > 3 && parts[3].matches("[0-9]{1,19}") ? parts[3] : null;
         String action = request.getMethod() + " " + resource;
-        if (resource.equals("users") && parts.length > 4) {
+        if (method.getBeanType() == PasswordController.class) {
+            action = resource.equals("password-requests") ? "审批密码申请" : "密码申请或修改";
+        } else if (resource.equals("users") && parts.length > 4) {
             action = parts[4].equals("password") ? "重置密码" : "更新账号状态";
         } else {
             String object = switch (resource) {

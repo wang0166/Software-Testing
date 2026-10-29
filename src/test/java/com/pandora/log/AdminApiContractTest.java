@@ -25,6 +25,7 @@ class AdminApiContractTest extends EmbeddedPostgresSupport {
     private static final String URL = createDatabase("pandora_admin_api_test");
     private static final String PASSWORD = "test-initial-pass";
     @DynamicPropertySource static void database(DynamicPropertyRegistry r) {
+        r.add("app.log-deadline-job.enabled", () -> "false");
         r.add("spring.datasource.url", () -> URL);
         r.add("spring.datasource.username", () -> "postgres"); r.add("spring.datasource.password", () -> "");
         r.add("app.jwt.secret", () -> "pandora-admin-test-secret-key-01234567890");

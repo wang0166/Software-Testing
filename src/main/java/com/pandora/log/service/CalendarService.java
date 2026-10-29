@@ -1,6 +1,7 @@
 package com.pandora.log.service;
 
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.List;
@@ -59,7 +60,7 @@ public class CalendarService {
         List<TaskRow> tasks = jdbcTemplate.query(
                 "SELECT t.id AS task_id, a.id AS assignment_id, t.name, a.execution_status, a.review_status, "
                         + "t.start_date, t.deadline FROM task_assignments a JOIN tasks t ON t.id = a.task_id "
-                        + "WHERE a.assignee_id = ? AND t.start_date <= ? AND t.deadline >= ? "
+                        + "WHERE a.assignee_id = ? AND t.start_date < ? AND t.deadline >= ? "
                         + "ORDER BY t.deadline, t.id",
                 (rs, index) -> new TaskRow(
                         rs.getLong("task_id"),
@@ -67,9 +68,9 @@ public class CalendarService {
                         rs.getString("name"),
                         rs.getString("execution_status"),
                         rs.getString("review_status"),
-                        rs.getObject("start_date", LocalDate.class),
-                        rs.getObject("deadline", LocalDate.class)),
-                currentUser.id(), toDate, fromDate);
+                        rs.getObject("start_date", LocalDateTime.class),
+                        rs.getObject("deadline", LocalDateTime.class)),
+                currentUser.id(), toDate.plusDays(1).atStartOfDay(), fromDate.atStartOfDay());
 
         Map<LocalDate, List<CalendarLogDto>> logsByDate = logs.stream().collect(Collectors.groupingBy(
                 LogRow::date,
@@ -81,7 +82,7 @@ public class CalendarService {
             LocalDate current = date;
             List<CalendarLogDto> dayLogs = logsByDate.getOrDefault(current, List.of());
             List<CalendarTaskDto> dayTasks = tasks.stream()
-                    .filter(task -> !current.isBefore(task.startDate()) && !current.isAfter(task.deadline()))
+                    .filter(task -> !current.isBefore(task.startDate().toLocalDate()) && !current.isAfter(task.deadline().toLocalDate()))
                     .map(task -> new CalendarTaskDto(task.taskId(), task.assignmentId(), task.name(),
                             task.executionStatus(), task.reviewStatus()))
                     .toList();
@@ -106,13 +107,13 @@ public class CalendarService {
         List<TaskMapItemDto> items = jdbcTemplate.query(
                 "SELECT * FROM ("
                         + "SELECT 'DISPATCHED' AS source, t.id AS task_id, a.id AS assignment_id, "
-                        + "CAST(NULL AS BIGINT) AS personal_task_id, t.name, t.details, t.deadline, t.urgency, "
+                        + "CAST(NULL AS BIGINT) AS personal_task_id, t.name, t.details, t.start_date, t.deadline, t.urgency, "
                         + "a.execution_status, a.review_status, a.updated_at "
                         + "FROM task_assignments a JOIN tasks t ON t.id = a.task_id WHERE a.assignee_id = ? "
                         + "UNION ALL "
                         + "SELECT 'PERSONAL' AS source, CAST(NULL AS BIGINT) AS task_id, "
                         + "CAST(NULL AS BIGINT) AS assignment_id, p.id AS personal_task_id, p.name, p.details, "
-                        + "CAST(NULL AS DATE) AS deadline, CAST(NULL AS VARCHAR) AS urgency, p.status AS execution_status, "
+                        + "CAST(NULL AS TIMESTAMP) AS start_date, CAST(NULL AS TIMESTAMP) AS deadline, CAST(NULL AS VARCHAR) AS urgency, p.status AS execution_status, "
                         + "CAST(NULL AS VARCHAR) AS review_status, p.updated_at "
                         + "FROM personal_tasks p WHERE p.owner_id = ?"
                         + ") m ORDER BY m.updated_at DESC, m.source, m.name LIMIT ? OFFSET ?",
@@ -123,7 +124,8 @@ public class CalendarService {
                         rs.getObject("personal_task_id") == null ? null : rs.getLong("personal_task_id"),
                         rs.getString("name"),
                         rs.getString("details"),
-                        rs.getObject("deadline", LocalDate.class),
+                        rs.getObject("start_date", LocalDateTime.class),
+                        rs.getObject("deadline", LocalDateTime.class),
                         rs.getString("urgency"),
                         rs.getString("execution_status"),
                         rs.getString("review_status")),
@@ -173,6 +175,6 @@ public class CalendarService {
     }
 
     private record TaskRow(Long taskId, Long assignmentId, String name, String executionStatus,
-            String reviewStatus, LocalDate startDate, LocalDate deadline) {
+            String reviewStatus, LocalDateTime startDate, LocalDateTime deadline) {
     }
 }
