@@ -39,12 +39,12 @@ class DatabaseMigrationTest extends EmbeddedPostgresSupport {
 
     @Test
     void migratesEmptyDatabaseToLatestVersion() {
-        assertThat(firstRun.migrationsExecuted).isEqualTo(5);
+        assertThat(firstRun.migrationsExecuted).isEqualTo(7);
 
         Flyway flyway = flyway(jdbcUrl);
         MigrationInfo current = flyway.info().current();
         assertThat(current).isNotNull();
-        assertThat(current.getVersion().getVersion()).isEqualTo("5");
+        assertThat(current.getVersion().getVersion()).isEqualTo("7");
         assertThat(current.getState().isApplied()).isTrue();
         assertThat(flyway.info().pending()).isEmpty();
     }
@@ -69,6 +69,36 @@ class DatabaseMigrationTest extends EmbeddedPostgresSupport {
     @Test
     void keepsMigrationsIdempotentOnRestart() {
         assertThat(flyway(jdbcUrl).migrate().migrationsExecuted).isZero();
+    }
+
+    @Test
+    void upgradesVersionFiveWithoutInventingLegacyProfileOrMatterDates() throws SQLException {
+        String upgradeUrl = createDatabase("pandora_admin_upgrade_test");
+        Flyway.configure().dataSource(upgradeUrl, "postgres", "").target("5").load().migrate();
+        String previousHash;
+        try (Connection connection = DriverManager.getConnection(upgradeUrl);
+                Statement statement = connection.createStatement()) {
+            statement.execute("INSERT INTO company_matters(title,content,updated_by) SELECT '旧事项','保留内容',id FROM users WHERE role_code='FOUNDER' LIMIT 1");
+            try (ResultSet rs = statement.executeQuery("SELECT password_hash FROM users WHERE username='employee'")) {
+                rs.next(); previousHash = rs.getString(1);
+            }
+        }
+        assertThat(flyway(upgradeUrl).migrate().migrationsExecuted).isEqualTo(2);
+        try (Connection connection = DriverManager.getConnection(upgradeUrl);
+                Statement statement = connection.createStatement()) {
+            try (ResultSet rs = statement.executeQuery("SELECT password_hash,phone,auth_version FROM users WHERE username='employee'")) {
+                rs.next(); assertThat(rs.getString(1)).isEqualTo(previousHash);
+                assertThat(rs.getString(2)).isNull(); assertThat(rs.getInt(3)).isZero();
+            }
+            try (ResultSet rs = statement.executeQuery("SELECT start_date,deadline,content FROM company_matters")) {
+                rs.next(); assertThat(rs.getObject(1)).isNull(); assertThat(rs.getObject(2)).isNull();
+                assertThat(rs.getString(3)).isEqualTo("保留内容");
+            }
+            connection.setAutoCommit(false);
+            assertThat(sqlStateOf(connection, "UPDATE company_matters SET start_date='2026-10-29 09:30+08', deadline='2026-10-29 18:00+08'"))
+                    .isEqualTo("23514");
+            connection.rollback();
+        }
     }
 
     @Test

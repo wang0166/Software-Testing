@@ -14,7 +14,7 @@
 | 层面 | 选型 |
 |---|---|
 | 移动端 | Flutter（Dart） |
-| Web 管理端 | React + JavaScript |
+| Web 管理端 | React + TypeScript + Vite |
 | 后端 | Java + Spring Boot |
 | 数据持久层 | MyBatis |
 | 数据库 | PostgreSQL |
@@ -64,9 +64,11 @@
 
 部署与运行说明见 [技术设计文档](./documents/技术设计文档.md) 第 13 章，简要步骤如下：
 
-1. 使用 docker-compose 启动数据库、后端和 Web 管理端。
-2. 后端通过 Flyway 自动初始化表结构与种子数据。
-3. Android 端使用 Flutter 构建并安装 APK。
+1. 本地可用 `tools/start-local-backend.ps1` 启动后端及独立 PostgreSQL，无需另装数据库；初始管理员密码通过安全输入设置。
+2. 后端通过 Flyway 自动应用 V1～V7；Web 在 pandora_web 中运行 `npm run dev`，登录时取消演示模式可连接真实接口。
+3. Android 端使用 Flutter 构建并安装 APK。服务器部署使用独立 PostgreSQL 与生产环境配置，不使用本地启动器。
+
+用户、部门/团队、团队人员、审计和公司事项整点读写已在本地补齐并联调；尚未代表服务器已部署。详细步骤与交接清单见 [Web 管理端后端启动与验收](documents/Web管理端后端启动与验收.md)。
 
 ### 演示账号
 

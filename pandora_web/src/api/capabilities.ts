@@ -1,13 +1,11 @@
 import { isMock } from './http';
 
-// 依据当前后端控制器核对，新增后端接口后在此显式开放对应模块。
+// 管理接口已实现并通过真实 PostgreSQL 契约测试；连接旧版服务时失败会明确显示，不回退演示。
 export const BACKEND_CAPABILITIES = {
-  users: false,
-  organization: false,
-  roles: false,
-  config: false,
-  audits: false,
-  matterWrite: false,
+  users: true,
+  organization: true,
+  audits: true,
+  matterWrite: true,
 } as const;
 
 export type Capability = keyof typeof BACKEND_CAPABILITIES;

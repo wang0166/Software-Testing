@@ -72,6 +72,11 @@ public class AuthFilter extends OncePerRequestFilter {
                 securityErrorWriter.write(response, ErrorCode.ACCOUNT_LOCKED);
                 return;
             }
+            Integer version = claims.get("version", Integer.class);
+            if ((version == null ? 0 : version) != user.getAuthVersion()) {
+                securityErrorWriter.write(response, ErrorCode.INVALID_TOKEN);
+                return;
+            }
 
             Set<String> permissions = new LinkedHashSet<>(
                     permissionMapper.findPermissionCodesByRole(user.getRoleCode()));

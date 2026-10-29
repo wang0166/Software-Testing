@@ -2,16 +2,18 @@
 // 仅主动开启的演示模式使用 mock；真实模式不兜底，不调用尚未实现的管理接口。
 import { request, requestPage, clearTokens, getToken, getRefreshToken, isMock, setTokens, sleep, type PageData } from './http';
 import { requireCapability } from './capabilities';
-import { labelToCode, codeToLabel, PERMISSION_CODES, statusLabel, statusValue } from '../constants/roles';
+import { labelToCode, codeToLabel, statusLabel, statusValue } from '../constants/roles';
+import { isMatterHour } from '../utils/matterTime';
 
-export interface UserRow { id: string; username: string; name: string; dept: string; team: string; role: string; status: string; idNumber?: string; gender?: string; phone?: string }
+export interface UserRow { id: string; username: string; name: string; dept: string; team: string; role: string; status: string; departmentId?: string | null; teamId?: string | null; idNumber?: string; gender?: string; phone?: string }
 export interface CreateUserInput {
   username: string; password: string; realName: string; role: string; phone: string;
   departmentId?: number | null; teamId?: number | null; idNumber?: string; gender?: string;
 }
 export interface OrgUnit { id: string; name: string; parentId?: string; description?: string }
-/** 公司十大事项：title=名字，content=备注，deadline=截止日期（YYYY-MM-DD），派发后全员手机端可见 */
-export interface CompanyMatter { id: string; title: string; content: string; sortOrder: number; deadline?: string }
+/** 公司事项独立于任务派发；时间按上海时区整点记录，兼容旧纯日期响应。 */
+export interface CompanyMatter { id: string; title: string; content: string; sortOrder: number; startDate?: string; deadline?: string }
+export interface CompanyMatterInput { title: string; content: string; sortOrder: number; startDate: string; deadline: string }
 export interface AuditRow { id: string; actor: string; action: string; target: string; time: string; result: string }
 export interface RolePerm { roleCode: string; label: string; permissions: string[] }
 
@@ -64,8 +66,8 @@ export const mockTeams: OrgUnit[] = [
   { id: '4', name: '架构组', parentId: '3', description: '负责技术架构选型与攻坚' },
 ];
 export const mockMatters: CompanyMatter[] = [
-  { id: 'm-1', title: 'Sprint2 后端骨架交付', content: '完成登录与组织接口联调', sortOrder: 1, deadline: '2026-11-15' },
-  { id: 'm-2', title: 'M2 组织管理验收', content: '用户/组织/角色页 Web 侧可用', sortOrder: 2, deadline: '2026-11-30' },
+  { id: 'm-1', title: 'Sprint2 后端骨架交付', content: '完成登录与组织接口联调', sortOrder: 1, startDate: '2026-10-26T09:00:00+08:00', deadline: '2026-11-15T18:00:00+08:00' },
+  { id: 'm-2', title: 'M2 组织管理验收', content: '用户与组织管理 Web 侧可用', sortOrder: 2, startDate: '2026-11-01T09:00:00+08:00', deadline: '2026-11-30T18:00:00+08:00' },
   { id: 'm-3', title: '需求 V1.0 冻结', content: '五项待确认问题闭环后冻结', sortOrder: 3, deadline: '2026-12-10' },
 ];
 export const mockAudits: AuditRow[] = [
@@ -82,8 +84,6 @@ export const mockRolePerms: RolePerm[] = [
   { roleCode: 'FOUNDER', label: '创始人', permissions: ['task:dispatch', 'task:execute', 'task:self', 'content:read', 'company-task:manage'] },
   { roleCode: 'ADMIN', label: '管理员', permissions: ['user:manage', 'org:manage', 'role:manage', 'config:manage', 'audit:read', 'content:read', 'company-matter:manage'] },
 ];
-export const mockConfigs: Record<string, string> = { log_deadline: '22:00' };
-
 // ---------------- 接口方法 ----------------
 const useMock = isMock;
 const mockPerms = () => mockRolePerms.find(r => r.roleCode === localStorage.getItem(ROLE_KEY))?.permissions ?? [];
@@ -144,22 +144,40 @@ export const api = {
   },
   currentUser() { return getToken() ? localStorage.getItem(USER_KEY) ?? '' : ''; },
   currentRole() { return localStorage.getItem(ROLE_KEY) ?? ''; },
-  async listUsers(params: { keyword?: string; role?: string; status?: string; page?: number; size?: number } = {}): Promise<PageData<UserRow>> {
+  async listUsers(params: { keyword?: string; role?: string; status?: string; departmentId?: string; teamId?: string; page?: number; size?: number } = {}): Promise<PageData<UserRow>> {
     requireCapability('users');
     const page = params.page ?? 1, size = params.size ?? 20;
     const q = new URLSearchParams({ page: String(page), size: String(size) });
     if (params.keyword) q.set('keyword', params.keyword);
     if (params.role) q.set('role', labelToCode(params.role) ?? params.role);
     if (params.status) q.set('status', String(statusValue(params.status)));
+    if (params.departmentId) q.set('departmentId', params.departmentId);
+    if (params.teamId) q.set('teamId', params.teamId);
     if (!useMock()) {
       const d = await requestPage<RawUser>('/users?' + q);
       return { ...d, items: d.items.map(mapUser) };
     }
     await sleep();
     const key = (params.keyword ?? '').trim().toLowerCase();
-    return pageOf(mockUsers.filter(u => (!params.role || u.role === params.role) &&
+    return pageOf(demoUserRows().filter(u => (!params.role || u.role === (codeToLabel(params.role))) &&
       (!params.status || u.status === params.status) &&
+      (!params.departmentId || u.departmentId === params.departmentId) &&
+      (!params.teamId || u.teamId === params.teamId) &&
       (!key || (u.username + u.name + u.dept + u.team).toLowerCase().includes(key))), page, size);
+  },
+  async listTeamMembers(teamId: string, params: { keyword?: string; page?: number; size?: number } = {}): Promise<PageData<UserRow>> {
+    requireCapability('users');
+    if (!useMock()) {
+      const data = await api.listUsers({ ...params, teamId });
+      // 不将服务器忽略筛选条件的结果当作本团队成员展示。
+      if (data.items.some(user => user.teamId !== teamId)) throw new Error('成员响应的团队归属与所选团队不一致，请核对后端筛选');
+      return data;
+    }
+    await sleep();
+    if (!mockTeams.some(team => team.id === teamId)) throw new Error('团队不存在');
+    const key = (params.keyword ?? '').trim().toLowerCase();
+    const rows = demoUserRows().filter(user => user.teamId === teamId && (!key || (user.name + user.username).toLowerCase().includes(key)));
+    return pageOf(rows, params.page ?? 1, params.size ?? 5);
   },
   async createUser(p: CreateUserInput) {
     requireCapability('users');
@@ -172,35 +190,67 @@ export const api = {
         idNumber: p.idNumber?.trim(), gender: p.gender }),
     });
     await sleep();
-    if (mockUsers.some(u => u.username === p.username)) throw new Error('该账号已存在');
-    return { id: 'u-local-' + Date.now() };
+    if (demoUserRows().some(u => u.username === p.username.trim())) throw new Error('该账号已存在，换一个');
+    const id = 'u-local-' + crypto.randomUUID();
+    const departmentId = p.departmentId == null ? null : String(p.departmentId);
+    const teamId = p.teamId == null ? null : String(p.teamId);
+    const row: UserRow = { id, username: p.username.trim(), name: p.realName.trim(), role: codeToLabel(labelToCode(p.role) ?? p.role), status: '启用',
+      departmentId, teamId, dept: mockDepartments.find(d => d.id === departmentId)?.name ?? '-', team: mockTeams.find(t => t.id === teamId)?.name ?? '-',
+      phone: p.phone.trim(), gender: p.gender, idNumber: p.idNumber?.trim() };
+    writeDemo('pandora-web-users-local', [...demoArray<UserRow>('pandora-web-users-local'), row]);
+    return { id };
   },
   async getUser(id: string) {
     requireCapability('users');
     if (!useMock()) return mapUser(await request<RawUser>('/users/' + encodeURIComponent(id)));
-    const u = mockUsers.find(x => x.id === id);
+    const u = demoUserRows().find(x => x.id === id);
     if (!u) throw new Error('用户不存在');
-    return { ...u };
+    return withDemoOrgIds(u);
   },
   async updateUser(id: string, p: { realName?: string; role?: string; departmentId?: number | null; teamId?: number | null }) {
     requireCapability('users');
     if (!useMock()) return request('/users/' + encodeURIComponent(id), { method: 'PUT', body: JSON.stringify({ ...p, role: p.role ? labelToCode(p.role) ?? p.role : undefined }) });
     await sleep();
+    const current = demoUserRows().find(user => user.id === id);
+    if (!current) throw new Error('用户不存在');
+    const departmentId = p.departmentId === undefined ? current.departmentId : p.departmentId == null ? null : String(p.departmentId);
+    const teamId = p.teamId === undefined ? current.teamId : p.teamId == null ? null : String(p.teamId);
+    const edits = demoRecord<Partial<UserRow>>('pandora-web-users-edits');
+    writeDemo('pandora-web-users-edits', { ...edits, [id]: { ...edits[id], name: p.realName ?? current.name,
+      role: p.role ? codeToLabel(labelToCode(p.role) ?? p.role) : current.role, departmentId, teamId,
+      dept: mockDepartments.find(d => d.id === departmentId)?.name ?? '-', team: mockTeams.find(t => t.id === teamId)?.name ?? '-' } });
   },
   async setUserStatus(id: string, enabled: boolean) {
     requireCapability('users');
     if (!useMock()) return request('/users/' + encodeURIComponent(id) + '/status', { method: 'PATCH', body: JSON.stringify({ status: enabled ? 1 : 0 }) });
     await sleep();
+    if (!demoUserRows().some(user => user.id === id)) throw new Error('用户不存在');
+    writeDemo('pandora-web-users-status', { ...demoRecord<string>('pandora-web-users-status'), [id]: enabled ? '启用' : '停用' });
   },
   async resetPassword(id: string, password: string) {
     requireCapability('users');
     if (!useMock()) return request('/users/' + encodeURIComponent(id) + '/password', { method: 'PUT', body: JSON.stringify({ password }) });
     await sleep();
+    if (!demoUserRows().some(user => user.id === id)) throw new Error('用户不存在');
+  },
+  removeDemoUser(id: string) {
+    if (!useMock()) throw new Error('真实模式不支持删除用户');
+    writeDemo('pandora-web-users-removed', [...new Set([...demoArray<string>('pandora-web-users-removed'), id])]);
+  },
+  resetDemoUsers() {
+    if (!useMock()) throw new Error('真实模式不能重置演示数据');
+    for (const key of ['local', 'removed', 'edits', 'status']) localStorage.removeItem('pandora-web-users-' + key);
   },
   async listDepartments(): Promise<OrgUnit[]> {
     requireCapability('organization');
     if (!useMock()) return toUnits(await request('/departments'), 'companyId');
     await sleep(); return mockDepartments.map(x => ({ ...x }));
+  },
+  async listCompanies(): Promise<{ id: string; name: string }[]> {
+    requireCapability('organization');
+    if (useMock()) return [{ id: '1', name: 'Pandora' }];
+    return toItems<{ id: number | string; name: string }>(await request('/companies'))
+      .map(company => ({ id: String(company.id), name: company.name }));
   },
   async listTeams(): Promise<OrgUnit[]> {
     requireCapability('organization');
@@ -223,25 +273,9 @@ export const api = {
     const units = kind === 'departments' ? mockDepartments : mockTeams;
     const unit = units.find(u => u.id === id);
     if (!unit) throw new Error('组织不存在');
-    const hasMembers = mockUsers.some(u => (kind === 'departments' ? u.dept : u.team) === unit.name);
+    const hasMembers = demoUserRows().some(u => (kind === 'departments' ? u.departmentId : u.teamId) === id);
     if (hasMembers || (kind === 'departments' && mockTeams.some(t => t.parentId === id))) throw new Error('组织仍有下属组织或成员，不能删除');
     units.splice(units.indexOf(unit), 1);
-  },
-  async listRoles(): Promise<RolePerm[]> {
-    requireCapability('roles');
-    if (!useMock()) return toItems<{ code: string; permissions: string[] }>(await request('/roles')).map(r => ({ roleCode: r.code, label: codeToLabel(r.code), permissions: r.permissions }));
-    return mockRolePerms.map(r => ({ ...r, permissions: [...r.permissions] }));
-  },
-  async listPermissions() {
-    requireCapability('roles');
-    if (!useMock()) return toItems<{ code: string; name?: string; module?: string }>(await request('/permissions'));
-    return PERMISSION_CODES.map(p => ({ code: p.code, name: p.label }));
-  },
-  async setRolePermissions(roleCode: string, permissions: string[]) {
-    requireCapability('roles');
-    if (!useMock()) return request('/roles/' + encodeURIComponent(roleCode) + '/permissions', { method: 'PUT', body: JSON.stringify({ permissions }) });
-    const r = mockRolePerms.find(x => x.roleCode === roleCode);
-    if (r) r.permissions = [...permissions];
   },
   async listMatters(page = 1, size = 20): Promise<PageData<CompanyMatter>> {
     if (!useMock()) {
@@ -251,31 +285,19 @@ export const api = {
     await sleep();
     return pageOf([...mockMatters].sort((a, b) => a.sortOrder - b.sortOrder), page, size);
   },
-  async createMatter(m: { title: string; content: string; sortOrder: number; deadline?: string }) {
+  async createMatter(m: CompanyMatterInput) {
     requireCapability('matterWrite');
-    if (!useMock()) return request<{ id: number }>('/company-matters', { method: 'POST', body: JSON.stringify(m) });
-    const id = Date.now(); mockMatters.push({ ...m, id: String(id) }); return { id };
+    const value = matterInput(m);
+    if (!useMock()) return request<{ id: number }>('/company-matters', { method: 'POST', body: JSON.stringify(value) });
+    const id = Date.now(); mockMatters.push({ ...value, id: String(id) }); return { id };
   },
-  async updateMatter(id: string, m: { title: string; content: string; sortOrder: number; deadline?: string }) {
+  async updateMatter(id: string, m: CompanyMatterInput) {
     requireCapability('matterWrite');
-    if (!useMock()) return request('/company-matters/' + encodeURIComponent(id), { method: 'PUT', body: JSON.stringify(m) });
+    const value = matterInput(m);
+    if (!useMock()) return request('/company-matters/' + encodeURIComponent(id), { method: 'PUT', body: JSON.stringify(value) });
     const i = mockMatters.findIndex(x => x.id === id);
     if (i < 0) throw new Error('事项不存在');
-    mockMatters[i] = { ...m, id };
-  },
-  async getConfigs(): Promise<Record<string, string>> {
-    requireCapability('config');
-    if (!useMock()) {
-      const d = await request<Record<string, string> | { items: { key: string; value: string }[] }>('/configs');
-      if ('items' in d && Array.isArray(d.items)) return Object.fromEntries(d.items.map(x => [x.key, x.value]));
-      return d as Record<string, string>;
-    }
-    return { ...mockConfigs };
-  },
-  async setConfig(key: string, value: string) {
-    requireCapability('config');
-    if (!useMock()) return request('/configs/' + encodeURIComponent(key), { method: 'PUT', body: JSON.stringify({ value }) });
-    mockConfigs[key] = value;
+    mockMatters[i] = { ...value, id };
   },
   async listAudits(params: { actor?: string; action?: string; page?: number; size?: number } = {}): Promise<PageData<AuditRow>> {
     requireCapability('audits');
@@ -307,5 +329,49 @@ function mapUser(u: RawUser): UserRow {
   return { id: String(u.id), username: u.username, name: u.realName, role: codeToLabel(u.role),
     dept: u.departmentName ?? (u.departmentId == null ? '-' : '部门' + u.departmentId),
     team: u.teamName ?? (u.teamId == null ? '-' : '团队' + u.teamId), status: statusLabel(u.status),
+    departmentId: u.departmentId == null ? undefined : String(u.departmentId),
+    teamId: u.teamId == null ? undefined : String(u.teamId),
     phone: u.phone, gender: u.gender, idNumber: u.idNumber };
+}
+
+function matterInput(m: CompanyMatterInput): CompanyMatterInput {
+  const title = m.title.trim(), content = m.content.trim();
+  if (!title || !content) throw new Error('事项名称和备注不能为空');
+  if (!Number.isInteger(m.sortOrder)) throw new Error('排序必须为整数');
+  if (!isMatterHour(m.startDate) || !isMatterHour(m.deadline)) throw new Error('请填写有效的开始时间和截止时间（精确到小时）');
+  if (m.deadline < m.startDate) throw new Error('截止时间不得早于开始时间');
+  return { title, content, sortOrder: m.sortOrder, startDate: m.startDate, deadline: m.deadline };
+}
+
+function withDemoOrgIds(user: UserRow): UserRow {
+  // 旧演示记录仅有名称；只在能唯一定位时补 ID，真实接口不使用此推断。
+  const departments = mockDepartments.filter(d => d.name === user.dept);
+  const departmentId = user.departmentId !== undefined ? user.departmentId : (departments.length === 1 ? departments[0].id : undefined);
+  const teams = mockTeams.filter(t => t.name === user.team && t.parentId === departmentId);
+  return { ...user, departmentId, teamId: user.teamId !== undefined ? user.teamId : (teams.length === 1 ? teams[0].id : undefined) };
+}
+
+function readDemo(key: string): unknown {
+  try { return JSON.parse(localStorage.getItem(key) ?? 'null'); } catch { return null; }
+}
+function demoArray<T>(key: string): T[] {
+  const value = readDemo(key);
+  return Array.isArray(value) ? value : [];
+}
+function demoRecord<T>(key: string): Record<string, T> {
+  const value = readDemo(key);
+  return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, T> : {};
+}
+function writeDemo(key: string, value: unknown) {
+  try { localStorage.setItem(key, JSON.stringify(value)); }
+  catch { throw new Error('浏览器无法保存演示改动，请检查存储权限'); }
+}
+function demoUserRows(): UserRow[] {
+  const local = demoArray<UserRow>('pandora-web-users-local').filter(user => user &&
+    ['id', 'username', 'name', 'dept', 'team', 'role', 'status'].every(key => typeof user[key as keyof UserRow] === 'string'));
+  const removed = demoArray<string>('pandora-web-users-removed');
+  const edits = demoRecord<Partial<UserRow>>('pandora-web-users-edits');
+  const statuses = demoRecord<string>('pandora-web-users-status');
+  return [...mockUsers, ...local].filter(user => !removed.includes(user.id))
+    .map(user => withDemoOrgIds({ ...user, ...edits[user.id], ...(typeof statuses[user.id] === 'string' ? { status: statuses[user.id] } : {}) }));
 }

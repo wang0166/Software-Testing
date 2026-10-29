@@ -17,6 +17,8 @@ spring:
   jackson:
     time-zone: Asia/Shanghai
     default-property-inclusion: always
+    deserialization:
+      accept-float-as-int: false
 
 mybatis:
   configuration:

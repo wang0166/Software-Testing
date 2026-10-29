@@ -33,10 +33,6 @@ public class ContentService {
         this.currentUserContext = currentUserContext;
     }
 
-    public PageResult<CompanyItemDto> matters(Integer page, Integer size) {
-        return list("company_matters", page, size);
-    }
-
     public PageResult<CompanyItemDto> importantTasks(Integer page, Integer size) {
         return list("company_important_tasks", page, size);
     }

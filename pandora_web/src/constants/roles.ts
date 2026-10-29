@@ -42,7 +42,7 @@ export function codeToLabel(code: string): string {
 }
 export const ROLE_ICON: Record<string, string> = Object.fromEntries(ROLE_META.map((r) => [r.label, r.icon]));
 
-// 文档 users.status 是 SMALLINT：1启用 0停用
+// 数据库与查询响应为 ACTIVE/DISABLED；状态写入与筛选使用 1/0，后端显式映射。
 export const USER_STATUS = ['启用', '停用'] as const;
 export function statusLabel(v: unknown): string {
   return Number(v) === 1 || v === '启用' || v === 'ACTIVE' ? '启用' : '停用';
