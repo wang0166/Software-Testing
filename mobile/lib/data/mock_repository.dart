@@ -9,6 +9,9 @@ class MockRepository implements PandoraRepository {
     UserProfile(id:13,username:'demo002',name:'陈星禾',role:'EMPLOYEE',departmentId:3,teamId:8),
     UserProfile(id:8,username:'leader',name:'周知夏',role:'TEAM_LEADER',departmentId:3,teamId:8),
     UserProfile(id:3,username:'manager',name:'苏以安',role:'DEPT_MANAGER',departmentId:3),
+    UserProfile(id:21,username:'product01',name:'顾清禾',role:'EMPLOYEE',departmentId:2,teamId:5),
+    UserProfile(id:22,username:'productleader',name:'沈嘉宁',role:'TEAM_LEADER',departmentId:2,teamId:5),
+    UserProfile(id:2,username:'productmanager',name:'唐予宁',role:'DEPT_MANAGER',departmentId:2),
     UserProfile(id:1,username:'founder',name:'许远山',role:'FOUNDER'),
     UserProfile(id:99,username:'admin',name:'系统管理员',role:'ADMIN'),
   ];
@@ -34,6 +37,24 @@ class MockRepository implements PandoraRepository {
       }
     }
     throw const AppFailure('演示账号或密码不正确');
+  }
+  @override Future<void> requestPasswordReset(String username) async {
+    if (!users.any((e) => e.username == username.trim())) throw const AppFailure('演示账号不存在');
+    // Local demo only; no real admin Web service receives this request.
+    (await _prefs).setString('pandora_demo_reset_${username.trim()}', 'PENDING');
+  }
+  @override Future<void> requestPasswordChange() async {
+    final pref = await _prefs;
+    final key = 'pandora_demo_password_request_${_user.id}';
+    if (pref.getString(key) == 'PENDING') throw const AppFailure('申请正在等待管理员审核');
+    await pref.setString(key, 'PENDING');
+  }
+  @override Future<String> passwordChangeStatus() async {
+    return (await _prefs).getString('pandora_demo_password_request_${_user.id}') ?? 'NONE';
+  }
+  @override Future<void> completePasswordChange(String newPassword) async {
+    // The demo deliberately cannot approve itself; approval belongs to the Web administrator.
+    throw const AppFailure('演示模式无管理员审批服务，请连接后端完成修改');
   }
   @override Future<void> logout() async {_current=null;(await _prefs).remove('pandora_mock_user');}
 
@@ -94,7 +115,8 @@ class MockRepository implements PandoraRepository {
   Future<void> _setLogs(List<WorkLog> logs) async {(await _prefs).setString('pandora_mock_logs_v1',jsonEncode(logs.map((e)=>e.toJson()).toList()));}
   bool _canSee(UserProfile viewer,UserProfile author) {
     switch(viewer.role) {
-      case 'ADMIN': case 'FOUNDER': return true;
+      case 'FOUNDER': return true;
+      case 'ADMIN': return false;
       case 'DEPT_MANAGER': return author.departmentId==viewer.departmentId;
       case 'TEAM_LEADER': return author.teamId==viewer.teamId;
       default: return author.id==viewer.id;
@@ -115,8 +137,13 @@ class MockRepository implements PandoraRepository {
     await _wait();
     final viewer=_user;
     final all=await _allLogs();
-    return all.where((l)=>_canSee(viewer,_findUser(l.authorId)) && (date==null||l.logDate==date) && (status==null||l.status==status)).toList()
-      ..sort((a,b){final r=b.logDate.compareTo(a.logDate);return r!=0?r:b.id.compareTo(a.id);});
+    return all.where((l)=>_canSee(viewer,_findUser(l.authorId)) && (date==null||l.logDate==date) && (status==null||l.status==status)).map((l) {
+      final author = _findUser(l.authorId);
+      return WorkLog(id:l.id,authorId:l.authorId,authorName:l.authorName,logDate:l.logDate,content:l.content,status:l.status,isImportant:l.isImportant,submittedAt:l.submittedAt,
+        departmentId:author.departmentId,teamId:author.teamId,
+        departmentName:author.departmentId == 3 ? '技术研发部' : author.departmentId == 2 ? '产品设计部' : '公司管理层',
+        teamName:author.teamId == 8 ? '移动研发团队' : author.teamId == 5 ? '产品规划团队' : '部门管理', authorRole: author.role);
+    }).toList()..sort((a,b){final r=b.logDate.compareTo(a.logDate);return r!=0?r:b.id.compareTo(a.id);});
   }
   @override Future<WorkLog> saveLog(String content,{int? id}) async {
     final me=_user;
@@ -248,10 +275,10 @@ class MockRepository implements PandoraRepository {
     final start=DateTime.parse(from),end=DateTime.parse(to);
     if(end.difference(start).inDays>31) throw const AppFailure('日期范围不能超过31天');
     final received=await tasks(personal:false);
-    return [for(var i=0;i<=end.difference(start).inDays;i++) () {final day=dayString(start.add(Duration(days:i)));final lc=all.where((e)=>e.logDate==day).length;final tc=received.where((e)=>e.deadline!=null && (e.startDate==null?e.deadline==day:(e.startDate!.compareTo(day)<=0 && e.deadline!.compareTo(day)>=0))).length;return CalendarDay(date:day,mark:tc>0?'GREEN':lc>0?'RED':'NONE',logCount:lc,taskCount:tc);}()];
+    return [for(var i=0;i<=end.difference(start).inDays;i++) () {final day=dayString(start.add(Duration(days:i)));final lc=all.where((e)=>e.logDate==day).length;final tc=received.where((e)=>e.deadline!=null && (e.startDate==null?e.deadline!.substring(0,10)==day:(e.startDate!.substring(0,10).compareTo(day)<=0 && e.deadline!.substring(0,10).compareTo(day)>=0))).length;return CalendarDay(date:day,mark:tc>0?'GREEN':lc>0?'RED':'NONE',logCount:lc,taskCount:tc);}()];
   }
   @override Future<List<TaskItem>> taskMap() async =>
-    [...await tasks(personal:false),...await tasks(personal:true)];
+    await tasks(personal:false);
   @override Future<List<UserProfile>> recipients() async {
     final me=_user;
     if(me.role=='TEAM_LEADER') return users.where((u)=>u.role=='EMPLOYEE' && u.teamId==me.teamId).toList();

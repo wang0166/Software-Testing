@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import '../core/app_state.dart';
 import '../core/theme.dart';
 import '../data/mock_repository.dart';
-import '../widgets/redesign.dart';
 import '../widgets/ui.dart';
 
 class LoginPage extends StatefulWidget {
@@ -11,78 +10,62 @@ class LoginPage extends StatefulWidget {
   @override State<LoginPage> createState() => _LoginPageState();
 }
 class _LoginPageState extends State<LoginPage> {
-  final _form = GlobalKey<FormState>();
-  final _user = TextEditingController(), _pass = TextEditingController();
-  bool _obscure = true, _busy = false;
-  @override void dispose() { _user.dispose(); _pass.dispose(); super.dispose(); }
+  final form = GlobalKey<FormState>();
+  final username = TextEditingController();
+  final password = TextEditingController();
+  bool obscure = true, busy = false;
+  @override void dispose() {username.dispose(); password.dispose(); super.dispose();}
   Future<void> _login() async {
-    if (_busy || !_form.currentState!.validate()) return;
-    setState(() => _busy = true);
-    try { await widget.app.login(_user.text.trim(), _pass.text); }
-    catch (e) { if (mounted) toast(context, '$e'); }
-    finally { if (mounted) setState(() => _busy = false); }
+    if (busy || !form.currentState!.validate()) return;
+    setState(() => busy = true);
+    try {await widget.app.login(username.text.trim(), password.text);}
+    catch (e) {if (mounted) toast(context, '$e');}
+    finally {if (mounted) setState(() => busy = false);}
   }
-  @override Widget build(BuildContext context) => Scaffold(body: SafeArea(child: LayoutBuilder(builder: (context, constraints) => SingleChildScrollView(
-    padding: const EdgeInsets.fromLTRB(22, 18, 22, 26),
-    child: Center(child: ConstrainedBox(constraints: const BoxConstraints(maxWidth: 460), child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-      Row(children: [
-        Container(width: 40, height: 40, decoration: BoxDecoration(color: Palette.deep, borderRadius: BorderRadius.circular(13)), child: const Icon(Icons.auto_stories_rounded, size: 22, color: Colors.white)),
-        const SizedBox(width: 10),
-        const Text('PANDORA  ·  潘多拉', style: TextStyle(fontWeight: FontWeight.w900, color: Palette.deep, letterSpacing: .4, fontSize: 18)),
-        const Spacer(), const Text('WORK  01', style: TextStyle(fontSize: 10, color: Palette.muted, letterSpacing: 1.5, fontWeight: FontWeight.w900)),
-      ]),
-      const SizedBox(height: 22),
-      _masthead(),
-      const SizedBox(height: 18),
-      StoryCard(padding: const EdgeInsets.all(22), child: Form(key: _form, child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        const Row(children: [Expanded(child: Text('欢迎回来', style: TextStyle(fontWeight: FontWeight.w900, color: Palette.deep, fontSize: 24))), ColoredIcon(icon: Icons.waving_hand_rounded, background: Palette.pastel, color: Color(0xFFBC853E), size: 40)]),
-        const SizedBox(height: 3), const Text('登录你的工作空间', style: TextStyle(color: Palette.muted, fontSize: 12)),
-        const SizedBox(height: 18),
-        const Text('登录账号', style: TextStyle(fontWeight: FontWeight.w800, color: Palette.deep, fontSize: 12)),
-        const SizedBox(height: 7),
-        TextFormField(key: const Key('login_username'), controller: _user, autofillHints: const [AutofillHints.username], textInputAction: TextInputAction.next, decoration: const InputDecoration(hintText: '请输入用户名', prefixIcon: Icon(Icons.person_outline_rounded)), validator: (s) => s == null || s.trim().isEmpty ? '请填写账号' : null),
-        const SizedBox(height: 14),
-        const Text('登录密码', style: TextStyle(fontWeight: FontWeight.w800, color: Palette.deep, fontSize: 12)),
-        const SizedBox(height: 7),
-        TextFormField(key: const Key('login_password'), controller: _pass, obscureText: _obscure, autofillHints: const [AutofillHints.password], onFieldSubmitted: (_) => _login(), decoration: InputDecoration(hintText: '请输入密码', prefixIcon: const Icon(Icons.lock_outline_rounded), suffixIcon: IconButton(tooltip: _obscure ? '显示密码' : '隐藏密码', onPressed: () => setState(() => _obscure = !_obscure), icon: Icon(_obscure ? Icons.visibility_off_outlined : Icons.visibility_outlined))), validator: (s) => s == null || s.isEmpty ? '请填写密码' : null),
-        const SizedBox(height: 18),
-        FilledButton(key: const Key('login_button'), onPressed: _busy ? null : _login, child: _busy ? const SizedBox(width: 22, height: 22, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white)) : const Row(mainAxisAlignment: MainAxisAlignment.center, children: [Text('进入工作空间'), SizedBox(width: 9), Icon(Icons.arrow_forward_rounded, size: 18)])),
-        const SizedBox(height: 10),
-        const Center(child: Text('如需重置密码，请联系系统管理员', style: TextStyle(color: Palette.muted, fontSize: 10))),
+  Future<void> _forgotPassword() async {
+    String account = username.text.trim();
+    try {
+      final ok = await showDialog<bool>(context: context, builder: (ctx) => AlertDialog(
+        title: const Text('忘记密码'),
+        content: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+          const Text('输入登录账号，向系统管理员申请重置密码。'), const SizedBox(height: 12),
+          TextFormField(initialValue: account, onChanged: (text) => account = text, decoration: const InputDecoration(labelText: '登录账号')),
+        ]),
+        actions: [TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('取消')), FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('提交申请'))],
+      ));
+      if (ok != true || !mounted) return;
+      if (account.trim().isEmpty) {toast(context, '请输入账号'); return;}
+      await widget.app.repo.requestPasswordReset(account.trim());
+      if (mounted) toast(context, pandoraDemo ? '本机演示申请已记录，实际审核须接入服务端' : '申请已提交，请联系系统管理员审核');
+    } catch (e) {if (mounted) toast(context, '申请失败：$e');}
+  }
+  @override Widget build(BuildContext context) => Scaffold(body: SafeArea(child: Center(child: SingleChildScrollView(
+    padding: const EdgeInsets.fromLTRB(23, 28, 23, 28), child: ConstrainedBox(constraints: const BoxConstraints(maxWidth: 430), child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+      Center(child: Container(width: 73, height: 73, decoration: BoxDecoration(color: Palette.primary, borderRadius: BorderRadius.circular(23)), child: const Icon(Icons.auto_stories_rounded, color: Colors.white, size: 38))),
+      const SizedBox(height: 17), const Center(child: Text('智能掌上日志系统', style: TextStyle(color: Palette.deep, fontSize: 26, fontWeight: FontWeight.w900))),
+      const SizedBox(height: 3), const Center(child: Text('PANDORA  ·  潘多拉', style: TextStyle(color: Palette.primary, fontSize: 12, fontWeight: FontWeight.w800, letterSpacing: 2))),
+      const SizedBox(height: 26),
+      Container(padding: const EdgeInsets.all(23), decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(25)), child: Form(key: form, child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        const Text('欢迎回来', style: TextStyle(color: Palette.deep, fontSize: 23, fontWeight: FontWeight.w900)),
+        const SizedBox(height: 3), const Text('登录后进入你的工作空间', style: TextStyle(color: Palette.muted, fontSize: 12)),
+        const SizedBox(height: 22), const Text('登录账号', style: TextStyle(color: Palette.deep, fontWeight: FontWeight.w800)), const SizedBox(height: 7),
+        TextFormField(key: const Key('login_username'), controller: username, autofillHints: const [AutofillHints.username], textInputAction: TextInputAction.next,
+          decoration: const InputDecoration(prefixIcon: Icon(Icons.person_outline_rounded), hintText: '请输入登录账号'), validator: (v) => v == null || v.trim().isEmpty ? '请填写账号' : null),
+        const SizedBox(height: 15), const Text('登录密码', style: TextStyle(color: Palette.deep, fontWeight: FontWeight.w800)), const SizedBox(height: 7),
+        TextFormField(key: const Key('login_password'), controller: password, obscureText: obscure, autofillHints: const [AutofillHints.password], onFieldSubmitted: (_) => _login(),
+          decoration: InputDecoration(prefixIcon: const Icon(Icons.lock_outline_rounded), hintText: '请输入密码', suffixIcon: IconButton(onPressed: () => setState(() => obscure = !obscure), icon: Icon(obscure ? Icons.visibility_off_outlined : Icons.visibility_outlined))),
+          validator: (v) => v == null || v.isEmpty ? '请填写密码' : null),
+        Align(alignment: Alignment.centerRight, child: TextButton(onPressed: _forgotPassword, child: const Text('忘记密码？'))),
+        const SizedBox(height: 5), FilledButton(key: const Key('login_button'), onPressed: busy ? null : _login,
+          child: busy ? const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white)) : const Text('登 录')),
       ]))),
-      if (pandoraDemo) ...[
-        const SizedBox(height: 16),
-        StoryCard(color: Palette.pastel, padding: const EdgeInsets.all(18), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          const Row(children: [Icon(Icons.science_outlined, size: 19, color: Color(0xFFB27C38)), SizedBox(width: 7), Text('体验模式', style: TextStyle(color: Palette.deep, fontSize: 15, fontWeight: FontWeight.w900)), Spacer(), Text('NO SERVER', style: TextStyle(color: Color(0xFFB27C38), fontSize: 9, fontWeight: FontWeight.w900, letterSpacing: 1))]),
-          const SizedBox(height: 5), const Text('选择一个角色自动填入演示账号', style: TextStyle(color: Palette.muted, fontSize: 11)),
-          const SizedBox(height: 12),
-          Wrap(spacing: 8, runSpacing: 8, children: [for (final u in MockRepository.users) ActionChip(
-            avatar: const Icon(Icons.person_outline_rounded, color: Palette.primary, size: 15),
-            backgroundColor: Colors.white, side: BorderSide.none,
-            label: Text('${u.name} · ${u.roleLabel}', style: const TextStyle(fontSize: 11, color: Palette.deep, fontWeight: FontWeight.w800)),
-            onPressed: () { _user.text = u.username; _pass.text = MockRepository.demoPassword; setState(() {}); },
-          )]),
-          const SizedBox(height: 8), const Text('仅演示模式：demo123456', style: TextStyle(color: Palette.muted, fontSize: 10)),
-        ])),
-      ],
-      const SizedBox(height: 22),
-      const Center(child: Text('RECORD  ·  CONNECT  ·  GROW', style: TextStyle(color: Palette.muted, letterSpacing: 2, fontWeight: FontWeight.w700, fontSize: 9))),
-    ]))),
+      if (pandoraDemo) ...[const SizedBox(height: 17), Material(color: Palette.pastel, borderRadius: BorderRadius.circular(18), child: ExpansionTile(
+        leading: const Icon(Icons.science_rounded, color: Palette.primary), title: const Text('演示账号', style: TextStyle(fontWeight: FontWeight.w800, color: Palette.deep)),
+        subtitle: const Text('本机演示 · 无需后端', style: TextStyle(fontSize: 11)), childrenPadding: const EdgeInsets.fromLTRB(13, 0, 13, 12), children: [
+          Wrap(spacing: 6, runSpacing: 5, children: [for (final u in MockRepository.users) ActionChip(label: Text('${u.name} · ${u.roleLabel}', style: const TextStyle(fontSize: 11)), onPressed: () {username.text = u.username; password.text = MockRepository.demoPassword; setState(() {});})]),
+        ],
+      ))],
+      const SizedBox(height: 19), const Center(child: Text('安全登录 · 分级授权 · 每日记录', style: TextStyle(color: Palette.muted, fontSize: 11))),
+    ])),
   ))));
-  Widget _masthead() => Container(
-    height: 186, clipBehavior: Clip.antiAlias,
-    padding: const EdgeInsets.fromLTRB(23, 19, 23, 18),
-    decoration: BoxDecoration(color: Palette.deep, borderRadius: BorderRadius.circular(28)),
-    child: Stack(children: [
-      Positioned(right: -66, top: -70, child: Container(width: 225, height: 225, decoration: BoxDecoration(shape: BoxShape.circle, border: Border.all(color: const Color(0xFF368E86), width: 40)))),
-      Positioned(right: -1, bottom: -48, child: Icon(Icons.auto_stories_rounded, color: Colors.white.withValues(alpha: .14), size: 137)),
-      Positioned.fill(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        const Text('ONE DAY, ONE STORY', style: TextStyle(color: Palette.gold, letterSpacing: 2.1, fontWeight: FontWeight.w900, fontSize: 10)),
-        const Spacer(),
-        const Text('把每一天，\n写成成长的篇章。', style: TextStyle(color: Colors.white, fontSize: 26, height: 1.3, fontWeight: FontWeight.w900)),
-        const SizedBox(height: 7),
-        Text('日志 · 任务 · 协作 · 洞察', style: TextStyle(color: Colors.white.withValues(alpha: .74), fontSize: 12)),
-      ])),
-    ]),
-  );
 }

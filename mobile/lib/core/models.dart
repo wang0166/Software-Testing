@@ -26,7 +26,7 @@ class UserProfile {
     return UserProfile(id:intOf(j['id']),username:textOf(j['username']),name:textOf(j['realName'],textOf(j['name'], '用户')),role:textOf(j['role'],'EMPLOYEE'),departmentId:j['departmentId']==null?null:intOf(j['departmentId']),teamId:j['teamId']==null?null:intOf(j['teamId']),permissions:listOf(j['permissions']).map((e)=>e.toString()).toList());
   }
   Map<String,dynamic> toJson()=>{'id':id,'username':username,'realName':name,'role':role,'departmentId':departmentId,'teamId':teamId,'permissions':permissions};
-  String get roleLabel => const {'EMPLOYEE':'员工','TEAM_LEADER':'团队长','DEPT_MANAGER':'部门负责人','FOUNDER':'创始人','ADMIN':'系统管理员'}[role] ?? '员工';
+  String get roleLabel => const {'EMPLOYEE':'员工','TEAM_LEADER':'团队长','DEPT_MANAGER':'部门老总','FOUNDER':'创始人','ADMIN':'系统管理员'}[role] ?? '员工';
   bool get canWriteLog => role!='ADMIN';
   bool get canUseTasks => role!='ADMIN';
 }
@@ -36,12 +36,17 @@ class WorkLog {
   final String authorName, logDate, content, status;
   final bool isImportant;
   final String? submittedAt;
-  const WorkLog({required this.id,required this.authorId,required this.authorName,required this.logDate,required this.content,required this.status,this.isImportant=false,this.submittedAt});
+  final int? departmentId, teamId;
+  final String departmentName, teamName, authorRole;
+  const WorkLog({required this.id,required this.authorId,required this.authorName,required this.logDate,required this.content,required this.status,this.isImportant=false,this.submittedAt,this.departmentId,this.teamId,this.departmentName='',this.teamName='',this.authorRole=''});
   factory WorkLog.fromJson(dynamic obj) {
     final j=mapOf(obj);
-    return WorkLog(id:intOf(j['id']),authorId:intOf(j['authorId']),authorName:textOf(j['authorName'],textOf(mapOf(j['author'])['realName'],'同事')),logDate:textOf(j['logDate']),content:textOf(j['content']),status:textOf(j['status'],'DRAFT'),isImportant:j['isImportant']==true,submittedAt:j['submittedAt']?.toString());
+    final author=mapOf(j['author']);
+    final department=mapOf(j['department']);
+    final team=mapOf(j['team']);
+    return WorkLog(id:intOf(j['id']),authorId:intOf(j['authorId']),authorName:textOf(j['authorName'],textOf(mapOf(j['author'])['realName'],'同事')),logDate:textOf(j['logDate']),content:textOf(j['content']),status:textOf(j['status'],'DRAFT'),isImportant:j['isImportant']==true,submittedAt:j['submittedAt']?.toString(),departmentId:j['departmentId']==null?(author['departmentId']==null?null:intOf(author['departmentId'])):intOf(j['departmentId']),teamId:j['teamId']==null?(author['teamId']==null?null:intOf(author['teamId'])):intOf(j['teamId']),departmentName:textOf(j['departmentName'],textOf(department['name'],textOf(author['departmentName'],textOf(mapOf(author['department'])['name'])))),teamName:textOf(j['teamName'],textOf(team['name'],textOf(author['teamName'],textOf(mapOf(author['team'])['name'])))),authorRole:textOf(j['authorRole'],textOf(author['role'])));
   }
-  Map<String,dynamic> toJson()=>{'id':id,'authorId':authorId,'authorName':authorName,'logDate':logDate,'content':content,'status':status,'isImportant':isImportant,'submittedAt':submittedAt};
+  Map<String,dynamic> toJson()=>{'id':id,'authorId':authorId,'authorName':authorName,'logDate':logDate,'content':content,'status':status,'isImportant':isImportant,'submittedAt':submittedAt,'departmentId':departmentId,'teamId':teamId,'departmentName':departmentName,'teamName':teamName,'authorRole':authorRole};
   bool get submitted=>status=='SUBMITTED';
 }
 
