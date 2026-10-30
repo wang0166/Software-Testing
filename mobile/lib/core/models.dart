@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'package:flutter/material.dart' show Color;
 
 String dayString(DateTime date) => '${date.year.toString().padLeft(4, '0')}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
 DateTime get chinaNow => DateTime.now().toUtc().add(const Duration(hours: 8));
@@ -18,14 +19,15 @@ double doubleOf(dynamic value, [double fallback = 0]) => value is num ? value.to
 class UserProfile {
   final int id;
   final String username, name, role;
+  final String mbtiType;
   final int? departmentId, teamId;
   final List<String> permissions;
-  const UserProfile({required this.id, required this.username, required this.name, required this.role, this.departmentId, this.teamId, this.permissions = const []});
+  const UserProfile({required this.id, required this.username, required this.name, required this.role, this.departmentId, this.teamId, this.permissions = const [],this.mbtiType=''});
   factory UserProfile.fromJson(dynamic obj) {
     final j=mapOf(obj);
-    return UserProfile(id:intOf(j['id']),username:textOf(j['username']),name:textOf(j['realName'],textOf(j['name'], '用户')),role:textOf(j['role'],'EMPLOYEE'),departmentId:j['departmentId']==null?null:intOf(j['departmentId']),teamId:j['teamId']==null?null:intOf(j['teamId']),permissions:listOf(j['permissions']).map((e)=>e.toString()).toList());
+    return UserProfile(id:intOf(j['id']),username:textOf(j['username']),name:textOf(j['realName'],textOf(j['name'], '用户')),role:textOf(j['role'],'EMPLOYEE'),mbtiType:textOf(j['mbtiType'],textOf(j['mbti'])),departmentId:j['departmentId']==null?null:intOf(j['departmentId']),teamId:j['teamId']==null?null:intOf(j['teamId']),permissions:listOf(j['permissions']).map((e)=>e.toString()).toList());
   }
-  Map<String,dynamic> toJson()=>{'id':id,'username':username,'realName':name,'role':role,'departmentId':departmentId,'teamId':teamId,'permissions':permissions};
+  Map<String,dynamic> toJson()=>{'id':id,'username':username,'realName':name,'role':role,'departmentId':departmentId,'teamId':teamId,'permissions':permissions,'mbtiType':mbtiType};
   String get roleLabel => const {'EMPLOYEE':'员工','TEAM_LEADER':'团队长','DEPT_MANAGER':'部门老总','FOUNDER':'创始人','ADMIN':'系统管理员'}[role] ?? '员工';
   bool get canWriteLog => role!='ADMIN';
   bool get canUseTasks => role!='ADMIN';
@@ -64,16 +66,17 @@ class LogComment {
 
 class TaskItem {
   final int id;
-  final String name, details, status, source, urgency, reviewStatus;
+  final String name, details, status, source, urgency, reviewStatus, taskType;
   final String? deadline, startDate;
   final int? taskId, senderId;
-  const TaskItem({required this.id,required this.name,required this.details,required this.status,required this.source,this.urgency='NOT_URGENT',this.deadline,this.startDate,this.taskId,this.senderId,this.reviewStatus='NONE'});
+  final String assigneeName, progressNote;
+  const TaskItem({required this.id,required this.name,required this.details,required this.status,required this.source,this.urgency='NOT_URGENT',this.deadline,this.startDate,this.taskId,this.senderId,this.reviewStatus='NONE',this.taskType='GENERAL',this.assigneeName='',this.progressNote=''});
   factory TaskItem.fromJson(dynamic obj,{String source='PERSONAL'}) {
     final j=mapOf(obj);
-    return TaskItem(id:intOf(j[source=='RECEIVED'?'assignmentId':'id'],intOf(j['id'],intOf(j['personalTaskId']))),name:textOf(j['name']),details:textOf(j['details']),status:textOf(j['executionStatus'],textOf(j['status'],'NOT_STARTED')),source:source,urgency:textOf(j['urgency'],'NOT_URGENT'),deadline:j['deadline']?.toString(),startDate:j['startDate']?.toString(),taskId:j['taskId']==null?null:intOf(j['taskId']),senderId:j['senderId']==null?intOf(mapOf(j['sender'])['id'],0):intOf(j['senderId']),reviewStatus:textOf(j['reviewStatus'],'NONE'));
+    return TaskItem(id:intOf(j[source=='RECEIVED'?'assignmentId':'id'],intOf(j['id'],intOf(j['personalTaskId']))),name:textOf(j['name']),details:textOf(j['details']),status:textOf(j['executionStatus'],textOf(j['status'],'NOT_STARTED')),source:source,urgency:textOf(j['urgency'],'NOT_URGENT'),deadline:j['deadline']?.toString(),startDate:j['startDate']?.toString(),taskId:j['taskId']==null?null:intOf(j['taskId']),senderId:j['senderId']==null?intOf(mapOf(j['sender'])['id'],0):intOf(j['senderId']),reviewStatus:textOf(j['reviewStatus'],'NONE'),taskType:textOf(j['taskType'],textOf(j['category'],textOf(j['type'],'GENERAL'))),assigneeName:textOf(j['assigneeName'],textOf(j['receiverName'],textOf(mapOf(j['assignee'])['realName']))),progressNote:textOf(j['progressNote'],textOf(j['progressRemark'],textOf(j['remarks']))));
   }
   String get statusLabel=>const {'NOT_STARTED':'待开始','IN_PROGRESS':'进行中','COMPLETED':'已完成'}[status]??status;
-  Map<String,dynamic> toJson()=>{'id':id,'name':name,'details':details,'status':status,'source':source,'urgency':urgency,'deadline':deadline,'startDate':startDate,'taskId':taskId,'senderId':senderId,'reviewStatus':reviewStatus};
+  Map<String,dynamic> toJson()=>{'id':id,'name':name,'details':details,'status':status,'source':source,'urgency':urgency,'deadline':deadline,'startDate':startDate,'taskId':taskId,'senderId':senderId,'reviewStatus':reviewStatus,'taskType':taskType,'assigneeName':assigneeName,'progressNote':progressNote};
 }
 
 class CompanyItem {
@@ -127,3 +130,48 @@ class CalendarDay {
 }
 
 String encodeJson(dynamic input)=>jsonEncode(input);
+
+/// New task-type tags. Unknown types remain visible as supplied by the server.
+String taskTypeLabel(String type) => const {
+  'GENERAL':'综合', 'DEVELOPMENT':'开发', 'PRODUCT':'产品', 'TESTING':'测试',
+  'OPERATION':'运营', 'SALES':'销售', 'ADMINISTRATIVE':'行政', 'OTHER':'其他',
+}[type] ?? (type.isEmpty ? '综合' : type);
+
+Color taskTypeColor(String type) {
+  switch (type) {
+    case 'DEVELOPMENT': return const Color(0xFF2175B5);
+    case 'PRODUCT': return const Color(0xFF8156BD);
+    case 'TESTING': return const Color(0xFF1B8B7C);
+    case 'OPERATION': return const Color(0xFFBB7A20);
+    case 'SALES': return const Color(0xFFB34E4E);
+    case 'ADMINISTRATIVE': return const Color(0xFF64758B);
+    default: return const Color(0xFF3E677D);
+  }
+}
+
+class SubordinateTaskSummary {
+  final int userId, total, inProgress, completed;
+  final String name, departmentName;
+  final String role, teamName, username, mbtiType;
+  final List<TaskItem> tasks;
+  const SubordinateTaskSummary({required this.userId, required this.name,
+    required this.departmentName, required this.total, required this.inProgress,
+    required this.completed, required this.tasks,
+    this.role = '', this.teamName = '', this.username = '',this.mbtiType=''});
+  factory SubordinateTaskSummary.fromJson(dynamic obj) {
+    final j = mapOf(obj);
+    final items = listOf(j['tasks']).map((e) => TaskItem.fromJson(e, source: 'RECEIVED')).toList();
+    return SubordinateTaskSummary(
+      userId: intOf(j['userId'], intOf(j['id'])), name: textOf(j['name'], textOf(j['realName'], '成员')),
+      departmentName: textOf(j['departmentName']),
+      role: textOf(j['role']),
+      teamName: textOf(j['teamName']),
+      username: textOf(j['username']),
+      mbtiType: textOf(j['mbtiType'],textOf(j['mbti'])),
+      total: intOf(j['total'], items.length),
+      inProgress: intOf(j['inProgress'], items.where((t) => t.status == 'IN_PROGRESS').length),
+      completed: intOf(j['completed'], items.where((t) => t.status == 'COMPLETED').length),
+      tasks: items,
+    );
+  }
+}

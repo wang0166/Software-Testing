@@ -46,16 +46,16 @@ class _LogDetailPageState extends State<LogDetailPage> {
     final own=_log.authorId==me.id;
     final canReply=own;
     final canInitial=_directManager;
-    final canEdit=own&&!_log.submitted&&_log.logDate==todayChina&&chinaNow.hour<22;
-    return Scaffold(appBar:AppBar(title:const Text('日志详情'),actions:[if(canEdit)IconButton(tooltip:'编辑草稿',onPressed:()async{
-      final result=await Navigator.push<bool>(context,MaterialPageRoute(builder:(_)=>LogEditorPage(app:widget.app,draft:_log)));
+    final canEdit=own&&(() { final dt=DateTime.tryParse(_log.logDate); if(dt==null)return false; final now=chinaNow; final today=DateTime(now.year,now.month,now.day); final difference=today.difference(DateTime(dt.year,dt.month,dt.day)).inDays; return difference>=0 && difference<=2; })();
+    return Scaffold(appBar:AppBar(title:const Text('日志详情'),actions:[if(canEdit)IconButton(tooltip:'编辑日志',onPressed:()async{
+      final result=await Navigator.push<bool>(context,MaterialPageRoute(builder:(_)=>LogEditorPage(app:widget.app,draft:_log,date:_log.logDate)));
       if(result==true&&mounted){final data=await widget.app.repo.logs(date:_log.logDate);final newer=data.where((e)=>e.id==_log.id);if(newer.isNotEmpty&&mounted)setState(()=>_log=newer.first);}
     },icon:const Icon(Icons.edit_outlined))]),
     body:SafeArea(child:ListView(padding:const EdgeInsets.fromLTRB(20,8,20,30),children:[
       SoftCard(child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[
         Row(children:[CircleAvatar(backgroundColor:Palette.sage,child:Text(_log.authorName.isEmpty?'日':_log.authorName.substring(0,1),style:const TextStyle(color:Palette.primary,fontWeight:FontWeight.w800))),const SizedBox(width:11),Expanded(child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[Text(_log.authorName,style:const TextStyle(fontWeight:FontWeight.w900,color:Palette.deep,fontSize:16)),Text(_log.logDate,style:const TextStyle(color:Palette.muted,fontSize:12))])),StatusBadge(status:_log.status)]),
         const Divider(height:30),Text(_log.content,style:const TextStyle(height:1.9,fontSize:15,color:Palette.deep)),
-        const SizedBox(height:17),const Text('每日一条 · 提交后不可修改',style:TextStyle(color:Palette.muted,fontSize:11)),
+        const SizedBox(height:17),const Text('每日一条 · 近三天可申请补写或修改（以服务端规则为准）',style:TextStyle(color:Palette.muted,fontSize:11)),
       ])),
       const SizedBox(height:22),const Headline(title:'上级点评与回复',subtitle:'对话仅作者与直属上级可见'),const SizedBox(height:13),
       if (!own && !canInitial) const SoftCard(child: Text('你可以阅读这条日志，但无权查看或参与其直属上级点评对话。', style: TextStyle(color: Palette.muted))),
@@ -66,7 +66,7 @@ class _LogDetailPageState extends State<LogDetailPage> {
         final data=s.data??[];
         return Column(crossAxisAlignment:CrossAxisAlignment.stretch,children:[
           if(data.isEmpty)const SoftCard(child:EmptyPanel(title:'还没有点评',subtitle:'直属上级点评后，作者可继续回复',icon:Icons.forum_outlined)),
-          ...data.map((c)=>Padding(padding:const EdgeInsets.only(bottom:10),child:SoftCard(color:c.authorId==_log.authorId?const Color(0xFFEDF7F4):Colors.white,child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[Row(children:[Icon(c.authorId==_log.authorId?Icons.reply_rounded:Icons.record_voice_over_outlined,color:Palette.primary,size:18),const SizedBox(width:6),Expanded(child:Text(c.authorName,style:const TextStyle(fontWeight:FontWeight.w800,color:Palette.deep))),Text(c.createdAt.length>=10?c.createdAt.substring(0,10):c.createdAt,style:const TextStyle(fontSize:10,color:Palette.muted))]),if(c.parentId!=null)Padding(padding:const EdgeInsets.only(top:6),child:Text('回复点评 #${c.parentId}',style:const TextStyle(fontSize:11,color:Palette.muted))),const SizedBox(height:9),Text(c.content,style:const TextStyle(fontSize:14,height:1.55,color:Palette.deep)),if(canReply && c.authorId!=me.id)Align(alignment:Alignment.centerRight,child:TextButton.icon(onPressed:()=>setState(()=>_replyTo=c.id),icon:const Icon(Icons.reply,size:16),label:const Text('回复')))])))),
+          ...data.map((c)=>Padding(padding:const EdgeInsets.only(bottom:10),child:SoftCard(color:c.authorId==_log.authorId?Palette.mutedBlue:Colors.white,child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[Row(children:[Icon(c.authorId==_log.authorId?Icons.reply_rounded:Icons.record_voice_over_outlined,color:Palette.primary,size:18),const SizedBox(width:6),Expanded(child:Text(c.authorName,style:const TextStyle(fontWeight:FontWeight.w800,color:Palette.deep))),Text(c.createdAt.length>=10?c.createdAt.substring(0,10):c.createdAt,style:const TextStyle(fontSize:10,color:Palette.muted))]),if(c.parentId!=null)Padding(padding:const EdgeInsets.only(top:6),child:Text('回复点评 #${c.parentId}',style:const TextStyle(fontSize:11,color:Palette.muted))),const SizedBox(height:9),Text(c.content,style:const TextStyle(fontSize:14,height:1.55,color:Palette.deep)),if(canReply && c.authorId!=me.id)Align(alignment:Alignment.centerRight,child:TextButton.icon(onPressed:()=>setState(()=>_replyTo=c.id),icon:const Icon(Icons.reply,size:16),label:const Text('回复')))])))),
           if(canInitial || (canReply && data.any((c)=>c.authorId!=me.id)))...[
             const SizedBox(height:7),if(_replyTo!=null)Row(children:[Text('正在回复 #$_replyTo',style:const TextStyle(color:Palette.primary,fontSize:12)),TextButton(onPressed:()=>setState(()=>_replyTo=null),child:const Text('取消'))]),
             TextField(controller:_text,maxLines:3,minLines:2,decoration:InputDecoration(hintText:canReply?'回复直属上级的点评':'写下反馈与建议…')),

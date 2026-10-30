@@ -15,7 +15,7 @@ abstract class PandoraRepository {
   Future<String> passwordChangeStatus();
   Future<void> completePasswordChange(String newPassword);
   Future<List<WorkLog>> logs({String? date,String? status});
-  Future<WorkLog> saveLog(String content,{int? id});
+  Future<WorkLog> saveLog(String content,{int? id, String? date});
   Future<WorkLog> submitLog(int id);
   Future<List<LogComment>> comments(int logId);
   Future<LogComment> addComment(int logId,String content,{int? parentId});
@@ -30,6 +30,14 @@ abstract class PandoraRepository {
   Future<List<CalendarDay>> calendar(String from,String to);
   Future<List<TaskItem>> taskMap();
   Future<List<UserProfile>> recipients();
+  /// Company-wide candidate list for dispatch approval requests.
+  Future<List<UserProfile>> companyMembers();
+  /// Server checks permission and creates a PENDING approval request, not a live task.
+  Future<String> submitDispatchRequest({required String name, required String details,
+    required String startDate, required String deadline, required String urgency,
+    required String taskType, required List<int> assigneeIds});
+  /// All authorized subordinates' tasks, regardless of sender.
+  Future<List<SubordinateTaskSummary>> subordinatesTaskOverview();
   Future<List<DispatchedTask>> dispatchedTasks();
   Future<List<TaskAssignment>> dispatchedAssignments(int taskId);
   Future<void> dispatchTask({required String name,required String details,required String startDate,required String deadline,required String urgency,required List<int> assigneeIds});

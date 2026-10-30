@@ -77,3 +77,26 @@ List<GanttTaskSpan> buildGanttSpans(
   });
   return result;
 }
+
+
+/// Assign every weekly task span to a non-overlapping display lane.
+///
+/// Previously, the calendar discarded spans that needed a fourth lane.
+/// Keeping all lanes lets the week-row viewport scroll vertically without
+/// losing tasks or interfering with the full Gantt navigation.
+List<({GanttTaskSpan span, int lane})> allocateGanttLanes(
+    Iterable<GanttTaskSpan> spans) {
+  final endByLane = <int>[];
+  final rows = <({GanttTaskSpan span, int lane})>[];
+  for (final span in spans) {
+    var lane = 0;
+    while (lane < endByLane.length &&
+        span.startColumn <= endByLane[lane]) {
+      lane++;
+    }
+    if (lane == endByLane.length) endByLane.add(-1);
+    rows.add((span: span, lane: lane));
+    endByLane[lane] = span.startColumn + span.dayCount - 1;
+  }
+  return rows;
+}

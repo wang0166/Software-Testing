@@ -7,7 +7,7 @@ spring:
   datasource:
     url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/pandora}
     username: ${SPRING_DATASOURCE_USERNAME:postgres}
-    password: ${SPRING_DATASOURCE_PASSWORD:postgres}
+    password: q20051113
     driver-class-name: org.postgresql.Driver
     hikari:
       connection-init-sql: SET TIME ZONE 'Asia/Shanghai'
@@ -38,4 +38,4 @@ app:
     issuer: ${JWT_ISSUER:pandora-log}
   admin:
     init-username: ${ADMIN_INIT_USERNAME:admin}
-    init-password: ${ADMIN_INIT_PASSWORD:}
+    init-password: 123456
