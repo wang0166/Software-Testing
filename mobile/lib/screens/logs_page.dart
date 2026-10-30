@@ -20,7 +20,9 @@ class _LogsPageState extends State<LogsPage> {
   String? _department;
   @override void initState() {super.initState(); _refresh();}
   @override void dispose() {_search.dispose(); super.dispose();}
-  void _refresh() => _future = widget.app.repo.logs();
+  void _refresh() {
+    _future = widget.app.repo.logs();
+  }
   Future<void> _edit(WorkLog? draft) async {
     final ok = await Navigator.push<bool>(context, MaterialPageRoute(builder: (_) => LogEditorPage(app: widget.app, draft: draft)));
     if (ok == true && mounted) setState(_refresh);
@@ -40,12 +42,12 @@ class _LogsPageState extends State<LogsPage> {
   @override Widget build(BuildContext context) => Scaffold(
     body: Column(children: [
       Padding(padding: const EdgeInsets.fromLTRB(20, 22, 20, 12), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        const Text('工作日志', style: TextStyle(color: Palette.deep, fontSize: 29, fontWeight: FontWeight.w900)),
+        const Text('工作日志', style: TextStyle(color: Palette.deep, fontSize: 25, fontWeight: FontWeight.w800)),
         const SizedBox(height: 4), const Text('按部门 · 团队分层查看权限内日志', style: TextStyle(color: Palette.muted, fontSize: 12)),
         const SizedBox(height: 14), TextField(controller: _search, onChanged: (_) => setState(() {}), decoration: const InputDecoration(prefixIcon: Icon(Icons.search_rounded), hintText: '搜索姓名或日志内容')),
         const SizedBox(height: 12), Row(children: [for (final option in ['部门日志', '我的日志']) Expanded(child: Padding(padding: const EdgeInsets.only(right: 8), child: InkWell(
-          onTap: () => setState(() {_filter = option; _department = null;}), borderRadius: BorderRadius.circular(13), child: Container(alignment: Alignment.center, padding: const EdgeInsets.symmetric(vertical: 12),
-          decoration: BoxDecoration(color: _filter == option ? Palette.deep : Colors.white, borderRadius: BorderRadius.circular(13)), child: Text(option, style: TextStyle(color: _filter == option ? Colors.white : Palette.muted, fontWeight: FontWeight.w800))),
+          onTap: () => setState(() {_filter = option; _department = null;}), borderRadius: BorderRadius.circular(9), child: Container(alignment: Alignment.center, padding: const EdgeInsets.symmetric(vertical: 12),
+          decoration: BoxDecoration(color: _filter == option ? Palette.deep : Colors.white, borderRadius: BorderRadius.circular(9)), child: Text(option, style: TextStyle(color: _filter == option ? Colors.white : Palette.muted, fontWeight: FontWeight.w800))),
         )))]),
       ])),
       Expanded(child: FutureBuilder<List<WorkLog>>(future: _future, builder: (context, s) {
@@ -60,7 +62,7 @@ class _LogsPageState extends State<LogsPage> {
         for (final log in visible) {groups.putIfAbsent(_dept(log), () => {}).putIfAbsent(_team(log), () => []).add(log);}
         return RefreshIndicator(onRefresh: () async {setState(_refresh); await _future;}, child: ListView(padding: const EdgeInsets.fromLTRB(20, 0, 20, 115), children: [
           if (_filter == '部门日志') ...[
-            const Text('部门筛选', style: TextStyle(color: Palette.deep, fontWeight: FontWeight.w900, fontSize: 12)),
+            const Text('部门筛选', style: TextStyle(color: Palette.deep, fontWeight: FontWeight.w800, fontSize: 12)),
             const SizedBox(height: 8),
             SingleChildScrollView(scrollDirection: Axis.horizontal, child: Row(children: [
               _chip('全部部门', _department == null, () => setState(() => _department = null)),
@@ -84,9 +86,9 @@ class _LogsPageState extends State<LogsPage> {
   );
   Widget _chip(String text, bool chosen, VoidCallback tap) => Padding(padding: const EdgeInsets.only(right: 7), child: ChoiceChip(
     selected: chosen, label: Text(text), showCheckmark: false, onSelected: (_) => tap(), selectedColor: Palette.sage, backgroundColor: Colors.white,
-    labelStyle: TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: chosen ? Palette.deep : Palette.muted), side: BorderSide.none,
+    labelStyle: TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: chosen ? Palette.deep : Palette.muted), side: const BorderSide(color: Palette.divider),
   ));
-  Widget _logTile(WorkLog l) => Padding(padding: const EdgeInsets.only(bottom: 9), child: Material(color: Colors.white, borderRadius: BorderRadius.circular(19), child: ListTile(
+  Widget _logTile(WorkLog l) => Padding(padding: const EdgeInsets.only(bottom: 9), child: Material(color: Colors.white, borderRadius: BorderRadius.circular(12), child: ListTile(
     onTap: () async {await Navigator.push(context, MaterialPageRoute<void>(builder: (_) => LogDetailPage(app: widget.app, log: l))); if (mounted) setState(_refresh);},
     contentPadding: const EdgeInsets.fromLTRB(14, 7, 13, 7),
     leading: CircleAvatar(backgroundColor: Palette.sage, child: Text(l.authorName.isEmpty ? '记' : l.authorName.substring(0, 1), style: const TextStyle(color: Palette.deep, fontWeight: FontWeight.w900))),

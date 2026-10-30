@@ -16,7 +16,12 @@ class _TasksPageState extends State<TasksPage> {
   late Future<List<TaskItem>> inbox;
   late Future<List<DispatchedTask>> sent;
   bool get canDispatch => const ['TEAM_LEADER', 'DEPT_MANAGER', 'FOUNDER'].contains(widget.app.user!.role);
-  @override void initState() {super.initState(); _refresh();}
+  @override void initState() {
+    super.initState();
+    // 创始人没有直属上级，默认进入真正有内容的派发任务列表。
+    if (widget.app.user?.role == 'FOUNDER') mode = 1;
+    _refresh();
+  }
   void _refresh() {inbox = widget.app.repo.tasks(personal: false); if (canDispatch) sent = widget.app.repo.dispatchedTasks();}
   Future<void> _advance(TaskItem task) async {
     final options = task.status == 'NOT_STARTED' ? const ['IN_PROGRESS'] : task.status == 'IN_PROGRESS' ? const ['COMPLETED'] : const <String>[];
@@ -26,7 +31,7 @@ class _TasksPageState extends State<TasksPage> {
   }
   @override Widget build(BuildContext context) => Column(children: [
     Padding(padding: const EdgeInsets.fromLTRB(20, 10, 20, 15), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      const Text('任务清单', style: TextStyle(fontSize: 24, fontWeight: FontWeight.w900, color: Palette.deep)),
+      const Text('任务清单', style: TextStyle(fontSize: 22, fontWeight: FontWeight.w800, color: Palette.deep)),
       const SizedBox(height: 4), const Text('接收任务与派发任务分开管理', style: TextStyle(color: Palette.muted, fontSize: 12)),
       const SizedBox(height: 14), Row(children: [
         Expanded(child: _tab('收到的任务', 0)), const SizedBox(width: 10), Expanded(child: _tab('派发任务', 1)),
@@ -34,19 +39,40 @@ class _TasksPageState extends State<TasksPage> {
     ])),
     Expanded(child: mode == 0 ? _received() : _dispatched()),
   ]);
-  Widget _tab(String text, int value) => InkWell(onTap: () => setState(() => mode = value), borderRadius: BorderRadius.circular(15), child: Container(
-    alignment: Alignment.center, padding: const EdgeInsets.symmetric(vertical: 13), decoration: BoxDecoration(color: mode == value ? Palette.deep : Colors.white, borderRadius: BorderRadius.circular(15)),
+  Widget _tab(String text, int value) => InkWell(onTap: () => setState(() => mode = value), borderRadius: BorderRadius.circular(9), child: Container(
+    alignment: Alignment.center, padding: const EdgeInsets.symmetric(vertical: 13), decoration: BoxDecoration(color: mode == value ? Palette.deep : Colors.white, borderRadius: BorderRadius.circular(9)),
     child: Text(text, style: TextStyle(fontWeight: FontWeight.w800, color: mode == value ? Colors.white : Palette.muted))));
   Widget _received() => FutureBuilder<List<TaskItem>>(future: inbox, builder: (context, s) {
     if (s.connectionState != ConnectionState.done) return const Center(child: CircularProgressIndicator());
     if (s.hasError) return ErrorPanel(error: s.error!, onRetry: () => setState(_refresh));
     final items = s.data ?? [];
-    if (items.isEmpty) return const EmptyPanel(title: '暂无收到的任务', subtitle: '直属上级派发任务后会出现在这里');
+    if (items.isEmpty) return RefreshIndicator(
+      onRefresh: () async {setState(_refresh); await inbox;},
+      child: ListView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        children: [
+          EmptyPanel(
+            title: widget.app.user?.role == 'FOUNDER' ? '创始人没有上级派发任务' : '暂无收到的任务',
+            subtitle: widget.app.user?.role == 'FOUNDER'
+                ? '创始人的任务通常由自己向下级派发，请查看「派发任务」。'
+                : '只有直属上级派发给本人的任务会在这里出现。下拉可刷新。',
+          ),
+          if (canDispatch) Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 30),
+            child: OutlinedButton.icon(
+              onPressed: () => setState(() => mode = 1),
+              icon: const Icon(Icons.outbox_outlined),
+              label: const Text('查看派发任务'),
+            ),
+          ),
+        ],
+      ),
+    );
     final done = items.where((i) => i.status == 'COMPLETED').length;
     return RefreshIndicator(onRefresh: () async {setState(_refresh); await inbox;}, child: ListView(padding: const EdgeInsets.fromLTRB(20, 0, 20, 35), children: [
       _summary('收到 ${items.length} 项任务', '已完成 $done 项', items.isEmpty ? 0 : done / items.length),
       const SizedBox(height: 13),
-      ...items.map((t) => Padding(padding: const EdgeInsets.only(bottom: 10), child: Material(color: Colors.white, borderRadius: BorderRadius.circular(20), child: ListTile(
+      ...items.map((t) => Padding(padding: const EdgeInsets.only(bottom: 10), child: Material(color: Colors.white, borderRadius: BorderRadius.circular(12), child: ListTile(
         contentPadding: const EdgeInsets.symmetric(vertical: 10, horizontal: 17),
         leading: const CircleAvatar(backgroundColor: Palette.sage, child: Icon(Icons.assignment_outlined, color: Palette.primary)),
         title: Text(t.name, style: const TextStyle(fontWeight: FontWeight.w900, color: Palette.deep)),
@@ -65,7 +91,7 @@ class _TasksPageState extends State<TasksPage> {
         FilledButton.icon(onPressed: () async {await Navigator.push(context, MaterialPageRoute<void>(builder: (_) => DispatchPage(app: widget.app))); if (mounted) setState(_refresh);}, icon: const Icon(Icons.add_task_rounded), label: const Text('派发新任务 / 管理检查')),
         const SizedBox(height: 14),
         if (items.isEmpty) const EmptyPanel(title: '还没有派发任务', subtitle: '点击上方按钮为直属下级派发任务')
-        else ...items.map((t) => Padding(padding: const EdgeInsets.only(bottom: 10), child: Material(color: Colors.white, borderRadius: BorderRadius.circular(19), child: ListTile(
+        else ...items.map((t) => Padding(padding: const EdgeInsets.only(bottom: 10), child: Material(color: Colors.white, borderRadius: BorderRadius.circular(12), child: ListTile(
           title: Text(t.name, style: const TextStyle(fontWeight: FontWeight.w900, color: Palette.deep)),
           subtitle: Text('截止 ${t.deadline}\n接收 ${t.assigneeCount} 人 · 完成 ${t.completedCount} 人'), isThreeLine: true,
           trailing: const Icon(Icons.chevron_right_rounded), onTap: () async {await Navigator.push(context, MaterialPageRoute<void>(builder: (_) => DispatchPage(app: widget.app))); if (mounted) setState(_refresh);},
@@ -73,7 +99,7 @@ class _TasksPageState extends State<TasksPage> {
       ]));
     });
   }
-  Widget _summary(String title, String subtitle, double progress) => Container(padding: const EdgeInsets.all(18), decoration: BoxDecoration(color: Palette.deep, borderRadius: BorderRadius.circular(20)), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+  Widget _summary(String title, String subtitle, double progress) => Container(padding: const EdgeInsets.all(18), decoration: BoxDecoration(color: Palette.deep, borderRadius: BorderRadius.circular(12)), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
     Text(title, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 18)),
     const SizedBox(height: 4), Text(subtitle, style: const TextStyle(color: Color(0xFFB7DCD7), fontSize: 12)),
     const SizedBox(height: 12), LinearProgressIndicator(value: progress, minHeight: 7, backgroundColor: Colors.white24, color: Palette.gold),
