@@ -17,6 +17,9 @@ permissions:
 
 jobs:
 
+  # ============================================================
+  # Backend
+  # ============================================================
   backend:
     name: Backend Test & Build
     runs-on: ubuntu-latest
@@ -39,6 +42,9 @@ jobs:
         run: mvn -B -DskipTests package
 
 
+  # ============================================================
+  # Web
+  # ============================================================
   web:
     name: Web Build
     runs-on: ubuntu-latest
@@ -65,6 +71,9 @@ jobs:
         run: npm run build
 
 
+  # ============================================================
+  # Docker Build Check
+  # ============================================================
   docker:
     name: Docker Build Check
     runs-on: ubuntu-latest
@@ -93,6 +102,9 @@ jobs:
         run: docker compose build web
 
 
+  # ============================================================
+  # Publish Docker Images
+  # ============================================================
   publish:
     name: Publish Docker Images
     runs-on: ubuntu-latest
@@ -102,12 +114,18 @@ jobs:
       - web
       - docker
 
+    # Only publish images for direct pushes to devops/docker.
+    # Pull requests only run CI checks.
     if: github.event_name == 'push' && github.ref == 'refs/heads/devops/docker'
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
+
+      # --------------------------------------------------------
+      # Login: GitHub Container Registry
+      # --------------------------------------------------------
       - name: Log in to GitHub Container Registry
         uses: docker/login-action@v3
         with:
@@ -115,6 +133,21 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+
+      # --------------------------------------------------------
+      # Login: Huawei Cloud SWR
+      # --------------------------------------------------------
+      - name: Log in to Huawei Cloud SWR
+        uses: docker/login-action@v3
+        with:
+          registry: swr.cn-north-4.myhuaweicloud.com
+          username: ${{ secrets.SWR_USERNAME }}
+          password: ${{ secrets.SWR_PASSWORD }}
+
+
+      # --------------------------------------------------------
+      # Backend Image
+      # --------------------------------------------------------
       - name: Build and push backend image
         uses: docker/build-push-action@v6
         with:
@@ -124,7 +157,13 @@ jobs:
           tags: |
             ghcr.io/wang0166/pandora-backend:devops-docker
             ghcr.io/wang0166/pandora-backend:${{ github.sha }}
+            swr.cn-north-4.myhuaweicloud.com/pandora-zsq/pandora-backend:devops-docker
+            swr.cn-north-4.myhuaweicloud.com/pandora-zsq/pandora-backend:${{ github.sha }}
 
+
+      # --------------------------------------------------------
+      # Web Image
+      # --------------------------------------------------------
       - name: Build and push web image
         uses: docker/build-push-action@v6
         with:
@@ -134,3 +173,5 @@ jobs:
           tags: |
             ghcr.io/wang0166/pandora-web:devops-docker
             ghcr.io/wang0166/pandora-web:${{ github.sha }}
+            swr.cn-north-4.myhuaweicloud.com/pandora-zsq/pandora-web:devops-docker
+            swr.cn-north-4.myhuaweicloud.com/pandora-zsq/pandora-web:${{ github.sha }}
