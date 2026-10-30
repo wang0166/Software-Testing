@@ -157,7 +157,7 @@ jobs:
 
 
   # ============================================================
-  # Deploy: SSH into Huawei ECS and deploy exact commit SHA
+  # Deploy: deploy exact commit SHA to Huawei ECS
   # ============================================================
   deploy:
     name: Deploy to ECS
@@ -169,6 +169,9 @@ jobs:
     if: github.event_name == 'push' && github.ref == 'refs/heads/devops/docker'
 
     steps:
+      # --------------------------------------------------------
+      # Configure SSH connection to ECS
+      # --------------------------------------------------------
       - name: Configure SSH
         env:
           ECS_HOST: ${{ secrets.ECS_HOST }}
@@ -183,6 +186,10 @@ jobs:
           ssh-keyscan -H "$ECS_HOST" >> ~/.ssh/known_hosts
           chmod 600 ~/.ssh/known_hosts
 
+      # --------------------------------------------------------
+      # Pull exact SHA images and recreate backend + web
+      # PostgreSQL is intentionally not redeployed here
+      # --------------------------------------------------------
       - name: Deploy Pandora
         env:
           ECS_HOST: ${{ secrets.ECS_HOST }}
@@ -195,3 +202,75 @@ jobs:
              IMAGE_TAG='$IMAGE_TAG' docker compose pull backend web && \
              IMAGE_TAG='$IMAGE_TAG' docker compose up -d --no-deps backend web && \
              docker compose ps"
+
+      # --------------------------------------------------------
+      # Verify deployment
+      #
+      # Web:
+      #   must return HTTP 200
+      #
+      # API:
+      #   Pandora currently returns HTTP 401 for /api/ without
+      #   an access token. That is acceptable and proves that
+      #   Nginx can reach the backend.
+      #
+      #   HTTP 502 or 000 means backend connectivity failed.
+      # --------------------------------------------------------
+      - name: Verify deployment
+        env:
+          ECS_HOST: ${{ secrets.ECS_HOST }}
+          ECS_USER: ${{ secrets.ECS_USER }}
+        run: |
+          ssh -i ~/.ssh/pandora_deploy_key \
+            "$ECS_USER@$ECS_HOST" '
+              set -e
+
+              cd /opt/pandora
+
+              echo "Waiting for Pandora to start..."
+
+              for i in $(seq 1 12); do
+                HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" http://localhost || true)
+
+                if [ "$HTTP_CODE" = "200" ]; then
+                  echo "Web health check passed."
+                  break
+                fi
+
+                if [ "$i" = "12" ]; then
+                  echo "Web health check failed."
+                  echo "Container status:"
+                  docker compose ps
+
+                  echo "Web logs:"
+                  docker compose logs --tail=100 web
+
+                  echo "Backend logs:"
+                  docker compose logs --tail=100 backend
+
+                  exit 1
+                fi
+
+                echo "Attempt $i/12: HTTP $HTTP_CODE, retrying in 5 seconds..."
+                sleep 5
+              done
+
+              echo "Checking backend through Nginx..."
+
+              API_CODE=$(curl -s -o /dev/null -w "%{http_code}" http://localhost/api/ || true)
+
+              if [ "$API_CODE" = "502" ] || [ "$API_CODE" = "000" ]; then
+                echo "Backend health check failed: HTTP $API_CODE"
+
+                echo "Container status:"
+                docker compose ps
+
+                echo "Backend logs:"
+                docker compose logs --tail=100 backend
+
+                exit 1
+              fi
+
+              echo "Backend is reachable through Nginx: HTTP $API_CODE"
+              echo "Pandora deployment verified successfully."
+            '
