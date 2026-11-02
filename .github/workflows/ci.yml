@@ -170,7 +170,7 @@ jobs:
 
     steps:
       # --------------------------------------------------------
-      # Configure SSH connection to ECS
+      # Configure SSH connection
       # --------------------------------------------------------
       - name: Configure SSH
         env:
@@ -187,8 +187,10 @@ jobs:
           chmod 600 ~/.ssh/known_hosts
 
       # --------------------------------------------------------
-      # Pull exact SHA images and recreate backend + web
-      # PostgreSQL is intentionally not redeployed here
+      # Deploy exact Git commit SHA
+      #
+      # Only backend + web are updated.
+      # PostgreSQL is intentionally left untouched.
       # --------------------------------------------------------
       - name: Deploy Pandora
         env:
@@ -207,14 +209,15 @@ jobs:
       # Verify deployment
       #
       # Web:
-      #   must return HTTP 200
+      #   must eventually return HTTP 200.
       #
-      # API:
-      #   Pandora currently returns HTTP 401 for /api/ without
-      #   an access token. That is acceptable and proves that
-      #   Nginx can reach the backend.
+      # Backend:
+      #   Spring Boot may need several seconds to initialize.
+      #   Nginx can temporarily return HTTP 502 during startup,
+      #   so retry for up to about 90 seconds.
       #
-      #   HTTP 502 or 000 means backend connectivity failed.
+      # /api/ normally returns HTTP 401 without a token.
+      # HTTP 401 therefore proves that Nginx can reach backend.
       # --------------------------------------------------------
       - name: Verify deployment
         env:
@@ -227,7 +230,7 @@ jobs:
 
               cd /opt/pandora
 
-              echo "Waiting for Pandora to start..."
+              echo "Waiting for Pandora web to start..."
 
               for i in $(seq 1 12); do
                 HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" http://localhost || true)
@@ -239,6 +242,8 @@ jobs:
 
                 if [ "$i" = "12" ]; then
                   echo "Web health check failed."
+                  echo "Last HTTP status: $HTTP_CODE"
+
                   echo "Container status:"
                   docker compose ps
 
@@ -251,26 +256,38 @@ jobs:
                   exit 1
                 fi
 
-                echo "Attempt $i/12: HTTP $HTTP_CODE, retrying in 5 seconds..."
+                echo "Web attempt $i/12: HTTP $HTTP_CODE, retrying in 5 seconds..."
                 sleep 5
               done
 
-              echo "Checking backend through Nginx..."
+              echo "Waiting for Pandora backend to become ready..."
 
-              API_CODE=$(curl -s -o /dev/null -w "%{http_code}" http://localhost/api/ || true)
+              for i in $(seq 1 18); do
+                API_CODE=$(curl -s -o /dev/null -w "%{http_code}" http://localhost/api/ || true)
 
-              if [ "$API_CODE" = "502" ] || [ "$API_CODE" = "000" ]; then
-                echo "Backend health check failed: HTTP $API_CODE"
+                if [ "$API_CODE" != "502" ] && [ "$API_CODE" != "000" ]; then
+                  echo "Backend is reachable through Nginx: HTTP $API_CODE"
+                  echo "Pandora deployment verified successfully."
+                  exit 0
+                fi
 
-                echo "Container status:"
-                docker compose ps
+                if [ "$i" = "18" ]; then
+                  echo "Backend health check failed after 90 seconds."
+                  echo "Last HTTP status: $API_CODE"
 
-                echo "Backend logs:"
-                docker compose logs --tail=100 backend
+                  echo "Container status:"
+                  docker compose ps
 
-                exit 1
-              fi
+                  echo "Backend logs:"
+                  docker compose logs --tail=150 backend
 
-              echo "Backend is reachable through Nginx: HTTP $API_CODE"
-              echo "Pandora deployment verified successfully."
+                  echo "Web logs:"
+                  docker compose logs --tail=100 web
+
+                  exit 1
+                fi
+
+                echo "Backend attempt $i/18: HTTP $API_CODE, retrying in 5 seconds..."
+                sleep 5
+              done
             '
