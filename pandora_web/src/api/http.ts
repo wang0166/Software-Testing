@@ -7,6 +7,7 @@ export interface Envelope<T> { code: number; message: string; data: T }
 export interface PageData<T> { items: T[]; page: number; size: number; total: number }
 
 export const API_BASE = (import.meta.env.VITE_API_BASE as string | undefined) ?? '/api';
+export const DEVELOPMENT_TOOLS = import.meta.env.DEV === true;
 
 /**
  * 是否走 mock（假数据）。
@@ -14,6 +15,7 @@ export const API_BASE = (import.meta.env.VITE_API_BASE as string | undefined) ??
  * 切换模式需要重新登录，真实接口失败不得自动转入演示。
  */
 export function isMock(): boolean {
+  if (!DEVELOPMENT_TOOLS) return false;
   const forced = localStorage.getItem('pandora-mock');
   if (forced === '1') return true;
   if (forced === '0') return false;
@@ -21,6 +23,7 @@ export function isMock(): boolean {
 }
 
 export function setMockMode(on: boolean) {
+  if (!DEVELOPMENT_TOOLS) { localStorage.removeItem('pandora-mock'); return; }
   if (on !== isMock()) clearTokens();
   localStorage.setItem('pandora-mock', on ? '1' : '0');
 }
