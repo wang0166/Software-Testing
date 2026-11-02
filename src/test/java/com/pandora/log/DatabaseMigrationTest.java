@@ -37,25 +37,17 @@ class DatabaseMigrationTest extends EmbeddedPostgresSupport {
         firstRun = flyway(jdbcUrl).migrate();
     }
 
-    @Test
-    void migratesEmptyDatabaseToLatestVersion() {
-<<<<<<< HEAD
-        assertThat(firstRun.migrationsExecuted).isEqualTo(6);
-=======
+   @Test
+   void migratesEmptyDatabaseToLatestVersion() {
         assertThat(firstRun.migrationsExecuted).isEqualTo(8);
->>>>>>> origin/feature/web-admin
 
         Flyway flyway = flyway(jdbcUrl);
         MigrationInfo current = flyway.info().current();
         assertThat(current).isNotNull();
-<<<<<<< HEAD
-        assertThat(current.getVersion().getVersion()).isEqualTo("6");
-=======
         assertThat(current.getVersion().getVersion()).isEqualTo("8");
->>>>>>> origin/feature/web-admin
         assertThat(current.getState().isApplied()).isTrue();
         assertThat(flyway.info().pending()).isEmpty();
-    }
+   }
 
     @Test
     void seedsRolesPermissionsAndSystemConfigs() {
