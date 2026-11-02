@@ -4,12 +4,14 @@ import '../core/models.dart';
 import '../core/theme.dart';
 import '../widgets/business.dart';
 import '../widgets/ui.dart';
+import 'dispatch_page.dart';
 
-/// 甲方任务台账：可双向滚动、固定表头、任务详情与状态推进保留。
-/// 仅展示当前后端授权的收到任务；创建入口由 ViewPage 统一提供。
+/// 甲方任务台账：收到任务与本人发布记录在同一页面管理。
+/// 创建入口仍由 ViewPage 统一提供；审核由后端最终校验。
 class TasksPage extends StatefulWidget {
   final AppState app;
-  const TasksPage({super.key, required this.app});
+  final bool initiallyIssued;
+  const TasksPage({super.key, required this.app, this.initiallyIssued=false});
   @override State<TasksPage> createState() => _TasksPageState();
 }
 
@@ -18,11 +20,29 @@ class _TasksPageState extends State<TasksPage> {
   final search = TextEditingController();
   final _horizontal = ScrollController();
   String filter = '全部';
+  bool showIssued = false;
+  Future<IssuedTasksResult>? _issuedFuture;
   static const double tableWidth = 1120;
   static const double rowHeight = 54;
-  @override void initState() {super.initState(); _reload();}
+  @override void initState() {
+    super.initState();
+    showIssued=widget.initiallyIssued;
+    _reload();
+    if(showIssued) _issuedFuture=widget.app.repo.issuedTasks();
+  }
   @override void dispose() {search.dispose(); _horizontal.dispose(); super.dispose();}
-  void _reload() {_future = widget.app.repo.tasks(personal: false);}
+  void _reload() {
+    _future = widget.app.repo.tasks(personal: false);
+    if (_issuedFuture != null) _issuedFuture = widget.app.repo.issuedTasks();
+  }
+  void _switchTab(bool issued) {
+    if (showIssued == issued) return;
+    setState(() {
+      showIssued = issued;
+      if (issued) _issuedFuture ??= widget.app.repo.issuedTasks();
+    });
+  }
+  void _refreshIssued() => setState(() => _issuedFuture = widget.app.repo.issuedTasks());
 
   Future<void> _advance(TaskItem task) async {
     final next = task.status == 'NOT_STARTED' ? 'IN_PROGRESS'
@@ -35,7 +55,26 @@ class _TasksPageState extends State<TasksPage> {
   }
 
   @override
-  Widget build(BuildContext context) => FutureBuilder<List<TaskItem>>(
+  Widget build(BuildContext context) => Column(children: [
+    Padding(padding: const EdgeInsets.fromLTRB(16, 10, 16, 6), child: Row(children: [
+      Expanded(child: _tab('收到的任务', !showIssued, const Key('received_tasks_tab'), () => _switchTab(false))),
+      const SizedBox(width: 8),
+      Expanded(child: _tab('我发布的任务', showIssued, const Key('issued_tasks_tab'), () => _switchTab(true))),
+    ])),
+    Expanded(child: showIssued ? _issuedBody() : _receivedBody()),
+  ]);
+
+  Widget _tab(String label, bool active, Key key, VoidCallback onTap) => Material(
+    color: active ? Palette.deep : Colors.white,
+    borderRadius: BorderRadius.circular(8),
+    child: InkWell(key:key,onTap:onTap,borderRadius:BorderRadius.circular(8),
+      child: Container(alignment:Alignment.center,height:43,
+        decoration:BoxDecoration(border:Border.all(color:active?Palette.deep:Palette.divider),borderRadius:BorderRadius.circular(8)),
+        child:Text(label,style:TextStyle(color:active?Colors.white:Palette.ink,
+          fontSize:13,fontWeight:FontWeight.w800)))),
+  );
+
+  Widget _receivedBody() => FutureBuilder<List<TaskItem>>(
     future: _future,
     builder: (context, snap) {
       final tasks = snap.data ?? <TaskItem>[];
@@ -87,10 +126,127 @@ class _TasksPageState extends State<TasksPage> {
                     child: _ledger(visible),
                   ),
         )),
-        const SizedBox(height: 64), // 避开 ViewPage 的「创建任务」悬浮入口
+        const SizedBox(height: 64),
       ]);
     },
   );
+
+  Widget _issuedBody() => FutureBuilder<IssuedTasksResult>(
+    future: _issuedFuture,
+    builder:(context,snap) {
+      if(snap.connectionState!=ConnectionState.done) {
+        return const Center(child:CircularProgressIndicator());
+      }
+      if(snap.hasError) return ErrorPanel(error:snap.error!,onRetry:_refreshIssued);
+      final result=snap.data ?? const IssuedTasksResult([]);
+      return Column(children:[
+        Padding(padding:const EdgeInsets.fromLTRB(16,10,16,8),child:Row(children:[
+          const Expanded(child:Text('我的发布记录',style:TextStyle(
+            color:Palette.deep,fontSize:19,fontWeight:FontWeight.w900))),
+          Text('${result.items.length} 条',style:const TextStyle(
+            color:Palette.primary,fontSize:12,fontWeight:FontWeight.w800)),
+          IconButton(onPressed:_refreshIssued,tooltip:'刷新发布记录',
+            icon:const Icon(Icons.refresh,color:Palette.primary,size:20)),
+        ])),
+        if(result.notice!=null) Padding(padding:const EdgeInsets.symmetric(horizontal:16),
+          child:Container(width:double.infinity,padding:const EdgeInsets.all(11),
+            decoration:BoxDecoration(color:Palette.pastel,borderRadius:BorderRadius.circular(8)),
+            child:Text(result.notice!,style:const TextStyle(color:Palette.deep,fontSize:11)))),
+        Expanded(child:result.items.isEmpty
+          ? const Center(child:BusinessEmpty('暂无发布或待审核的任务'))
+          : RefreshIndicator(onRefresh:() async {
+              final future=widget.app.repo.issuedTasks();
+              setState(()=>_issuedFuture=future);
+              await future;
+            },child:ListView.separated(
+              padding:const EdgeInsets.fromLTRB(12,8,12,88),
+              itemCount:result.items.length,
+              separatorBuilder:(_,__)=>const SizedBox(height:7),
+              itemBuilder:(context,i)=>_issuedRow(result.items[i]),
+            ))),
+      ]);
+    },
+  );
+
+  Widget _issuedRow(IssuedTask item) => Material(
+    color:Colors.white,borderRadius:BorderRadius.circular(8),
+    child:Container(
+      decoration:BoxDecoration(border:Border.all(color:Palette.divider),borderRadius:BorderRadius.circular(8)),
+      padding:const EdgeInsets.fromLTRB(13,11,13,9),
+      child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[
+        Row(children:[
+          Expanded(child:Text(item.name,style:const TextStyle(color:Palette.deep,
+            fontWeight:FontWeight.w800,fontSize:14),maxLines:2,overflow:TextOverflow.ellipsis)),
+          const SizedBox(width:8),
+          _tag(item.stateLabel,item.changePending || item.isWaiting
+            ? const Color(0xFFB47A24) : item.reviewStatus=='REJECTED'
+              ? Palette.coral : Palette.primary),
+        ]),
+        const SizedBox(height:7),
+        Text('${taskTypeLabel(item.taskType)} · 接收 ${item.assigneeCount} 人 · 截止 ${_shortDate(item.deadline)}',
+          style:const TextStyle(color:Palette.muted,fontSize:11),maxLines:1,overflow:TextOverflow.ellipsis),
+        const SizedBox(height:8),
+        Row(children:[
+          TextButton(onPressed:()=>_issuedDetail(item),child:const Text('详情')),
+          const Spacer(),
+          TextButton(key:Key('edit_issued_${item.id}'),
+            onPressed:item.changePending || (item.isRequest && !item.isWaiting)
+              ? null : ()=>_editIssued(item),child:const Text('编辑')),
+          TextButton(key:Key('delete_issued_${item.id}'),
+            onPressed:item.changePending || (item.isRequest && !item.isWaiting)
+              ? null : ()=>_deleteIssued(item),
+            style:TextButton.styleFrom(foregroundColor:Palette.coral),
+            child:Text(item.isRequest?'撤回':'删除')),
+        ]),
+      ]),
+    ),
+  );
+
+  void _issuedDetail(IssuedTask item) => showModalBottomSheet<void>(
+    context:context,showDragHandle:true,isScrollControlled:true,
+    builder:(ctx)=>SafeArea(child:Padding(
+      padding:const EdgeInsets.fromLTRB(20,8,20,28),
+      child:SingleChildScrollView(child:Column(
+        mainAxisSize:MainAxisSize.min,crossAxisAlignment:CrossAxisAlignment.start,
+        children:[
+          Text(item.name,style:const TextStyle(fontSize:21,fontWeight:FontWeight.w900,color:Palette.deep)),
+          const SizedBox(height:10),Text('状态：${item.stateLabel}',style:const TextStyle(color:Palette.primary)),
+          const SizedBox(height:8),Text(item.details.isEmpty?'暂无详情':item.details),
+          const SizedBox(height:10),Text('开始：${_shortDate(item.startDate)}'),
+          Text('截止：${_shortDate(item.deadline)}'),
+          const SizedBox(height:8),Text('接收人数：${item.assigneeCount}'),
+          if(item.changePending) const Padding(padding:EdgeInsets.only(top:10),
+            child:Text('修改或删除申请正在等待管理员审核，已发布任务保持原内容。',
+              style:TextStyle(color:Palette.muted))),
+        ],
+      )))),
+  );
+
+  Future<void> _editIssued(IssuedTask item) async {
+    final saved=await Navigator.push<bool>(context,MaterialPageRoute<bool>(
+      builder:(_)=>DispatchPage(app:widget.app,editing:item)));
+    if(mounted && saved==true) _refreshIssued();
+  }
+
+  Future<void> _deleteIssued(IssuedTask item) async {
+    final withdraw=item.isRequest;
+    final approved=await showDialog<bool>(context:context,builder:(ctx)=>AlertDialog(
+      title:Text(withdraw?'撤回派发申请？':'申请删除已发布任务？'),
+      content:Text(withdraw?'待审核的申请将被撤回，不会生成任务。':
+        '删除必须经过管理员审核。审核通过之前，接收人仍可看到原任务。'),
+      actions:[
+        TextButton(onPressed:()=>Navigator.pop(ctx,false),child:const Text('取消')),
+        FilledButton(onPressed:()=>Navigator.pop(ctx,true),child:Text(withdraw?'确认撤回':'提交删除申请')),
+      ],
+    ));
+    if(approved!=true) return;
+    try {
+      final status=await widget.app.repo.requestIssuedTaskDelete(item);
+      if(!mounted) return;
+      toast(context,status=='WITHDRAWN'?'派发申请已撤回':'删除申请已提交，等待审核');
+      _refreshIssued();
+    } catch(e) {if(mounted) toast(context,'操作失败：$e');}
+  }
 
   Widget _ledger(List<TaskItem> tasks) => Container(
     decoration: BoxDecoration(color: Colors.white, border: Border.all(color: Palette.divider),

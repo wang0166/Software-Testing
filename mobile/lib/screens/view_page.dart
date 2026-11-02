@@ -18,6 +18,7 @@ class _ViewPageState extends State<ViewPage> {
   int selected = 0;
   int revision = 0;
   bool openingCreate = false;
+  bool focusIssuedAfterCreate = false;
   static const tabs = ['日历视图', '任务清单', '下属动态', '统计看板'];
 
   Future<void> _createTask() async {
@@ -27,7 +28,13 @@ class _ViewPageState extends State<ViewPage> {
       final submitted = await Navigator.of(context).push<bool>(MaterialPageRoute<bool>(
         builder: (_) => DispatchPage(app: widget.app),
       ));
-      if (mounted && submitted == true) setState(() => revision++);
+      if (mounted && submitted == true) {
+        setState(() {
+          revision++;
+          selected = 1; // Show the newly submitted request in my issued records.
+          focusIssuedAfterCreate = true;
+        });
+      }
     } finally {
       if (mounted) setState(() => openingCreate = false);
     }
@@ -73,7 +80,10 @@ class _ViewPageState extends State<ViewPage> {
                 fontWeight: FontWeight.w700, fontSize: 12),
               side: BorderSide(color: selected == i ? Palette.deep : Palette.divider),
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(7)),
-              onSelected: (_) => setState(() => selected = i),
+              onSelected: (_) => setState(() {
+                selected = i;
+                focusIssuedAfterCreate = false;
+              }),
             ),
           ),
         ],
@@ -82,7 +92,8 @@ class _ViewPageState extends State<ViewPage> {
       Expanded(child: switch (selected) {
         0 => CalendarPage(key: ValueKey('calendar_$revision'),
               app: widget.app, embedded: true),
-        1 => TasksPage(key: ValueKey('tasks_$revision'), app: widget.app),
+        1 => TasksPage(key: ValueKey('tasks_${revision}_$focusIssuedAfterCreate'),
+              app: widget.app, initiallyIssued: focusIssuedAfterCreate),
         2 => SubordinatesPage(key: ValueKey('team_$revision'), app: widget.app),
         _ => StatsPage(key: ValueKey('stats_$revision'), app: widget.app),
       }),

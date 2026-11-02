@@ -115,6 +115,55 @@ class DispatchedTask {
   factory DispatchedTask.fromJson(dynamic obj) {final j=mapOf(obj);return DispatchedTask(id:intOf(j['id']),name:textOf(j['name']),details:textOf(j['details']),urgency:textOf(j['urgency'],'NOT_URGENT'),startDate:textOf(j['startDate']),deadline:textOf(j['deadline']),assigneeCount:intOf(j['assigneeCount']),completedCount:intOf(j['completedCount']),pendingReviewCount:intOf(j['pendingReviewCount']));}
   Map<String,dynamic> toJson()=>{'id':id,'name':name,'details':details,'urgency':urgency,'startDate':startDate,'deadline':deadline,'assigneeCount':assigneeCount,'completedCount':completedCount,'pendingReviewCount':pendingReviewCount};
 }
+
+/// A task submitted by this user. CREATE_REQUEST records are approval requests,
+/// not tasks visible in the recipient's inbox until an administrator approves.
+class IssuedTask {
+  final int id;
+  final String name, details, urgency, taskType, startDate, deadline;
+  final String reviewStatus, recordType;
+  final bool changePending;
+  final List<int> assigneeIds;
+  final int assigneeCount;
+  const IssuedTask({required this.id, required this.name, required this.details,
+    required this.startDate, required this.deadline,
+    this.urgency='NOT_URGENT', this.taskType='GENERAL',
+    this.reviewStatus='APPROVED', this.recordType='ACTIVE',
+    this.changePending=false, this.assigneeIds=const [], this.assigneeCount=0});
+  bool get isRequest => recordType == 'CREATE_REQUEST';
+  bool get isWaiting => isRequest && reviewStatus == 'PENDING';
+  String get stateLabel {
+    if (changePending) return '变更审核中';
+    if (isRequest) {
+      return const {'PENDING':'派发待审核','REJECTED':'申请被驳回',
+        'APPROVED':'审核已通过', 'WITHDRAWN':'已撤回'}[reviewStatus] ?? reviewStatus;
+    }
+    return '已发布';
+  }
+  factory IssuedTask.fromJson(dynamic obj, {bool request=false}) {
+    final j=mapOf(obj);
+    final ids=listOf(j['assigneeIds']).map((e)=>intOf(e)).where((e)=>e>0).toList();
+    return IssuedTask(
+      id:intOf(request ? j['requestId'] : j['id'],intOf(j['id'])),
+      name:textOf(j['name'],textOf(j['title'])),
+      details:textOf(j['details']), urgency:textOf(j['urgency'],'NOT_URGENT'),
+      taskType:textOf(j['taskType'],'GENERAL'),
+      startDate:textOf(j['startDate']),deadline:textOf(j['deadline']),
+      assigneeIds:ids,assigneeCount:intOf(j['assigneeCount'],ids.length),
+      reviewStatus:textOf(j['status'],textOf(j['reviewStatus'],request?'PENDING':'APPROVED')),
+      recordType:request?'CREATE_REQUEST':'ACTIVE',
+      changePending:j['changePending']==true || textOf(j['changeRequestStatus'])=='PENDING',
+    );
+  }
+}
+
+class IssuedTasksResult {
+  final List<IssuedTask> items;
+  /// Non-null if an older backend cannot list pending requests yet.
+  final String? notice;
+  const IssuedTasksResult(this.items, {this.notice});
+}
+
 class TaskAssignment {
   final int id, assigneeId;
   final String assigneeName, status, reviewStatus;

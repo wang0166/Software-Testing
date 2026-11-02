@@ -38,6 +38,16 @@ abstract class PandoraRepository {
     required String taskType, required List<int> assigneeIds});
   /// All authorized subordinates' tasks, regardless of sender.
   Future<List<SubordinateTaskSummary>> subordinatesTaskOverview();
+  /// Published tasks and the caller's own pending dispatch requests.
+  Future<IssuedTasksResult> issuedTasks();
+  /// Editing an approved task creates a PENDING change request. Editing a
+  /// pending creation replaces its proposal but does not publish the task.
+  Future<String> requestIssuedTaskEdit(IssuedTask original, {
+    required String name, required String details, required String startDate,
+    required String deadline, required String urgency, required String taskType,
+    required List<int> assigneeIds});
+  /// Pending creation: withdraw; published task: request approval to delete.
+  Future<String> requestIssuedTaskDelete(IssuedTask original);
   Future<List<DispatchedTask>> dispatchedTasks();
   Future<List<TaskAssignment>> dispatchedAssignments(int taskId);
   Future<void> dispatchTask({required String name,required String details,required String startDate,required String deadline,required String urgency,required List<int> assigneeIds});

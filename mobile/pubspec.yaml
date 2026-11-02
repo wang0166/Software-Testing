@@ -1,7 +1,7 @@
 name: mobile
 description: Pandora - 智能掌上日志系统 Flutter Android 客户端
 publish_to: none
-version: 1.7.0+9
+version: 1.8.0+10
 
 environment:
   sdk: '>=3.6.0 <4.0.0'
