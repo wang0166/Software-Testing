@@ -2,260 +2,218 @@ import 'package:flutter/material.dart';
 import '../core/app_state.dart';
 import '../core/models.dart';
 import '../core/theme.dart';
+import '../widgets/business.dart';
 import '../widgets/ui.dart';
-import '../widgets/redesign.dart';
-import 'dispatch_page.dart';
-import 'calendar_page.dart';
 
+/// 甲方任务台账：可双向滚动、固定表头、任务详情与状态推进保留。
+/// 仅展示当前后端授权的收到任务；创建入口由 ViewPage 统一提供。
 class TasksPage extends StatefulWidget {
   final AppState app;
-  const TasksPage({super.key,required this.app});
-  @override State<TasksPage> createState()=>_TasksPageState();
+  const TasksPage({super.key, required this.app});
+  @override State<TasksPage> createState() => _TasksPageState();
 }
+
 class _TasksPageState extends State<TasksPage> {
-  bool _personal=false;
   late Future<List<TaskItem>> _future;
-  @override void initState(){super.initState();_reload();}
-  void _reload(){_future=widget.app.repo.tasks(personal:_personal);}
-  // Use a dedicated route for task creation. It owns and disposes its text
-  // controllers after the route is removed, avoiding dialog-exit races.
-  Future<void> _createTask() async {
-    final draft = await Navigator.of(context).push<_PersonalTaskDraft>(
-      MaterialPageRoute<_PersonalTaskDraft>(
-        builder: (_) => const _NewPersonalTaskPage(),
-      ),
-    );
-    if (!mounted || draft == null) return;
+  final search = TextEditingController();
+  final _horizontal = ScrollController();
+  String filter = '全部';
+  static const double tableWidth = 1120;
+  static const double rowHeight = 54;
+  @override void initState() {super.initState(); _reload();}
+  @override void dispose() {search.dispose(); _horizontal.dispose(); super.dispose();}
+  void _reload() {_future = widget.app.repo.tasks(personal: false);}
+
+  Future<void> _advance(TaskItem task) async {
+    final next = task.status == 'NOT_STARTED' ? 'IN_PROGRESS'
+        : task.status == 'IN_PROGRESS' ? 'COMPLETED' : null;
+    if (next == null) return;
     try {
-      await widget.app.repo.createPersonalTask(draft.name, draft.details);
-      if (!mounted) return;
-      toast(context, '任务创建成功');
-      setState(_reload);
-    } catch (error) {
-      if (mounted) toast(context, '$error');
-    }
-  }
-
-  Future<void> _advance(TaskItem item) async {
-    final options=item.source=='RECEIVED'?
-      (item.status=='NOT_STARTED'?['IN_PROGRESS']:item.status=='IN_PROGRESS'?['COMPLETED']:<String>[]):
-      ['NOT_STARTED','IN_PROGRESS','COMPLETED'];
-    if(options.isEmpty){toast(context,'此任务暂无可执行的进度变更');return;}
-    final selected=await showModalBottomSheet<String>(context:context,showDragHandle:true,builder:(context)=>SafeArea(child:Padding(padding:const EdgeInsets.fromLTRB(20,8,20,28),child:Column(mainAxisSize:MainAxisSize.min,children:[const Text('更新任务进度',style:TextStyle(fontWeight:FontWeight.w800,fontSize:19)),const SizedBox(height:12),for(final status in options)ListTile(title:Text(const {'NOT_STARTED':'待开始','IN_PROGRESS':'进行中','COMPLETED':'已完成'}[status]??status),trailing:const Icon(Icons.chevron_right),onTap:()=>Navigator.pop(context,status))]))));
-    if(selected==null)return;
-    try{await widget.app.repo.updateTask(item,selected);if(mounted){toast(context,'任务状态已更新');setState(_reload);}}catch(e){if(mounted)toast(context,'$e');}
-  }
-  @override Widget build(BuildContext context) {
-    if (!widget.app.user!.canUseTasks) return const Center(child: EmptyPanel(title: '当前角色仅可查看日志', subtitle: '管理员无权操作个人任务或接收任务', icon: Icons.lock_outline));
-    return Scaffold(
-      body: Column(children: [
-        Padding(padding: const EdgeInsets.fromLTRB(22, 19, 22, 12), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          const CanvasHeader(eyebrow: 'PANDORA  /  PLANNER', title: '我的任务', subtitle: '事情有轻重，进展有节奏', icon: Icons.task_alt_rounded),
-          Row(children: [
-            Expanded(child: _tab('收到的任务', false)), const SizedBox(width: 9), Expanded(child: _tab('我的自建任务', true)),
-          ]),
-          const SizedBox(height: 9),
-          Row(children: [
-            Expanded(child: TextButton.icon(
-              key: const ValueKey('open_gantt_from_tasks'),
-              onPressed: () => Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => CalendarPage(app: widget.app, initialMode: 3))),
-              icon: const Icon(Icons.calendar_month_rounded, size: 17), label: const Text('日历甘特图'),
-            )),
-            if (const ['TEAM_LEADER', 'DEPT_MANAGER', 'FOUNDER'].contains(widget.app.user!.role))
-              Expanded(child: TextButton.icon(onPressed: () => Navigator.push(context, MaterialPageRoute<void>(builder: (_) => DispatchPage(app: widget.app))), icon: const Icon(Icons.send_rounded, size: 17), label: const Text('管理派发任务'))),
-          ]),
-        ])),
-        Expanded(child: FutureBuilder<List<TaskItem>>(future: _future, builder: (context, snap) {
-          if (snap.connectionState != ConnectionState.done) return const Center(child: CircularProgressIndicator());
-          if (snap.hasError) return ErrorPanel(error: snap.error!, onRetry: () => setState(_reload));
-          final data = snap.data ?? [];
-          if (data.isEmpty) return ListView(children: [EmptyPanel(title: _personal ? '创建第一个计划' : '暂无收到的任务', subtitle: _personal ? '点击新建任务，把计划安排起来' : '上级派发的任务会显示在这里', icon: Icons.task_alt_rounded)]);
-          final complete = data.where((task) => task.status == 'COMPLETED').length;
-          return RefreshIndicator(onRefresh: () async { setState(_reload); await _future; }, child: ListView(
-            padding: const EdgeInsets.fromLTRB(22, 3, 22, 115),
-            children: [
-              Container(padding: const EdgeInsets.all(20), decoration: BoxDecoration(gradient: const LinearGradient(colors: [Color(0xFF184C50), Color(0xFF218B81)]), borderRadius: BorderRadius.circular(26)), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                const Text('YOUR PROGRESS', style: TextStyle(color: Palette.gold, letterSpacing: 1.8, fontWeight: FontWeight.w900, fontSize: 10)),
-                const SizedBox(height: 11),
-                Row(children: [Expanded(child: Text('已完成 $complete / ${data.length} 项', style: const TextStyle(color: Colors.white, fontSize: 21, fontWeight: FontWeight.w900))),
-                  Text('${(complete / data.length * 100).round()}%', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 23))]),
-                const SizedBox(height: 14),
-                ClipRRect(borderRadius: BorderRadius.circular(6), child: LinearProgressIndicator(value: complete / data.length, minHeight: 8, backgroundColor: Colors.white.withValues(alpha: .23), color: Palette.gold)),
-                const SizedBox(height: 9), const Text('持续推进，一件件完成', style: TextStyle(color: Color(0xFFC3E3DE), fontSize: 11)),
-              ])),
-              const SizedBox(height: 21),
-              TinyLabel(title: _personal ? '我的自建计划' : '待办事项', action: '共 ${data.length} 项'),
-              const SizedBox(height: 10),
-              for (var i = 0; i < data.length; i++) Padding(padding: const EdgeInsets.only(bottom: 11), child: _taskTile(data[i], i)),
-            ],
-          ));
-        })),
-      ]),
-      floatingActionButton: _personal ? FloatingActionButton.extended(
-        onPressed: _createTask, backgroundColor: Palette.deep, foregroundColor: Colors.white,
-        icon: const Icon(Icons.add_rounded), label: const Text('新建任务', style: TextStyle(fontWeight: FontWeight.w900)),
-      ) : null,
-    );
-  }
-  Widget _taskTile(TaskItem task, int i) => StoryCard(padding: EdgeInsets.zero, child: Material(color: Colors.transparent, child: InkWell(
-    onTap: () => _showDetail(task), borderRadius: BorderRadius.circular(24),
-    child: Padding(padding: const EdgeInsets.all(17), child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      Container(width: 42, height: 42, alignment: Alignment.center, decoration: BoxDecoration(color: task.status == 'COMPLETED' ? Palette.sage : i.isEven ? Palette.pastel : Palette.lavender, borderRadius: BorderRadius.circular(13)),
-        child: Text('${i + 1}'.padLeft(2, '0'), style: const TextStyle(fontSize: 15, color: Palette.deep, fontWeight: FontWeight.w900))),
-      const SizedBox(width: 12),
-      Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Row(children: [Expanded(child: Text(task.name, maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w900, color: Palette.deep))), const SizedBox(width: 5), StatusBadge(status: task.status)]),
-        const SizedBox(height: 6),
-        Text(task.details.isEmpty ? '暂无详细说明' : task.details, maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Palette.muted, fontSize: 12, height: 1.5)),
-        const SizedBox(height: 14), const DottedDivider(), const SizedBox(height: 10),
-        Row(children: [
-          Icon(task.source == 'PERSONAL' ? Icons.person_outline : Icons.people_outline_rounded, size: 15, color: Palette.primary),
-          const SizedBox(width: 5), Text(task.source == 'PERSONAL' ? '个人任务' : '上级派发', style: const TextStyle(fontSize: 10, color: Palette.muted)),
-          if (task.urgency == 'URGENT') ...[const SizedBox(width: 6), const Pill(text: '紧急', color: Color(0xFFC3654A), background: Color(0xFFFCECE6))],
-          const Spacer(),
-          if (task.deadline != null) Flexible(child: Text('截止 ${friendlyDate(task.deadline!)}', overflow: TextOverflow.ellipsis, style: const TextStyle(color: Palette.muted, fontSize: 10))),
-          const Icon(Icons.arrow_outward_rounded, size: 17, color: Palette.primary),
-        ]),
-      ])),
-    ])),
-  )));
-
-  Widget _tab(String label,bool value)=>InkWell(onTap:()=>setState((){_personal=value;_reload();}),child:Container(alignment:Alignment.center,padding:const EdgeInsets.symmetric(vertical:14),decoration:BoxDecoration(color:_personal==value?Palette.deep:Colors.white,borderRadius:BorderRadius.circular(15)),child:Text(label,style:TextStyle(fontWeight:FontWeight.w800,color:_personal==value?Colors.white:Palette.muted))));
-  Future<void> _showDetail(TaskItem item) async {
-    await showModalBottomSheet<void>(context:context,showDragHandle:true,isScrollControlled:true,builder:(ctx)=>SafeArea(child:Padding(padding:EdgeInsets.fromLTRB(22,12,22,24+MediaQuery.of(ctx).viewInsets.bottom),child:Column(mainAxisSize:MainAxisSize.min,crossAxisAlignment:CrossAxisAlignment.start,children:[
-      const Text('任务详情',style:TextStyle(color:Palette.muted,fontSize:12)),const SizedBox(height:7),Text(item.name,style:Theme.of(ctx).textTheme.titleLarge),const SizedBox(height:14),Text(item.details,style:const TextStyle(height:1.65,color:Palette.deep)),const SizedBox(height:15),StatusBadge(status:item.status),if(item.deadline!=null)Padding(padding:const EdgeInsets.only(top:10),child:Text('截止日期：${item.deadline}',style:const TextStyle(color:Palette.muted))),const SizedBox(height:12),if(item.source=='RECEIVED')Pill(text:const {'NONE':'未邀约','PENDING':'待检查','APPROVED':'已通过','RETURNED':'已退回'}[item.reviewStatus]??item.reviewStatus),const SizedBox(height:20),if(item.reviewStatus!='PENDING'&&item.reviewStatus!='APPROVED')FilledButton(onPressed:(){Navigator.pop(ctx);_advance(item);},child:const Text('更新进度')),if(item.source=='RECEIVED'&&item.status=='COMPLETED'&&(item.reviewStatus=='NONE'||item.reviewStatus=='RETURNED'))Padding(padding:const EdgeInsets.only(top:9),child:OutlinedButton(onPressed:()async{Navigator.pop(ctx);try{await widget.app.repo.inviteReview(item.id);if(mounted){toast(context,'已邀请上级检查');setState(_reload);}}catch(e){if(mounted)toast(context,'$e');}},child:const Text('邀请上级检查'))),
-    ]))));
-  }
-}
-
-// Personal task entry is a full route so the Android back button and
-// AppBar back arrow both work without relying on an AlertDialog overlay.
-class _PersonalTaskDraft {
-  final String name;
-  final String details;
-  const _PersonalTaskDraft(this.name, this.details);
-}
-
-class _NewPersonalTaskPage extends StatefulWidget {
-  const _NewPersonalTaskPage();
-
-  @override
-  State<_NewPersonalTaskPage> createState() => _NewPersonalTaskPageState();
-}
-
-class _NewPersonalTaskPageState extends State<_NewPersonalTaskPage> {
-  final _formKey = GlobalKey<FormState>();
-  final _name = TextEditingController();
-  final _details = TextEditingController();
-
-  @override
-  void dispose() {
-    _name.dispose();
-    _details.dispose();
-    super.dispose();
-  }
-
-  void _save() {
-    if (!_formKey.currentState!.validate()) return;
-    FocusScope.of(context).unfocus();
-    Navigator.of(context).pop<_PersonalTaskDraft>(
-      _PersonalTaskDraft(_name.text.trim(), _details.text.trim()),
-    );
+      await widget.app.repo.updateTask(task, next);
+      if (mounted) {toast(context, '任务进度已更新'); setState(_reload);}
+    } catch(e) {if (mounted) toast(context, '$e');}
   }
 
   @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text('新建个人任务')),
-      body: SafeArea(
-        child: ListView(
-          padding: const EdgeInsets.fromLTRB(20, 18, 20, 24),
+  Widget build(BuildContext context) => FutureBuilder<List<TaskItem>>(
+    future: _future,
+    builder: (context, snap) {
+      final tasks = snap.data ?? <TaskItem>[];
+      final keyword = search.text.trim().toLowerCase();
+      final visible = tasks.where((t) =>
+        (filter == '全部' || filter == t.statusLabel) &&
+        (keyword.isEmpty || t.name.toLowerCase().contains(keyword) ||
+          t.details.toLowerCase().contains(keyword))
+      ).toList();
+      return Column(children: [
+        Padding(padding: const EdgeInsets.fromLTRB(16, 9, 16, 8), child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const CanvasHeader(
-              eyebrow: 'PANDORA  /  CREATE',
-              title: '新建任务',
-              subtitle: '把计划变成具体、可完成的行动',
-              icon: Icons.add_task_rounded,
-            ),
-            const SizedBox(height: 20),
-            StoryCard(
-              child: Form(
-                key: _formKey,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text(
-                      '任务名称',
-                      style: TextStyle(
-                        color: Palette.deep,
-                        fontWeight: FontWeight.w800,
-                        fontSize: 15,
-                      ),
-                    ),
-                    const SizedBox(height: 9),
-                    TextFormField(
-                      controller: _name,
-                      maxLength: 200,
-                      textInputAction: TextInputAction.next,
-                      decoration: const InputDecoration(
-                        hintText: '例如：整理本周测试计划',
-                        prefixIcon: Icon(Icons.task_alt_rounded),
-                      ),
-                      validator: (value) => (value == null || value.trim().isEmpty)
-                          ? '请输入任务名称'
-                          : null,
-                    ),
-                    const SizedBox(height: 16),
-                    const Text(
-                      '任务详情',
-                      style: TextStyle(
-                        color: Palette.deep,
-                        fontWeight: FontWeight.w800,
-                        fontSize: 15,
-                      ),
-                    ),
-                    const SizedBox(height: 9),
-                    TextFormField(
-                      controller: _details,
-                      minLines: 4,
-                      maxLines: 7,
-                      textInputAction: TextInputAction.newline,
-                      decoration: const InputDecoration(
-                        hintText: '写下任务目标、具体步骤或备注…',
-                        alignLabelWithHint: true,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-            const SizedBox(height: 12),
-            const Padding(
-              padding: EdgeInsets.symmetric(horizontal: 6),
-              child: Text(
-                '仅创建自己的任务，不会向其他成员派发。',
-                style: TextStyle(color: Palette.muted, fontSize: 12),
-              ),
-            ),
+            Row(children: [
+              const Expanded(child: Text('任务执行台账', style: TextStyle(
+                color: Palette.deep, fontWeight: FontWeight.w900, fontSize: 19))),
+              Text('共 ${visible.length} 项', style: const TextStyle(color: Palette.primary,
+                fontWeight: FontWeight.w800, fontSize: 12)),
+            ]),
+            const SizedBox(height: 3),
+            const Text('左右滑动查看更多字段 · 上下滑动查看全部任务 · 点行查看详情',
+              style: TextStyle(color: Palette.muted, fontSize: 11)),
+            const SizedBox(height: 8),
+            Row(children: [
+              Expanded(child: SizedBox(height: 42, child: TextField(
+                controller: search, onChanged: (_) => setState(() {}),
+                decoration: const InputDecoration(prefixIcon: Icon(Icons.search, size: 18),
+                  hintText: '搜索任务名称或进度备注', contentPadding: EdgeInsets.symmetric(vertical: 7))))),
+              const SizedBox(width: 9),
+              SizedBox(width: 102, child: DropdownButtonFormField<String>(
+                key: ValueKey(filter), initialValue: filter, isExpanded: true,
+                decoration: const InputDecoration(contentPadding: EdgeInsets.symmetric(horizontal: 9, vertical: 8)),
+                style: const TextStyle(color: Palette.deep, fontSize: 12, fontWeight: FontWeight.w700),
+                items: ['全部','待开始','进行中','已完成'].map((label) => DropdownMenuItem(value: label, child: Text(label))).toList(),
+                onChanged: (v) {if(v != null) setState(() => filter = v);},
+              )),
+            ]),
           ],
-        ),
+        )),
+        Expanded(child: Padding(padding: const EdgeInsets.fromLTRB(12, 2, 12, 4),
+          child: snap.connectionState != ConnectionState.done
+            ? const Center(child: CircularProgressIndicator())
+            : snap.hasError
+              ? ErrorPanel(error: snap.error!, onRetry: () => setState(_reload))
+              : visible.isEmpty
+                ? const Center(child: BusinessEmpty('当前没有匹配的接收任务'))
+                : RefreshIndicator(
+                    onRefresh: () async {setState(_reload); await _future;},
+                    child: _ledger(visible),
+                  ),
+        )),
+        const SizedBox(height: 64), // 避开 ViewPage 的「创建任务」悬浮入口
+      ]);
+    },
+  );
+
+  Widget _ledger(List<TaskItem> tasks) => Container(
+    decoration: BoxDecoration(color: Colors.white, border: Border.all(color: Palette.divider),
+      borderRadius: BorderRadius.circular(8)),
+    clipBehavior: Clip.antiAlias,
+    child: Scrollbar(
+      controller: _horizontal,
+      thumbVisibility: true,
+      notificationPredicate: (notification) => notification.metrics.axis == Axis.horizontal,
+      child: SingleChildScrollView(
+        key: const Key('task_ledger_horizontal'),
+        controller: _horizontal,
+        scrollDirection: Axis.horizontal,
+        child: SizedBox(width: tableWidth, child: Column(children: [
+          _header(),
+          Expanded(child: Scrollbar(child: ListView.builder(
+            key: const Key('task_ledger_vertical'),
+            physics: const AlwaysScrollableScrollPhysics(),
+            itemCount: tasks.length,
+            itemExtent: rowHeight,
+            itemBuilder: (context, i) => _row(tasks[i], i),
+          ))),
+        ])),
       ),
-      bottomNavigationBar: SafeArea(
-        top: false,
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(20, 10, 20, 16),
-          child: FilledButton.icon(
-            onPressed: _save,
-            icon: const Icon(Icons.check_rounded),
-            label: const Text('创建任务'),
-            style: FilledButton.styleFrom(
-              minimumSize: const Size.fromHeight(52),
-              backgroundColor: Palette.primary,
-              foregroundColor: Colors.white,
-            ),
-          ),
-        ),
+    ),
+  );
+
+  Widget _cell(String text, double width, {Color? ink, FontWeight? weight,
+    Alignment alignment = Alignment.centerLeft, int maxLines = 2}) =>
+    Container(width: width, alignment: alignment,
+      padding: const EdgeInsets.symmetric(horizontal: 9),
+      decoration: const BoxDecoration(border: Border(right: BorderSide(color: Palette.divider, width: .55))),
+      child: Text(text, maxLines: maxLines, overflow: TextOverflow.ellipsis,
+        style: TextStyle(color: ink ?? Palette.deep, fontSize: 11.5,
+          height: 1.25, fontWeight: weight ?? FontWeight.w500)));
+
+  Widget _header() => Container(
+    height: 44, color: Palette.deep,
+    child: Row(children: [
+      _heading('序号', 47), _heading('任务名称', 250), _heading('任务类型', 91),
+      _heading('截止日期', 150), _heading('紧急程度', 104), _heading('完成情况', 114),
+      _heading('进度备注 / 详情', 244), _heading('负责人', 120),
+    ]),
+  );
+
+  Widget _heading(String label, double width) => SizedBox(width: width,
+    child: Padding(padding: const EdgeInsets.symmetric(horizontal: 9),
+      child: Align(alignment: Alignment.centerLeft,
+        child: Text(label, style: const TextStyle(color: Colors.white,
+          fontWeight: FontWeight.w800, fontSize: 11)))));
+
+  Widget _tag(String text, Color color) => Container(
+    constraints: const BoxConstraints(maxWidth: 102),
+    padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 5),
+    decoration: BoxDecoration(color: color.withValues(alpha: .13),
+      borderRadius: BorderRadius.circular(4)),
+    child: Text(text, maxLines: 1, overflow: TextOverflow.ellipsis,
+      style: TextStyle(color: color, fontWeight: FontWeight.w800, fontSize: 11)),
+  );
+
+  Widget _tagCell(Widget tag, double width) => Container(width: width,
+    alignment: Alignment.centerLeft, padding: const EdgeInsets.symmetric(horizontal: 9),
+    decoration: const BoxDecoration(border: Border(right: BorderSide(color: Palette.divider, width: .55))),
+    child: tag);
+
+  Widget _row(TaskItem task, int i) => Material(
+    color: i.isEven ? Colors.white : const Color(0xFFF3F6F9),
+    child: InkWell(onTap: () => _detail(task),
+      child: Container(height: rowHeight,
+        decoration: const BoxDecoration(border: Border(bottom: BorderSide(color: Palette.divider, width: .65))),
+        child: Row(children: [
+          _cell('${i + 1}', 47, ink: Palette.muted),
+          _cell(task.name, 250, weight: FontWeight.w800),
+          _tagCell(_tag(taskTypeLabel(task.taskType), taskTypeColor(task.taskType)), 91),
+          _cell(_shortDate(task.deadline), 150),
+          _tagCell(_tag(task.urgency == 'URGENT' ? '紧急' : '普通',
+            task.urgency == 'URGENT' ? const Color(0xFFD46840) : const Color(0xFF187B68)), 104),
+          _tagCell(_tag(task.statusLabel,
+            task.status == 'COMPLETED' ? const Color(0xFF087D79)
+              : task.status == 'IN_PROGRESS' ? const Color(0xFFB47A24) : const Color(0xFF6B7886)), 114),
+          _cell(task.progressNote.isNotEmpty ? task.progressNote :
+            (task.details.isNotEmpty ? task.details : '—'), 244, ink: Palette.muted),
+          _cell(task.assigneeName.isNotEmpty ? task.assigneeName : (widget.app.user?.name ?? '我'), 120),
+        ]),
       ),
-    );
-  }
+    ),
+  );
+  String _shortDate(String? raw) => raw == null || raw.isEmpty ? '未设置' : raw.replaceFirst('T', ' ');
+
+  void _detail(TaskItem item) => showModalBottomSheet<void>(
+    context: context, isScrollControlled: true, showDragHandle: true,
+    builder: (ctx) => SafeArea(child: Padding(
+      padding: EdgeInsets.fromLTRB(20, 10, 20, MediaQuery.viewInsetsOf(ctx).bottom + 24),
+      child: SingleChildScrollView(child: Column(
+        mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(item.name, style: const TextStyle(color: Palette.deep,
+            fontSize: 20, fontWeight: FontWeight.w900)),
+          const SizedBox(height: 12), Wrap(spacing: 8, runSpacing: 8, children: [
+            _tag(taskTypeLabel(item.taskType), taskTypeColor(item.taskType)),
+            _tag(item.statusLabel, Palette.primary),
+          ]),
+          const SizedBox(height: 14), Text(item.details.isEmpty ? '暂无详细说明' : item.details,
+            style: const TextStyle(height: 1.6)),
+          const SizedBox(height: 11), Text('起始：${_shortDate(item.startDate)}\n截止：${_shortDate(item.deadline)}',
+            style: const TextStyle(color: Palette.muted, height: 1.6)),
+          if(item.progressNote.isNotEmpty) ...[
+            const SizedBox(height: 10), Text('进度备注：${item.progressNote}')],
+          const SizedBox(height: 18),
+          if(item.status != 'COMPLETED') FilledButton(
+            onPressed: () {Navigator.pop(ctx); _advance(item);},
+            child: Text(item.status == 'NOT_STARTED' ? '开始任务' : '标记完成')),
+          if(item.status == 'COMPLETED' &&
+            (item.reviewStatus == 'NONE' || item.reviewStatus == 'RETURNED'))
+            FilledButton(onPressed: () async {
+              Navigator.pop(ctx);
+              try {
+                await widget.app.repo.inviteReview(item.id);
+                if(mounted) {toast(context, '已提交完成检查'); setState(_reload);}
+              } catch(e) {if(mounted) toast(context, '$e');}
+            }, child: const Text('邀请完成检查')),
+        ],
+      )),
+    )),
+  );
 }

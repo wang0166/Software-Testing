@@ -92,6 +92,21 @@ class ApiRepository implements PandoraRepository {
     await _saveTokens(access,refresh);
     return user;
   }
+  // The following endpoints require backend implementation and Web-admin approval.
+  // Never treat HTTP 404/500 as a successful password change.
+  @override Future<void> requestPasswordReset(String username) async {
+    await _request('POST','/auth/password-reset-requests',authenticated:false,body:{'username':username.trim()});
+  }
+  @override Future<void> requestPasswordChange() async {
+    await _request('POST','/account/password-change-requests',body:{});
+  }
+  @override Future<String> passwordChangeStatus() async {
+    final data=mapOf(_data(await _request('GET','/account/password-change-requests/me')));
+    return textOf(data['status'],'NONE');
+  }
+  @override Future<void> completePasswordChange(String newPassword) async {
+    await _request('POST','/account/password-change',body:{'newPassword':newPassword});
+  }
   @override Future<void> logout() async {
     try {
       if(_refreshToken!=null) await _request('POST','/auth/logout',body:{'refreshToken':_refreshToken});
@@ -101,8 +116,8 @@ class ApiRepository implements PandoraRepository {
     final query=<String,String>{};if(date!=null)query['date']=date;if(status!=null)query['status']=status;
     return (await _allPages('/logs',query:query)).map(WorkLog.fromJson).toList();
   }
-  @override Future<WorkLog> saveLog(String content,{int? id}) async {
-    final result=_data(await _request(id==null?'POST':'PUT',id==null?'/logs':'/logs/$id',body:{'content':content.trim()}));
+  @override Future<WorkLog> saveLog(String content,{int? id,String? date}) async {
+    final result=_data(await _request(id==null?'POST':'PUT',id==null?'/logs':'/logs/$id',body:{'content':content.trim(),if(date!=null)'logDate':date}));
     return WorkLog.fromJson(result);
   }
   @override Future<WorkLog> submitLog(int id) async {
@@ -154,18 +169,33 @@ class ApiRepository implements PandoraRepository {
   }
   @override Future<List<TaskItem>> taskMap() async {
     final data=await _allPages('/task-map');
-    return data.map((e){final j=mapOf(e);final personal=textOf(j['source'])=='PERSONAL';return TaskItem.fromJson({
+    return data.where((e)=>textOf(mapOf(e)['source'])!='PERSONAL').map((e){final j=mapOf(e);return TaskItem.fromJson({
       ...j,
-      'id':personal?j['personalTaskId']:j['assignmentId'],
+      'id':j['assignmentId'],
       'assignmentId':j['assignmentId'],
       'executionStatus':j['executionStatus'],
       'details':textOf(j['details']),
-    },source:personal?'PERSONAL':'RECEIVED');}).toList();
+    },source:'RECEIVED');}).toList();
   }
   @override Future<List<UserProfile>> recipients() async {
     final data=_data(await _request('GET','/tasks/recipients'));
     return _items(data).map(UserProfile.fromJson).toList();
   }
+  @override Future<List<UserProfile>> companyMembers() async =>
+    (await _allPages('/tasks/recipients/all')).map(UserProfile.fromJson).toList();
+  @override Future<String> submitDispatchRequest({required String name,required String details,
+    required String startDate, required String deadline, required String urgency,
+    required String taskType, required List<int> assigneeIds}) async {
+    final data=mapOf(_data(await _request('POST','/tasks/dispatch-requests',body:{
+      'name':name, 'details':details, 'startDate':startDate, 'deadline':deadline,
+      'urgency':urgency, 'taskType':taskType, 'assigneeIds':assigneeIds,
+    })));
+    final status=textOf(data['status']);
+    if(status!='PENDING' && status!='APPROVED') throw const AppFailure('服务器未确认任务审核状态');
+    return status;
+  }
+  @override Future<List<SubordinateTaskSummary>> subordinatesTaskOverview() async =>
+    (await _allPages('/tasks/subordinates/overview')).map(SubordinateTaskSummary.fromJson).toList();
   @override Future<List<DispatchedTask>> dispatchedTasks() async =>
       (await _allPages('/tasks/dispatched')).map(DispatchedTask.fromJson).toList();
   @override Future<List<TaskAssignment>> dispatchedAssignments(int taskId) async {
