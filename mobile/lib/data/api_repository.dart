@@ -160,6 +160,35 @@ class ApiRepository implements PandoraRepository {
       await _request('PATCH','/tasks/assignments/${item.id}/progress',body:{'status':status});
     }
   }
+  // New backend contract. Do not silently fall back to status-only PATCH:
+  // an old backend might acknowledge a status but discard percent/note.
+  @override Future<void> updateTaskProgress(TaskItem item,{
+    required String status,required int percent,required String note}) async {
+    final issue=taskProgressValidation(item,status,percent,note);
+    if(issue!=null) throw AppFailure(issue);
+    final result=mapOf(_data(await _request('POST',
+      '/tasks/assignments/${item.id}/progress-updates',body:{
+      'status':status,'progressPercent':percent,'note':note.trim(),
+    })));
+    if(intOf(result['id'])<=0 && textOf(result['createdAt']).isEmpty) {
+      throw const AppFailure('服务器未确认进度记录已保存，请与后端核对接口');
+    }
+  }
+  @override Future<List<TaskProgressRecord>> taskProgressHistory(int assignmentId) async {
+    final data=_data(await _request('GET',
+      '/tasks/assignments/$assignmentId/progress-updates'));
+    return _items(data).map(TaskProgressRecord.fromJson).toList()
+      ..sort((a,b)=>b.createdAt.compareTo(a.createdAt));
+  }
+  @override Future<List<TaskProgressRecord>> subordinateTaskProgressHistory(
+      int userId, int assignmentId) async {
+    // Backend MUST enforce viewer's organization hierarchy AND assignment ownership.
+    // This route is not supported by the previous Spring Boot version.
+    final data=_data(await _request('GET',
+      '/tasks/subordinates/$userId/assignments/$assignmentId/progress-updates'));
+    return _items(data).map(TaskProgressRecord.fromJson).toList()
+      ..sort((a,b)=>b.createdAt.compareTo(a.createdAt));
+  }
   @override Future<List<CompanyItem>> companyMatters() async =>
     (await _allPages('/company-matters')).map(CompanyItem.fromJson).toList();
   @override Future<List<CompanyItem>> companyImportantTasks() async =>

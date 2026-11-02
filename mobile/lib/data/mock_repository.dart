@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../core/models.dart';
+import '../core/task_issue_utils.dart';
 import 'repository.dart';
 
 class MockRepository implements PandoraRepository {
@@ -230,20 +231,76 @@ class MockRepository implements PandoraRepository {
   List<TaskItem> _taskSeeds(int userId)=>[
     TaskItem(id:210,name:'完善本周工作计划',details:'梳理本周目标、风险与时间节点，及时同步团队',status:'IN_PROGRESS',source:'PERSONAL'),
     TaskItem(id:211,name:'整理需求文档',details:'补充本次迭代的验收要求与功能清单',status:'NOT_STARTED',source:'PERSONAL'),
-    TaskItem(id:310,name:'完成模块联调',taskType:'DEVELOPMENT',details:'对照接口文档验证主要业务流程',status:'IN_PROGRESS',source:'RECEIVED',urgency:'URGENT',startDate:dayString(chinaNow.subtract(const Duration(days:2))),deadline:dayString(chinaNow.add(const Duration(days:3)))),
-    TaskItem(id:311,name:'提交迭代周报',taskType:'OPERATION',details:'总结本周成果与下周安排',status:'COMPLETED',source:'RECEIVED',startDate:dayString(chinaNow.subtract(const Duration(days:1))),deadline:dayString(chinaNow.add(const Duration(days:1)))),
+    TaskItem(id:310,progressPercent:60,progressNote:'已完成大部分接口联调，正在修复数据同步问题',name:'完成模块联调',taskType:'DEVELOPMENT',details:'对照接口文档验证主要业务流程',status:'IN_PROGRESS',source:'RECEIVED',urgency:'URGENT',startDate:dayString(chinaNow.subtract(const Duration(days:2))),deadline:dayString(chinaNow.add(const Duration(days:3)))),
+    TaskItem(id:311,progressPercent:100,name:'提交迭代周报',taskType:'OPERATION',details:'总结本周成果与下周安排',status:'COMPLETED',source:'RECEIVED',startDate:dayString(chinaNow.subtract(const Duration(days:1))),deadline:dayString(chinaNow.add(const Duration(days:1)))),
     // The following are demo-only assigned tasks so month/week rows can
     // illustrate multi-day overlaps. No production API data is fabricated.
     TaskItem(id:312,name:'检查用例评审',taskType:'TESTING',details:'评审移动端核心功能测试用例',status:'NOT_STARTED',source:'RECEIVED',startDate:dayString(chinaNow.add(const Duration(days:1))),deadline:dayString(chinaNow.add(const Duration(days:4)))),
-    TaskItem(id:313,name:'移动端界面完善',taskType:'PRODUCT',details:'检查导航、交互状态与视觉一致性',status:'IN_PROGRESS',source:'RECEIVED',startDate:dayString(chinaNow.subtract(const Duration(days:4))),deadline:dayString(chinaNow.add(const Duration(days:2)))),
+    TaskItem(id:313,progressPercent:35,name:'移动端界面完善',taskType:'PRODUCT',details:'检查导航、交互状态与视觉一致性',status:'IN_PROGRESS',source:'RECEIVED',startDate:dayString(chinaNow.subtract(const Duration(days:4))),deadline:dayString(chinaNow.add(const Duration(days:2)))),
     TaskItem(id:314,name:'回归测试',taskType:'TESTING',details:'复测已修复问题和关键页面',status:'NOT_STARTED',source:'RECEIVED',startDate:dayString(chinaNow.add(const Duration(days:5))),deadline:dayString(chinaNow.add(const Duration(days:8)))),
   ];
   Future<List<TaskItem>> _myTasks() async => _tasksFor(_user.id);
+
+  // A visible, resolvable example of a subordinate incident, for demo builds
+  // only.  It is an actual demo assignment and progress record, NOT a fake
+  // badge count.  Two different teams get an example so founder / department /
+  // team-level accounts can all verify the red badge without first creating an
+  // incident on another account.  Production ApiRepository never uses this.
+  TaskItem? _showcaseIssue(int userId) {
+    if (userId != 13 && userId != 21) return null;
+    return TaskItem(
+      id: 399,
+      name: '【演示】跨部门接口协作',
+      details: '演示任务：下属上报接口鉴权异常，需管理者查看反馈并协助解决。',
+      status: 'BLOCKED',
+      source: 'RECEIVED',
+      urgency: 'URGENT',
+      taskType: 'DEVELOPMENT',
+      progressPercent: 45,
+      progressNote: '【演示异常】接口鉴权失败，等待上级协调权限。',
+      startDate: dayString(chinaNow.subtract(const Duration(days: 1))),
+      deadline: dayString(chinaNow.add(const Duration(days: 2))),
+    );
+  }
+
   Future<List<TaskItem>> _tasksFor(int userId) async {
-    final p=await _prefs,key='pandora_mock_tasks_$userId';
-    final raw=p.getString(key);
-    if(raw==null) return _taskSeeds(userId);
-    try{return (jsonDecode(raw) as List).map((e)=>TaskItem.fromJson(e,source:textOf(mapOf(e)['source'],'PERSONAL'))).toList();}catch(_){return _taskSeeds(userId);}
+    final p = await _prefs;
+    final key = 'pandora_mock_tasks_$userId';
+    final raw = p.getString(key);
+    List<TaskItem> items;
+    if (raw == null) {
+      items = _taskSeeds(userId);
+    } else {
+      try {
+        items = (jsonDecode(raw) as List).map((e) => TaskItem.fromJson(
+          e, source: textOf(mapOf(e)['source'], 'PERSONAL'))).toList();
+      } catch (_) {
+        items = _taskSeeds(userId);
+      }
+    }
+
+    // V1.10.3 demo-data migration: also works for users who already launched
+    // V1.10.2 and have saved their local task list. Never duplicates an issue.
+    // Once the assignee resolves the task, its saved status is preserved.
+    final example = _showcaseIssue(userId);
+    if (example != null && !items.any((t) => t.id == example.id && t.source == 'RECEIVED')) {
+      items = [...items, example];
+      await _writeTasksFor(userId, items);
+      final historyKey = _progressKey(userId, example.id);
+      if (p.getString(historyKey) == null) {
+        final name = users.firstWhere((u) => u.id == userId).name;
+        final event = TaskProgressRecord(
+          id: DateTime.now().microsecondsSinceEpoch,
+          status: 'BLOCKED',
+          note: example.progressNote,
+          authorName: name,
+          createdAt: DateTime.now().toUtc().toIso8601String(),
+          percent: example.progressPercent,
+        );
+        await p.setString(historyKey, jsonEncode([event.toJson()]));
+      }
+    }
+    return items;
   }
   Future<void> _writeTasks(List<TaskItem> items) async => _writeTasksFor(_user.id,items);
   Future<void> _writeTasksFor(int id,List<TaskItem> items) async {(await _prefs).setString('pandora_mock_tasks_$id',jsonEncode(items.map((e)=>e.toJson()).toList()));}
@@ -265,8 +322,75 @@ class MockRepository implements PandoraRepository {
     if(i<0) throw const AppFailure('任务不存在');
     final old=all[i];
     if(old.source=='RECEIVED' && !(old.status==status || (old.status=='NOT_STARTED'&&status=='IN_PROGRESS') || (old.status=='IN_PROGRESS'&&status=='COMPLETED'))) throw const AppFailure('接收任务进度只能逐步推进');
-    all[i]=TaskItem(id:old.id,name:old.name,details:old.details,status:status,source:old.source,deadline:old.deadline,startDate:old.startDate,taskId:old.taskId,senderId:old.senderId,urgency:old.urgency,reviewStatus:old.reviewStatus,taskType:old.taskType,assigneeName:old.assigneeName,progressNote:old.progressNote);
+    all[i]=TaskItem(id:old.id,name:old.name,details:old.details,status:status,source:old.source,deadline:old.deadline,startDate:old.startDate,taskId:old.taskId,senderId:old.senderId,urgency:old.urgency,reviewStatus:old.reviewStatus,taskType:old.taskType,assigneeName:old.assigneeName,progressNote:old.progressNote,progressPercent:old.progressPercent,progressUpdatedAt:old.progressUpdatedAt);
     await _writeTasks(all);
+  }
+  String _progressKey(int userId,int taskId) => 'pandora_v19_progress_${userId}_$taskId';
+  Future<List<TaskProgressRecord>> _progressFor(int userId, int assignmentId) async {
+    final raw=(await _prefs).getString(_progressKey(userId,assignmentId));
+    if(raw==null) return [];
+    try {
+      return (jsonDecode(raw) as List).map(TaskProgressRecord.fromJson).toList()
+        ..sort((a,b)=>b.createdAt.compareTo(a.createdAt));
+    } catch (_) {throw const AppFailure('历史进度记录格式异常');}
+  }
+
+  bool _canInspectSubordinate(UserProfile viewer, UserProfile member) {
+    if(viewer.id==member.id || member.role=='ADMIN') return false;
+    return switch(viewer.role) {
+      'FOUNDER' => true,
+      'DEPT_MANAGER' => member.departmentId==viewer.departmentId,
+      'TEAM_LEADER' => member.teamId==viewer.teamId && member.role=='EMPLOYEE',
+      _ => false,
+    };
+  }
+
+  @override Future<List<TaskProgressRecord>> subordinateTaskProgressHistory(
+      int userId, int assignmentId) async {
+    if(!users.any((u)=>u.id==userId)) {
+      throw const AppFailure('员工不存在或无权限访问');
+    }
+    final member=_findUser(userId);
+    if(!_canInspectSubordinate(_user,member)) {
+      throw const AppFailure('无权限查看该员工任务反馈');
+    }
+    final tasks=await _tasksFor(userId);
+    if(!tasks.any((t)=>t.id==assignmentId && t.source=='RECEIVED')) {
+      throw const AppFailure('无法查看该员工未授权的任务');
+    }
+    return _progressFor(userId,assignmentId);
+  }
+
+  @override Future<List<TaskProgressRecord>> taskProgressHistory(int assignmentId) async {
+    final tasks=await _myTasks();
+    if(!tasks.any((e)=>e.id==assignmentId && e.source=='RECEIVED')) {
+      throw const AppFailure('只能查看自己接收任务的进度历史');
+    }
+    return _progressFor(_user.id,assignmentId);
+  }
+  @override Future<void> updateTaskProgress(TaskItem item,{
+    required String status,required int percent,required String note}) async {
+    final me=_user;
+    final all=await _myTasks();
+    final i=all.indexWhere((e)=>e.id==item.id && e.source=='RECEIVED');
+    if(i<0) throw const AppFailure('只能更新本人收到的任务');
+    final old=all[i];
+    final problem=taskProgressValidation(old,status,percent,note);
+    if(problem!=null) throw AppFailure(problem);
+    final now=DateTime.now().toUtc().toIso8601String();
+    final record=TaskProgressRecord(id:DateTime.now().microsecondsSinceEpoch,
+      status:status,note:note.trim(),percent:percent,authorName:me.name,
+      createdAt:now);
+    final previous=await taskProgressHistory(item.id);
+    all[i]=TaskItem(id:old.id,name:old.name,details:old.details,status:status,
+      source:old.source,urgency:old.urgency,startDate:old.startDate,
+      deadline:old.deadline,taskId:old.taskId,senderId:old.senderId,
+      reviewStatus:old.reviewStatus,taskType:old.taskType,
+      assigneeName:old.assigneeName,progressNote:note.trim(),
+      progressPercent:percent,progressUpdatedAt:now);
+    await _writeTasks(all);
+    await (await _prefs).setString(_progressKey(me.id,item.id),
+      jsonEncode([record,...previous].map((e)=>e.toJson()).toList()));
   }
   @override Future<List<CompanyItem>> companyMatters() async => const [
     CompanyItem(id:1,title:'公司年度战略目标评审',content:'战略事项 · 明确部门重点与季度里程碑'),
@@ -436,20 +560,25 @@ class MockRepository implements PandoraRepository {
     final list = <SubordinateTaskSummary>[];
     for (final member in users) {
       if (member.id == me.id || member.role == 'ADMIN') continue;
-      final allowed = switch (me.role) {
-        'FOUNDER' => true,
-        'DEPT_MANAGER' => member.departmentId == me.departmentId,
-        'TEAM_LEADER' => member.teamId == me.teamId && member.role == 'EMPLOYEE',
-        _ => false,
-      };
+      final allowed = _canInspectSubordinate(me,member);
       if (!allowed) continue;
-      final tasks = (await _tasksFor(member.id)).where((t) => t.source == 'RECEIVED').toList();
+      final originals = (await _tasksFor(member.id))
+        .where((t) => t.source == 'RECEIVED').toList();
+      final tasks = <TaskItem>[];
+      for(final t in originals) {
+        final history = await _progressFor(member.id,t.id);
+        final issueCount = unresolvedIssueEvents(t,history);
+        tasks.add(TaskItem.fromJson({
+          ...t.toJson(), 'openIssueCount': issueCount,
+        },source:'RECEIVED'));
+      }
       list.add(SubordinateTaskSummary(userId:member.id, name:member.name,
         departmentName:'${member.roleLabel} · ${member.departmentId ?? '公司级'}',
         role: member.role, teamName: member.teamId == null ? '部门直属' : '团队 ${member.teamId}',
         username: member.username,
         total:tasks.length, inProgress:tasks.where((t)=>t.status=='IN_PROGRESS').length,
-        completed:tasks.where((t)=>t.status=='COMPLETED').length, tasks:tasks));
+        completed:tasks.where((t)=>t.status=='COMPLETED').length,
+        openIssueCount:tasks.fold<int>(0,(total,t)=>total+t.visibleIssueCount), tasks:tasks));
     }
     return list;
   }
@@ -483,7 +612,7 @@ class MockRepository implements PandoraRepository {
     for(final u in users){
       for(final t in await _tasksFor(u.id)){
         if(t.source=='RECEIVED'&&t.taskId==taskId&&t.senderId==sender.id) {
-          result.add(TaskAssignment(id:t.id,assigneeId:u.id,assigneeName:u.name,status:t.status,reviewStatus:t.reviewStatus));
+          result.add(TaskAssignment(id:t.id,assigneeId:u.id,assigneeName:u.name,status:t.status,reviewStatus:t.reviewStatus,progressPercent:t.progressPercent,progressNote:t.progressNote));
         }
       }
     }
@@ -523,12 +652,27 @@ class MockRepository implements PandoraRepository {
       if(index<0)continue;
       final old=inbox[index];
       if(old.reviewStatus!='PENDING')throw const AppFailure('仅待检查的任务可审核');
-      inbox[index]=_copyTask(old,reviewStatus:result,status:result=='RETURNED'?'IN_PROGRESS':old.status);
+      final resetPercent = result=='RETURNED' && old.progressPercent==100 ? 95 : old.progressPercent;
+      inbox[index]=TaskItem(id:old.id,name:old.name,details:old.details,
+        status:result=='RETURNED'?'IN_PROGRESS':old.status,source:old.source,
+        deadline:old.deadline,startDate:old.startDate,taskId:old.taskId,
+        senderId:old.senderId,urgency:old.urgency,reviewStatus:result,
+        taskType:old.taskType,assigneeName:old.assigneeName,
+        progressNote:old.progressNote,progressPercent:resetPercent,
+        progressUpdatedAt:DateTime.now().toUtc().toIso8601String());
       await _writeTasksFor(receiver.id,inbox);
+      final key=_progressKey(receiver.id,old.id);
+      final prefs=await _prefs;
+      final raw=prefs.getString(key);
+      final existing=raw==null?<dynamic>[]:listOf(jsonDecode(raw));
+      final event=TaskProgressRecord(id:DateTime.now().microsecondsSinceEpoch,
+        status:result,note:comment,authorName:me.name,
+        createdAt:DateTime.now().toUtc().toIso8601String(),percent:resetPercent);
+      await prefs.setString(key,jsonEncode([event.toJson(),...existing]));
       return;
     }
     throw const AppFailure('无权检查此任务');
   }
-  TaskItem _copyTask(TaskItem old,{String? status,String? reviewStatus})=>TaskItem(id:old.id,name:old.name,details:old.details,status:status??old.status,source:old.source,deadline:old.deadline,startDate:old.startDate,taskId:old.taskId,senderId:old.senderId,urgency:old.urgency,reviewStatus:reviewStatus??old.reviewStatus,taskType:old.taskType,assigneeName:old.assigneeName,progressNote:old.progressNote);
+  TaskItem _copyTask(TaskItem old,{String? status,String? reviewStatus})=>TaskItem(id:old.id,name:old.name,details:old.details,status:status??old.status,source:old.source,deadline:old.deadline,startDate:old.startDate,taskId:old.taskId,senderId:old.senderId,urgency:old.urgency,reviewStatus:reviewStatus??old.reviewStatus,taskType:old.taskType,assigneeName:old.assigneeName,progressNote:old.progressNote,progressPercent:old.progressPercent,progressUpdatedAt:old.progressUpdatedAt);
 
 }

@@ -70,13 +70,61 @@ class TaskItem {
   final String? deadline, startDate;
   final int? taskId, senderId;
   final String assigneeName, progressNote;
-  const TaskItem({required this.id,required this.name,required this.details,required this.status,required this.source,this.urgency='NOT_URGENT',this.deadline,this.startDate,this.taskId,this.senderId,this.reviewStatus='NONE',this.taskType='GENERAL',this.assigneeName='',this.progressNote=''});
+  final int? progressPercent;
+  final String? progressUpdatedAt;
+  /// Server-calculated unresolved issues when available; null means unsupported.
+  final int? openIssueCount;
+  int get visibleIssueCount => openIssueCount ?? (status == 'BLOCKED' ? 1 : 0);
+  const TaskItem({required this.id,required this.name,required this.details,required this.status,required this.source,this.urgency='NOT_URGENT',this.deadline,this.startDate,this.taskId,this.senderId,this.reviewStatus='NONE',this.taskType='GENERAL',this.assigneeName='',this.progressNote='',this.progressPercent,this.progressUpdatedAt,this.openIssueCount});
   factory TaskItem.fromJson(dynamic obj,{String source='PERSONAL'}) {
     final j=mapOf(obj);
-    return TaskItem(id:intOf(j[source=='RECEIVED'?'assignmentId':'id'],intOf(j['id'],intOf(j['personalTaskId']))),name:textOf(j['name']),details:textOf(j['details']),status:textOf(j['executionStatus'],textOf(j['status'],'NOT_STARTED')),source:source,urgency:textOf(j['urgency'],'NOT_URGENT'),deadline:j['deadline']?.toString(),startDate:j['startDate']?.toString(),taskId:j['taskId']==null?null:intOf(j['taskId']),senderId:j['senderId']==null?intOf(mapOf(j['sender'])['id'],0):intOf(j['senderId']),reviewStatus:textOf(j['reviewStatus'],'NONE'),taskType:textOf(j['taskType'],textOf(j['category'],textOf(j['type'],'GENERAL'))),assigneeName:textOf(j['assigneeName'],textOf(j['receiverName'],textOf(mapOf(j['assignee'])['realName']))),progressNote:textOf(j['progressNote'],textOf(j['progressRemark'],textOf(j['remarks']))));
+    return TaskItem(id:intOf(j[source=='RECEIVED'?'assignmentId':'id'],intOf(j['id'],intOf(j['personalTaskId']))),name:textOf(j['name']),details:textOf(j['details']),status:textOf(j['executionStatus'],textOf(j['status'],'NOT_STARTED')),source:source,urgency:textOf(j['urgency'],'NOT_URGENT'),deadline:j['deadline']?.toString(),startDate:j['startDate']?.toString(),taskId:j['taskId']==null?null:intOf(j['taskId']),senderId:j['senderId']==null?intOf(mapOf(j['sender'])['id'],0):intOf(j['senderId']),reviewStatus:textOf(j['reviewStatus'],'NONE'),taskType:textOf(j['taskType'],textOf(j['category'],textOf(j['type'],'GENERAL'))),assigneeName:textOf(j['assigneeName'],textOf(j['receiverName'],textOf(mapOf(j['assignee'])['realName']))),progressNote:textOf(j['progressNote'],textOf(j['progressRemark'],textOf(j['remarks']))),progressPercent:j['progressPercent']==null && j['completionRate']==null ? null : intOf(j['progressPercent'],intOf(j['completionRate'])).clamp(0,100).toInt(),progressUpdatedAt:j['progressUpdatedAt']?.toString(),openIssueCount:j['openIssueCount']==null && j['unresolvedIssueCount']==null?null:intOf(j['openIssueCount'],intOf(j['unresolvedIssueCount'])).clamp(0,999).toInt());
   }
-  String get statusLabel=>const {'NOT_STARTED':'待开始','IN_PROGRESS':'进行中','COMPLETED':'已完成'}[status]??status;
-  Map<String,dynamic> toJson()=>{'id':id,'name':name,'details':details,'status':status,'source':source,'urgency':urgency,'deadline':deadline,'startDate':startDate,'taskId':taskId,'senderId':senderId,'reviewStatus':reviewStatus,'taskType':taskType,'assigneeName':assigneeName,'progressNote':progressNote};
+  String get statusLabel=>const {'NOT_STARTED':'待开始','IN_PROGRESS':'进行中','COMPLETED':'已完成','BLOCKED':'受阻'}[status]??status;
+  Map<String,dynamic> toJson()=>{'id':id,'name':name,'details':details,'status':status,'source':source,'urgency':urgency,'deadline':deadline,'startDate':startDate,'taskId':taskId,'senderId':senderId,'reviewStatus':reviewStatus,'taskType':taskType,'assigneeName':assigneeName,'progressNote':progressNote,'progressPercent':progressPercent,'progressUpdatedAt':progressUpdatedAt,'openIssueCount':openIssueCount};
+  bool get isOverdue {
+    if (status=='COMPLETED' || deadline==null || deadline!.isEmpty) return false;
+    final end=DateTime.tryParse(deadline!.replaceFirst(' ', 'T'));
+    return end!=null && end.isBefore(DateTime.now());
+  }
+}
+
+/// Immutable server/auditable record for a received assignment's progress.
+class TaskProgressRecord {
+  final int id;
+  final String status, note, authorName, createdAt;
+  final int? percent;
+  const TaskProgressRecord({required this.id,required this.status,required this.note,
+    required this.authorName,required this.createdAt,this.percent});
+  factory TaskProgressRecord.fromJson(dynamic value) {
+    final j=mapOf(value);
+    return TaskProgressRecord(id:intOf(j['id']),
+      status:textOf(j['status'],textOf(j['executionStatus'],'IN_PROGRESS')),
+      note:textOf(j['note'],textOf(j['progressNote'])),
+      authorName:textOf(j['authorName'],textOf(mapOf(j['author'])['realName'],'执行人')),
+      createdAt:textOf(j['createdAt'],textOf(j['updatedAt'])),
+      percent:j['progressPercent']==null && j['percent']==null ? null
+        :intOf(j['progressPercent'],intOf(j['percent'])).clamp(0,100).toInt());
+  }
+  Map<String,dynamic> toJson()=>{'id':id,'status':status,'note':note,
+    'authorName':authorName,'createdAt':createdAt,'progressPercent':percent};
+}
+
+/// Validate client input; backend separately enforces assignment ownership.
+String? taskProgressValidation(TaskItem task,String status,int percent,String note) {
+  if (task.source != 'RECEIVED') { return '仅可更新本人收到的任务'; }
+  if (!['NOT_STARTED','IN_PROGRESS','BLOCKED','COMPLETED'].contains(status)) { return '任务状态无效'; }
+  if (percent < 0 || percent > 100) { return '完成率必须在0%到100%之间'; }
+  if (status == 'COMPLETED' && percent != 100) { return '标记完成时完成率必须为100%'; }
+  if (status == 'BLOCKED' && note.trim().isEmpty) { return '受阻状态必须填写原因'; }
+  if (status == 'IN_PROGRESS' && percent == 100) { return '进行中不能填100%，请标记完成'; }
+  if (status == 'NOT_STARTED' && percent != 0) { return '待开始状态的完成率应为0%'; }
+  if (status == 'BLOCKED' && percent == 100) { return '受阻状态不能填100%'; }
+  if (task.status == 'COMPLETED') { return '已完成任务请通过审核/退回流程继续处理'; }
+  if (task.progressPercent != null && percent < task.progressPercent!) { return '完成率不可倒退'; }
+  if (note.trim().length > 1000) { return '进度备注不能超过1000字'; }
+  if (status == 'NOT_STARTED' && task.status != 'NOT_STARTED') { return '已开始的任务不能退回待开始'; }
+  return null;
 }
 
 class CompanyItem {
@@ -166,9 +214,10 @@ class IssuedTasksResult {
 
 class TaskAssignment {
   final int id, assigneeId;
-  final String assigneeName, status, reviewStatus;
-  const TaskAssignment({required this.id,required this.assigneeId,required this.assigneeName,required this.status,required this.reviewStatus});
-  factory TaskAssignment.fromJson(dynamic obj) {final j=mapOf(obj);final a=mapOf(j['assignee']);return TaskAssignment(id:intOf(j['assignmentId']),assigneeId:intOf(a['id'],intOf(j['assigneeId'])),assigneeName:textOf(a['realName'],textOf(j['assigneeName'],'成员')),status:textOf(j['executionStatus'],'NOT_STARTED'),reviewStatus:textOf(j['reviewStatus'],'NONE'));}
+  final String assigneeName, status, reviewStatus, progressNote;
+  final int? progressPercent;
+  const TaskAssignment({required this.id,required this.assigneeId,required this.assigneeName,required this.status,required this.reviewStatus,this.progressPercent,this.progressNote=''});
+  factory TaskAssignment.fromJson(dynamic obj) {final j=mapOf(obj);final a=mapOf(j['assignee']);return TaskAssignment(id:intOf(j['assignmentId']),assigneeId:intOf(a['id'],intOf(j['assigneeId'])),assigneeName:textOf(a['realName'],textOf(j['assigneeName'],'成员')),status:textOf(j['executionStatus'],'NOT_STARTED'),reviewStatus:textOf(j['reviewStatus'],'NONE'),progressPercent:j['progressPercent']==null?null:intOf(j['progressPercent']).clamp(0,100).toInt(),progressNote:textOf(j['progressNote']));}
 }
 
 class CalendarDay {
@@ -203,10 +252,12 @@ class SubordinateTaskSummary {
   final String name, departmentName;
   final String role, teamName, username, mbtiType;
   final List<TaskItem> tasks;
+  final int? openIssueCount;
+  int get visibleIssueCount => openIssueCount ?? tasks.fold<int>(0,(sum,t)=>sum+t.visibleIssueCount);
   const SubordinateTaskSummary({required this.userId, required this.name,
     required this.departmentName, required this.total, required this.inProgress,
     required this.completed, required this.tasks,
-    this.role = '', this.teamName = '', this.username = '',this.mbtiType=''});
+    this.role = '', this.teamName = '', this.username = '',this.mbtiType='',this.openIssueCount});
   factory SubordinateTaskSummary.fromJson(dynamic obj) {
     final j = mapOf(obj);
     final items = listOf(j['tasks']).map((e) => TaskItem.fromJson(e, source: 'RECEIVED')).toList();
@@ -217,6 +268,7 @@ class SubordinateTaskSummary {
       teamName: textOf(j['teamName']),
       username: textOf(j['username']),
       mbtiType: textOf(j['mbtiType'],textOf(j['mbti'])),
+      openIssueCount:j['openIssueCount']==null && j['unresolvedIssueCount']==null?null:intOf(j['openIssueCount'],intOf(j['unresolvedIssueCount'])).clamp(0,999).toInt(),
       total: intOf(j['total'], items.length),
       inProgress: intOf(j['inProgress'], items.where((t) => t.status == 'IN_PROGRESS').length),
       completed: intOf(j['completed'], items.where((t) => t.status == 'COMPLETED').length),

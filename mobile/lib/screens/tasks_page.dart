@@ -5,13 +5,18 @@ import '../core/theme.dart';
 import '../widgets/business.dart';
 import '../widgets/ui.dart';
 import 'dispatch_page.dart';
+import 'task_progress_page.dart';
+import 'published_task_detail_page.dart';
 
 /// 甲方任务台账：收到任务与本人发布记录在同一页面管理。
 /// 创建入口仍由 ViewPage 统一提供；审核由后端最终校验。
 class TasksPage extends StatefulWidget {
   final AppState app;
   final bool initiallyIssued;
-  const TasksPage({super.key, required this.app, this.initiallyIssued=false});
+  final Set<int> unreadTaskIds;
+  final ValueChanged<int>? onTaskViewed;
+  const TasksPage({super.key, required this.app, this.initiallyIssued=false,
+    this.unreadTaskIds=const <int>{}, this.onTaskViewed});
   @override State<TasksPage> createState() => _TasksPageState();
 }
 
@@ -22,7 +27,7 @@ class _TasksPageState extends State<TasksPage> {
   String filter = '全部';
   bool showIssued = false;
   Future<IssuedTasksResult>? _issuedFuture;
-  static const double tableWidth = 1120;
+  static const double tableWidth = 1204;
   static const double rowHeight = 54;
   @override void initState() {
     super.initState();
@@ -43,16 +48,6 @@ class _TasksPageState extends State<TasksPage> {
     });
   }
   void _refreshIssued() => setState(() => _issuedFuture = widget.app.repo.issuedTasks());
-
-  Future<void> _advance(TaskItem task) async {
-    final next = task.status == 'NOT_STARTED' ? 'IN_PROGRESS'
-        : task.status == 'IN_PROGRESS' ? 'COMPLETED' : null;
-    if (next == null) return;
-    try {
-      await widget.app.repo.updateTask(task, next);
-      if (mounted) {toast(context, '任务进度已更新'); setState(_reload);}
-    } catch(e) {if (mounted) toast(context, '$e');}
-  }
 
   @override
   Widget build(BuildContext context) => Column(children: [
@@ -108,7 +103,7 @@ class _TasksPageState extends State<TasksPage> {
                 key: ValueKey(filter), initialValue: filter, isExpanded: true,
                 decoration: const InputDecoration(contentPadding: EdgeInsets.symmetric(horizontal: 9, vertical: 8)),
                 style: const TextStyle(color: Palette.deep, fontSize: 12, fontWeight: FontWeight.w700),
-                items: ['全部','待开始','进行中','已完成'].map((label) => DropdownMenuItem(value: label, child: Text(label))).toList(),
+                items: ['全部','待开始','进行中','已完成','受阻'].map((label) => DropdownMenuItem(value: label, child: Text(label))).toList(),
                 onChanged: (v) {if(v != null) setState(() => filter = v);},
               )),
             ]),
@@ -202,25 +197,11 @@ class _TasksPageState extends State<TasksPage> {
     ),
   );
 
-  void _issuedDetail(IssuedTask item) => showModalBottomSheet<void>(
-    context:context,showDragHandle:true,isScrollControlled:true,
-    builder:(ctx)=>SafeArea(child:Padding(
-      padding:const EdgeInsets.fromLTRB(20,8,20,28),
-      child:SingleChildScrollView(child:Column(
-        mainAxisSize:MainAxisSize.min,crossAxisAlignment:CrossAxisAlignment.start,
-        children:[
-          Text(item.name,style:const TextStyle(fontSize:21,fontWeight:FontWeight.w900,color:Palette.deep)),
-          const SizedBox(height:10),Text('状态：${item.stateLabel}',style:const TextStyle(color:Palette.primary)),
-          const SizedBox(height:8),Text(item.details.isEmpty?'暂无详情':item.details),
-          const SizedBox(height:10),Text('开始：${_shortDate(item.startDate)}'),
-          Text('截止：${_shortDate(item.deadline)}'),
-          const SizedBox(height:8),Text('接收人数：${item.assigneeCount}'),
-          if(item.changePending) const Padding(padding:EdgeInsets.only(top:10),
-            child:Text('修改或删除申请正在等待管理员审核，已发布任务保持原内容。',
-              style:TextStyle(color:Palette.muted))),
-        ],
-      )))),
-  );
+  Future<void> _issuedDetail(IssuedTask item) async {
+    await Navigator.push<void>(context,MaterialPageRoute<void>(
+      builder:(_)=>PublishedTaskDetailPage(app:widget.app,issued:item)));
+    if(mounted) _refreshIssued();
+  }
 
   Future<void> _editIssued(IssuedTask item) async {
     final saved=await Navigator.push<bool>(context,MaterialPageRoute<bool>(
@@ -288,7 +269,7 @@ class _TasksPageState extends State<TasksPage> {
     child: Row(children: [
       _heading('序号', 47), _heading('任务名称', 250), _heading('任务类型', 91),
       _heading('截止日期', 150), _heading('紧急程度', 104), _heading('完成情况', 114),
-      _heading('进度备注 / 详情', 244), _heading('负责人', 120),
+      _heading('完成率', 84), _heading('进度备注 / 详情', 244), _heading('负责人', 120),
     ]),
   );
 
@@ -319,14 +300,25 @@ class _TasksPageState extends State<TasksPage> {
         decoration: const BoxDecoration(border: Border(bottom: BorderSide(color: Palette.divider, width: .65))),
         child: Row(children: [
           _cell('${i + 1}', 47, ink: Palette.muted),
-          _cell(task.name, 250, weight: FontWeight.w800),
+          SizedBox(width: 250, child: Row(children: [
+            if (widget.unreadTaskIds.contains(task.id)) ...[
+              const Padding(padding: EdgeInsets.only(left: 8),
+                child: CircleAvatar(key: Key('task_row_unread_dot'), radius: 4,
+                  backgroundColor: Color(0xFF2267B5))),
+            ],
+            Expanded(child: _cell(task.name,
+              widget.unreadTaskIds.contains(task.id) ? 231 : 250,
+              weight: FontWeight.w800)),
+          ])),
           _tagCell(_tag(taskTypeLabel(task.taskType), taskTypeColor(task.taskType)), 91),
           _cell(_shortDate(task.deadline), 150),
           _tagCell(_tag(task.urgency == 'URGENT' ? '紧急' : '普通',
             task.urgency == 'URGENT' ? const Color(0xFFD46840) : const Color(0xFF187B68)), 104),
           _tagCell(_tag(task.statusLabel,
             task.status == 'COMPLETED' ? const Color(0xFF087D79)
-              : task.status == 'IN_PROGRESS' ? const Color(0xFFB47A24) : const Color(0xFF6B7886)), 114),
+              : task.status == 'IN_PROGRESS' ? const Color(0xFFB47A24) : task.status=='BLOCKED'?Palette.coral:const Color(0xFF6B7886)), 114),
+          _cell(task.progressPercent==null?'未填报':'${task.progressPercent}%',84,
+            weight:FontWeight.w800,ink:task.progressPercent==null?Palette.muted:Palette.primary),
           _cell(task.progressNote.isNotEmpty ? task.progressNote :
             (task.details.isNotEmpty ? task.details : '—'), 244, ink: Palette.muted),
           _cell(task.assigneeName.isNotEmpty ? task.assigneeName : (widget.app.user?.name ?? '我'), 120),
@@ -336,40 +328,11 @@ class _TasksPageState extends State<TasksPage> {
   );
   String _shortDate(String? raw) => raw == null || raw.isEmpty ? '未设置' : raw.replaceFirst('T', ' ');
 
-  void _detail(TaskItem item) => showModalBottomSheet<void>(
-    context: context, isScrollControlled: true, showDragHandle: true,
-    builder: (ctx) => SafeArea(child: Padding(
-      padding: EdgeInsets.fromLTRB(20, 10, 20, MediaQuery.viewInsetsOf(ctx).bottom + 24),
-      child: SingleChildScrollView(child: Column(
-        mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Text(item.name, style: const TextStyle(color: Palette.deep,
-            fontSize: 20, fontWeight: FontWeight.w900)),
-          const SizedBox(height: 12), Wrap(spacing: 8, runSpacing: 8, children: [
-            _tag(taskTypeLabel(item.taskType), taskTypeColor(item.taskType)),
-            _tag(item.statusLabel, Palette.primary),
-          ]),
-          const SizedBox(height: 14), Text(item.details.isEmpty ? '暂无详细说明' : item.details,
-            style: const TextStyle(height: 1.6)),
-          const SizedBox(height: 11), Text('起始：${_shortDate(item.startDate)}\n截止：${_shortDate(item.deadline)}',
-            style: const TextStyle(color: Palette.muted, height: 1.6)),
-          if(item.progressNote.isNotEmpty) ...[
-            const SizedBox(height: 10), Text('进度备注：${item.progressNote}')],
-          const SizedBox(height: 18),
-          if(item.status != 'COMPLETED') FilledButton(
-            onPressed: () {Navigator.pop(ctx); _advance(item);},
-            child: Text(item.status == 'NOT_STARTED' ? '开始任务' : '标记完成')),
-          if(item.status == 'COMPLETED' &&
-            (item.reviewStatus == 'NONE' || item.reviewStatus == 'RETURNED'))
-            FilledButton(onPressed: () async {
-              Navigator.pop(ctx);
-              try {
-                await widget.app.repo.inviteReview(item.id);
-                if(mounted) {toast(context, '已提交完成检查'); setState(_reload);}
-              } catch(e) {if(mounted) toast(context, '$e');}
-            }, child: const Text('邀请完成检查')),
-        ],
-      )),
-    )),
-  );
+  Future<void> _detail(TaskItem item) async {
+    widget.onTaskViewed?.call(item.id);
+    await Navigator.push<void>(context,MaterialPageRoute<void>(
+      builder:(_)=>TaskProgressPage(app:widget.app,task:item),
+    ));
+    if(mounted) setState(_reload);
+  }
 }

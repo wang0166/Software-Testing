@@ -16,6 +16,7 @@ class CalendarPage extends StatefulWidget {
   final int initialMode; // 0 month, 1 week, 2 day, 3 gantt
   final DateTime? initialDate;
   final bool embedded;
+  final ValueChanged<int>? onTaskViewed;
 
   const CalendarPage({
     super.key,
@@ -23,6 +24,7 @@ class CalendarPage extends StatefulWidget {
     this.initialMode = 0,
     this.initialDate,
     this.embedded = false,
+    this.onTaskViewed,
   });
 
   @override
@@ -289,7 +291,8 @@ class _CalendarPageState extends State<CalendarPage> {
   void _openFullGantt() {
     Navigator.push(context, MaterialPageRoute<void>(
       builder: (_) => CalendarPage(
-        app: widget.app, initialMode: 3, initialDate: _selected),
+        app: widget.app, initialMode: 3, initialDate: _selected,
+        onTaskViewed: widget.onTaskViewed),
     ));
   }
 
@@ -662,6 +665,7 @@ class _CalendarPageState extends State<CalendarPage> {
       );
 
   void _showTaskDetails(TaskItem task) {
+    widget.onTaskViewed?.call(task.id);
     showModalBottomSheet<void>(
       context: context,
       showDragHandle: true,

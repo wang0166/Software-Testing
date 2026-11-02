@@ -25,6 +25,14 @@ abstract class PandoraRepository {
   Future<List<TaskItem>> tasks({required bool personal});
   Future<TaskItem> createPersonalTask(String name,String details);
   Future<void> updateTask(TaskItem item,String status);
+  /// Append a progress update with status, completion percentage, and note.
+  Future<void> updateTaskProgress(TaskItem item,{required String status,required int percent,required String note});
+  /// Chronological, permission-scoped history supplied by backend (not fabricated locally).
+  Future<List<TaskProgressRecord>> taskProgressHistory(int assignmentId);
+  /// Read-only, backend-authorized subordinate progress history. No ability to
+  /// edit another person's task. Used for manager problem follow-up.
+  Future<List<TaskProgressRecord>> subordinateTaskProgressHistory(
+    int userId, int assignmentId);
   Future<List<CompanyItem>> companyMatters();
   Future<List<CompanyItem>> companyImportantTasks();
   Future<List<CalendarDay>> calendar(String from,String to);
