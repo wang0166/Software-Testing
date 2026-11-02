@@ -47,6 +47,7 @@ class AuthContractTest extends EmbeddedPostgresSupport {
 
     @DynamicPropertySource
     static void datasourceProperties(DynamicPropertyRegistry registry) {
+        registry.add("app.log-deadline-job.enabled", () -> "false");
         registry.add("spring.datasource.url", () -> JDBC_URL);
         registry.add("spring.datasource.username", () -> "postgres");
         registry.add("spring.datasource.password", () -> "");
@@ -194,7 +195,7 @@ class AuthContractTest extends EmbeddedPostgresSupport {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(loginBody("disabled1", EMPLOYEE_PASSWORD)))
                 .andExpect(status().isUnauthorized())
-                .andExpect(jsonPath("$.code").value(40103));
+                .andExpect(jsonPath("$.code").value(40104));
     }
 
     @Test
@@ -316,7 +317,7 @@ class AuthContractTest extends EmbeddedPostgresSupport {
 
         mockMvc.perform(get("/api/auth/me").header(HttpHeaders.AUTHORIZATION, "Bearer " + token))
                 .andExpect(status().isUnauthorized())
-                .andExpect(jsonPath("$.code").value(40103));
+                .andExpect(jsonPath("$.code").value(40104));
 
         jdbcTemplate.update("UPDATE users SET status = 'ACTIVE' WHERE username = 'employee1'");
 

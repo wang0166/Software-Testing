@@ -7,7 +7,7 @@ spring:
   datasource:
     url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/pandora}
     username: ${SPRING_DATASOURCE_USERNAME:postgres}
-    password: q20051113
+    password: ${SPRING_DATASOURCE_PASSWORD:postgres}
     driver-class-name: org.postgresql.Driver
     hikari:
       connection-init-sql: SET TIME ZONE 'Asia/Shanghai'
@@ -17,6 +17,8 @@ spring:
   jackson:
     time-zone: Asia/Shanghai
     default-property-inclusion: always
+    deserialization:
+      accept-float-as-int: false
 
 mybatis:
   configuration:
@@ -38,4 +40,4 @@ app:
     issuer: ${JWT_ISSUER:pandora-log}
   admin:
     init-username: ${ADMIN_INIT_USERNAME:admin}
-    init-password: 123456
+    init-password: ${ADMIN_INIT_PASSWORD:123456}

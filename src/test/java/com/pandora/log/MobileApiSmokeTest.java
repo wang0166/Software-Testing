@@ -47,6 +47,7 @@ class MobileApiSmokeTest extends EmbeddedPostgresSupport {
 
     @DynamicPropertySource
     static void datasourceProperties(DynamicPropertyRegistry registry) {
+        registry.add("app.log-deadline-job.enabled", () -> "false");
         registry.add("spring.datasource.url", () -> JDBC_URL);
         registry.add("spring.datasource.username", () -> "postgres");
         registry.add("spring.datasource.password", () -> "");

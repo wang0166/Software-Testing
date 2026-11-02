@@ -11,6 +11,7 @@ target/
 hs_err_pid*
 .DS_Store
 
+<<<<<<< HEAD
 # Local environment secrets
 .env
 
@@ -25,3 +26,7 @@ pandora_web/dist/
 .env
 .env.local
 .env.cloud
+=======
+# 本项目个人档案仅留本地
+/个人资料/
+>>>>>>> origin/feature/web-admin

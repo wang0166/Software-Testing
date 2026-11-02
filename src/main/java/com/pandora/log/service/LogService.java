@@ -1,6 +1,7 @@
 package com.pandora.log.service;
 
 import java.time.LocalDate;
+import java.time.Clock;
 import java.time.LocalTime;
 import java.time.OffsetDateTime;
 import java.time.ZoneId;
@@ -28,8 +29,10 @@ public class LogService {
     private static final ZoneId ZONE = ZoneId.of("Asia/Shanghai");
 
     private static final String LOG_SELECT = "SELECT l.id, l.author_id, u.real_name AS author_name, l.log_date, "
-            + "l.content, l.status, l.is_important, l.submitted_at, l.created_at, l.updated_at "
-            + "FROM work_logs l JOIN users u ON u.id = l.author_id ";
+            + "l.content, l.status, l.is_important, l.submitted_at, l.created_at, l.updated_at, "
+            + "u.role_code AS author_role,u.department_id,d.name AS department_name,u.team_id,t.name AS team_name "
+            + "FROM work_logs l JOIN users u ON u.id = l.author_id "
+            + "LEFT JOIN departments d ON d.id=u.department_id LEFT JOIN teams t ON t.id=u.team_id ";
 
     private static final RowMapper<WorkLogDto> LOG_MAPPER = (rs, index) -> new WorkLogDto(
             rs.getLong("id"),
@@ -41,7 +44,9 @@ public class LogService {
             rs.getBoolean("is_important"),
             rs.getObject("submitted_at", OffsetDateTime.class),
             rs.getObject("created_at", OffsetDateTime.class),
-            rs.getObject("updated_at", OffsetDateTime.class));
+            rs.getObject("updated_at", OffsetDateTime.class),
+            rs.getString("author_role"),rs.getObject("department_id", Long.class),rs.getString("department_name"),
+            rs.getObject("team_id", Long.class),rs.getString("team_name"));
 
     private static final RowMapper<LogCommentDto> COMMENT_MAPPER = (rs, index) -> new LogCommentDto(
             rs.getLong("id"),
@@ -55,13 +60,15 @@ public class LogService {
     private final JdbcTemplate jdbcTemplate;
     private final CurrentUserContext currentUserContext;
     private final SystemConfigService systemConfigService;
+    private final Clock clock;
 
     public LogService(JdbcTemplate jdbcTemplate,
             CurrentUserContext currentUserContext,
-            SystemConfigService systemConfigService) {
+            SystemConfigService systemConfigService, Clock clock) {
         this.jdbcTemplate = jdbcTemplate;
         this.currentUserContext = currentUserContext;
         this.systemConfigService = systemConfigService;
+        this.clock = clock;
     }
 
     public PageResult<WorkLogDto> list(String date, String status, Long authorId, Integer page, Integer size) {
@@ -116,7 +123,7 @@ public class LogService {
         ensureBeforeDeadline();
         String text = requireContent(content);
 
-        LocalDate today = LocalDate.now(ZONE);
+        LocalDate today = LocalDate.now(clock.withZone(ZONE));
         try {
             Long id = jdbcTemplate.queryForObject(
                     "INSERT INTO work_logs (author_id, log_date, content, status) "
@@ -137,6 +144,7 @@ public class LogService {
             throw new BusinessException(ErrorCode.LOG_ALREADY_SUBMITTED);
         }
         ensureBeforeDeadline();
+        requireToday(existing);
         String text = requireContent(content);
 
         int updated = jdbcTemplate.update(
@@ -161,6 +169,7 @@ public class LogService {
             return existing;
         }
         ensureBeforeDeadline();
+        requireToday(existing);
 
         int updated = jdbcTemplate.update(
                 "UPDATE work_logs SET status = 'SUBMITTED', submitted_at = now(), updated_at = now() "
@@ -201,12 +210,18 @@ public class LogService {
         if (text.isEmpty()) {
             throw new BusinessException(ErrorCode.VALIDATION_FAILED);
         }
-        if (parentId != null) {
-            List<Long> parentLogIds = jdbcTemplate.queryForList(
-                    "SELECT log_id FROM log_comments WHERE id = ?", Long.class, parentId);
-            if (parentLogIds.isEmpty() || !parentLogIds.get(0).equals(logId)) {
+        boolean own = currentUser.id().equals(log.authorId());
+        if (own) {
+            // 作者只能回复直属上级发起的顶层点评，不能自行发起或回复自己的回复。
+            if (parentId == null || !Boolean.TRUE.equals(jdbcTemplate.queryForObject(
+                    "SELECT EXISTS(SELECT 1 FROM log_comments c WHERE c.id=? AND c.log_id=? "
+                    + "AND c.parent_id IS NULL AND c.commenter_id<>?)", Boolean.class, parentId, logId, log.authorId()))) {
                 throw new BusinessException(ErrorCode.VALIDATION_FAILED);
             }
+            Long commenter = jdbcTemplate.queryForObject("SELECT commenter_id FROM log_comments WHERE id=?", Long.class, parentId);
+            if (!isDirectSuperior(commenter, log.authorId())) throw new BusinessException(ErrorCode.NOT_DIRECT_SUPERIOR);
+        } else if (parentId != null) {
+            throw new BusinessException(ErrorCode.VALIDATION_FAILED);
         }
 
         Long id = jdbcTemplate.queryForObject(
@@ -289,8 +304,14 @@ public class LogService {
 
     private void ensureBeforeDeadline() {
         LocalTime deadline = systemConfigService.logDeadline();
-        LocalTime now = LocalTime.now(ZONE);
+        LocalTime now = LocalTime.now(clock.withZone(ZONE));
         if (!now.isBefore(deadline)) {
+            throw new BusinessException(ErrorCode.LOG_DEADLINE_PASSED);
+        }
+    }
+
+    private void requireToday(WorkLogDto log) {
+        if (!log.logDate().equals(LocalDate.now(clock.withZone(ZONE)))) {
             throw new BusinessException(ErrorCode.LOG_DEADLINE_PASSED);
         }
     }

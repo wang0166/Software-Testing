@@ -1,6 +1,7 @@
 package com.pandora.log.service;
 
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -86,9 +87,9 @@ public class TaskService {
         if (details.isEmpty()) {
             throw new BusinessException(ErrorCode.TASK_VALIDATION_FAILED);
         }
-        LocalDate startDate = parseTaskDate(request.startDate());
-        LocalDate deadline = parseTaskDate(request.deadline());
-        if (deadline.isBefore(startDate)) {
+        LocalDateTime startDate = parseTaskDate(request.startDate(), false);
+        LocalDateTime deadline = parseTaskDate(request.deadline(), true);
+        if (!deadline.isAfter(startDate)) {
             throw new BusinessException(ErrorCode.TASK_VALIDATION_FAILED);
         }
         String urgency = trim(request.urgency()).toUpperCase();
@@ -142,8 +143,8 @@ public class TaskService {
                         rs.getLong("id"),
                         rs.getString("name"),
                         rs.getString("details"),
-                        rs.getObject("start_date", LocalDate.class),
-                        rs.getObject("deadline", LocalDate.class),
+                        rs.getObject("start_date", LocalDateTime.class),
+                        rs.getObject("deadline", LocalDateTime.class),
                         rs.getString("urgency"),
                         rs.getInt("assignee_count"),
                         rs.getInt("completed_count"),
@@ -167,8 +168,8 @@ public class TaskService {
                         rs.getLong("sender_id"),
                         rs.getString("name"),
                         rs.getString("details"),
-                        rs.getObject("start_date", LocalDate.class),
-                        rs.getObject("deadline", LocalDate.class),
+                        rs.getObject("start_date", LocalDateTime.class),
+                        rs.getObject("deadline", LocalDateTime.class),
                         rs.getString("urgency"),
                         rs.getObject("created_at", OffsetDateTime.class),
                         rs.getObject("updated_at", OffsetDateTime.class),
@@ -242,8 +243,8 @@ public class TaskService {
                         rs.getLong("task_id"),
                         rs.getString("name"),
                         rs.getString("details"),
-                        rs.getObject("start_date", LocalDate.class),
-                        rs.getObject("deadline", LocalDate.class),
+                        rs.getObject("start_date", LocalDateTime.class),
+                        rs.getObject("deadline", LocalDateTime.class),
                         rs.getString("urgency"),
                         rs.getString("execution_status"),
                         rs.getString("review_status"),
@@ -398,8 +399,8 @@ public class TaskService {
                         rs.getLong("task_id"),
                         rs.getString("name"),
                         rs.getString("details"),
-                        rs.getObject("start_date", LocalDate.class),
-                        rs.getObject("deadline", LocalDate.class),
+                        rs.getObject("start_date", LocalDateTime.class),
+                        rs.getObject("deadline", LocalDateTime.class),
                         rs.getString("urgency"),
                         rs.getString("execution_status"),
                         rs.getString("review_status"),
@@ -463,9 +464,18 @@ public class TaskService {
         }
     }
 
-    private LocalDate parseTaskDate(String value) {
+    private LocalDateTime parseTaskDate(String value, boolean end) {
         try {
-            return LocalDate.parse(trim(value));
+            String text = trim(value);
+            // 兼容已发布的纯日期请求；新请求严格保存分钟，不截断秒或时区偏移。
+            if (text.matches("[0-9]{4}-[0-9]{2}-[0-9]{2}")) {
+                LocalDate date = LocalDate.parse(text);
+                return end ? date.atTime(23, 59) : date.atStartOfDay();
+            }
+            if (!text.matches("[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}(:00)?")) {
+                throw new IllegalArgumentException();
+            }
+            return LocalDateTime.parse(text);
         } catch (RuntimeException exception) {
             throw new BusinessException(ErrorCode.TASK_VALIDATION_FAILED);
         }

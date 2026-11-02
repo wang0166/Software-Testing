@@ -39,12 +39,20 @@ class DatabaseMigrationTest extends EmbeddedPostgresSupport {
 
     @Test
     void migratesEmptyDatabaseToLatestVersion() {
+<<<<<<< HEAD
         assertThat(firstRun.migrationsExecuted).isEqualTo(6);
+=======
+        assertThat(firstRun.migrationsExecuted).isEqualTo(8);
+>>>>>>> origin/feature/web-admin
 
         Flyway flyway = flyway(jdbcUrl);
         MigrationInfo current = flyway.info().current();
         assertThat(current).isNotNull();
+<<<<<<< HEAD
         assertThat(current.getVersion().getVersion()).isEqualTo("6");
+=======
+        assertThat(current.getVersion().getVersion()).isEqualTo("8");
+>>>>>>> origin/feature/web-admin
         assertThat(current.getState().isApplied()).isTrue();
         assertThat(flyway.info().pending()).isEmpty();
     }
@@ -69,6 +77,62 @@ class DatabaseMigrationTest extends EmbeddedPostgresSupport {
     @Test
     void keepsMigrationsIdempotentOnRestart() {
         assertThat(flyway(jdbcUrl).migrate().migrationsExecuted).isZero();
+    }
+
+    @Test
+    void upgradesVersionFiveWithoutInventingLegacyProfileOrMatterDates() throws SQLException {
+        String upgradeUrl = createDatabase("pandora_admin_upgrade_test");
+        Flyway.configure().dataSource(upgradeUrl, "postgres", "").target("5").load().migrate();
+        String previousHash;
+        try (Connection connection = DriverManager.getConnection(upgradeUrl);
+                Statement statement = connection.createStatement()) {
+            statement.execute("INSERT INTO company_matters(title,content,updated_by) SELECT '旧事项','保留内容',id FROM users WHERE role_code='FOUNDER' LIMIT 1");
+            try (ResultSet rs = statement.executeQuery("SELECT password_hash FROM users WHERE username='employee'")) {
+                rs.next(); previousHash = rs.getString(1);
+            }
+        }
+        assertThat(flyway(upgradeUrl).migrate().migrationsExecuted).isEqualTo(3);
+        try (Connection connection = DriverManager.getConnection(upgradeUrl);
+                Statement statement = connection.createStatement()) {
+            try (ResultSet rs = statement.executeQuery("SELECT password_hash,phone,auth_version FROM users WHERE username='employee'")) {
+                rs.next(); assertThat(rs.getString(1)).isEqualTo(previousHash);
+                assertThat(rs.getString(2)).isNull(); assertThat(rs.getInt(3)).isZero();
+            }
+            try (ResultSet rs = statement.executeQuery("SELECT start_date,deadline,content FROM company_matters")) {
+                rs.next(); assertThat(rs.getObject(1)).isNull(); assertThat(rs.getObject(2)).isNull();
+                assertThat(rs.getString(3)).isEqualTo("保留内容");
+            }
+            connection.setAutoCommit(false);
+            assertThat(sqlStateOf(connection, "UPDATE company_matters SET start_date='2026-10-29 09:30+08', deadline='2026-10-29 18:00+08'"))
+                    .isEqualTo("23514");
+            connection.rollback();
+        }
+    }
+
+    @Test
+    void upgradesVersionSevenPreservingTaskDaysAssignmentsAndPasswords() {
+        String url = createDatabase("pandora_v7_mobile_upgrade_test");
+        Flyway.configure().dataSource(url, "postgres", "").target("7").load().migrate();
+        var jdbc = new org.springframework.jdbc.core.JdbcTemplate(
+                new org.springframework.jdbc.datasource.DriverManagerDataSource(url, "postgres", ""));
+        Long user = jdbc.queryForObject("SELECT id FROM users WHERE role_code='EMPLOYEE' LIMIT 1", Long.class);
+        String hash = jdbc.queryForObject("SELECT password_hash FROM users WHERE id=?", String.class, user);
+        Long task = jdbc.queryForObject("INSERT INTO tasks(sender_id,name,details,start_date,deadline,urgency) "
+                + "VALUES (?,'旧日期任务','保留原始说明','2026-10-29','2026-10-29','NOT_URGENT') RETURNING id", Long.class, user);
+        Long assignment = jdbc.queryForObject("INSERT INTO task_assignments(task_id,assignee_id) VALUES (?,?) RETURNING id", Long.class, task, user);
+        var oldHistory = jdbc.queryForList("SELECT version,checksum FROM flyway_schema_history ORDER BY installed_rank");
+        assertThat(Flyway.configure().dataSource(url, "postgres", "").load().migrate().migrationsExecuted).isEqualTo(1);
+        assertThat(jdbc.queryForObject("SELECT start_date FROM tasks WHERE id=?", java.time.LocalDateTime.class, task))
+                .isEqualTo(java.time.LocalDateTime.of(2026,10,29,0,0));
+        assertThat(jdbc.queryForObject("SELECT deadline FROM tasks WHERE id=?", java.time.LocalDateTime.class, task))
+                .isEqualTo(java.time.LocalDateTime.of(2026,10,29,23,59));
+        assertThat(jdbc.queryForObject("SELECT id FROM task_assignments WHERE task_id=?", Long.class, task)).isEqualTo(assignment);
+        assertThat(jdbc.queryForObject("SELECT password_hash FROM users WHERE id=?", String.class, user)).isEqualTo(hash);
+        assertThat(jdbc.queryForList("SELECT version,checksum FROM flyway_schema_history WHERE version<>'8' ORDER BY installed_rank")).isEqualTo(oldHistory);
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> jdbc.update("UPDATE tasks SET deadline=start_date WHERE id=?", task))
+                .isInstanceOf(org.springframework.dao.DataIntegrityViolationException.class);
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> jdbc.update("UPDATE tasks SET deadline='2026-10-29 23:59:01' WHERE id=?", task))
+                .isInstanceOf(org.springframework.dao.DataIntegrityViolationException.class);
     }
 
     @Test

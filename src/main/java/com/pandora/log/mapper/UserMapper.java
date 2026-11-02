@@ -16,7 +16,7 @@ import com.pandora.log.entity.User;
 public interface UserMapper {
 
     String COLUMNS = "id, username, password_hash, real_name, role_code, department_id, team_id, "
-            + "status, failed_attempts, locked_until, created_at, updated_at";
+            + "status, failed_attempts, locked_until, created_at, updated_at, auth_version";
 
     @Select("SELECT " + COLUMNS + " FROM users WHERE username = #{username}")
     User findByUsername(@Param("username") String username);
