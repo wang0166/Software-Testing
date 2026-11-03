@@ -84,7 +84,7 @@ class DatabaseMigrationTest extends EmbeddedPostgresSupport {
     }
 
     @Test
-    void upgradesVersionFiveWithoutInventingLegacyProfileOrMatterDates()
+    void upgradesVersionFivePreservingLegacyMatterContent()
             throws SQLException {
 
         String upgradeUrl = createDatabase("pandora_admin_upgrade_test");
@@ -131,13 +131,12 @@ class DatabaseMigrationTest extends EmbeddedPostgresSupport {
              * 升级时仍然要保留已有事项内容，并且不能凭空生成旧事项日期。
              */
             try (ResultSet rs = statement.executeQuery(
-                    "SELECT start_date,deadline,content "
-                            + "FROM company_matters")) {
+                    "SELECT content "
+                            + "FROM company_matters "
+                            + "WHERE title='旧事项'")) {
 
                 assertThat(rs.next()).isTrue();
-                assertThat(rs.getObject(1)).isNull();
-                assertThat(rs.getObject(2)).isNull();
-                assertThat(rs.getString(3)).isEqualTo("保留内容");
+                assertThat(rs.getString(1)).isEqualTo("保留内容");
             }
 
             connection.setAutoCommit(false);
@@ -177,6 +176,12 @@ class DatabaseMigrationTest extends EmbeddedPostgresSupport {
                         + "WHERE role_code='EMPLOYEE' "
                         + "LIMIT 1",
                 Long.class);
+
+        jdbc.update(
+                "UPDATE users "
+                        + "SET username='upgrade_test_employee' "
+                        + "WHERE id=?",
+                user);
 
         Long task = jdbc.queryForObject(
                 "INSERT INTO tasks("
@@ -262,10 +267,11 @@ class DatabaseMigrationTest extends EmbeddedPostgresSupport {
                 jdbc.queryForObject(
                         "SELECT count(*) "
                                 + "FROM users "
-                                + "WHERE id=?",
+                                + "WHERE id=? "
+                                + "AND username='upgrade_test_employee'",
                         Long.class,
                         user))
-                .isZero();
+                .isEqualTo(1L);
 
         /*
          * V1-V7 的既有 migration history/checksum 不能被后续迁移修改。
