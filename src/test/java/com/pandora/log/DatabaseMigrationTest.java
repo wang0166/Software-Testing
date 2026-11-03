@@ -39,12 +39,12 @@ class DatabaseMigrationTest extends EmbeddedPostgresSupport {
 
    @Test
    void migratesEmptyDatabaseToLatestVersion() {
-        assertThat(firstRun.migrationsExecuted).isEqualTo(8);
+        assertThat(firstRun.migrationsExecuted).isEqualTo(11);
 
         Flyway flyway = flyway(jdbcUrl);
         MigrationInfo current = flyway.info().current();
         assertThat(current).isNotNull();
-        assertThat(current.getVersion().getVersion()).isEqualTo("8");
+        assertThat(current.getVersion().getVersion()).isEqualTo("11");
         assertThat(current.getState().isApplied()).isTrue();
         assertThat(flyway.info().pending()).isEmpty();
    }
@@ -56,8 +56,8 @@ class DatabaseMigrationTest extends EmbeddedPostgresSupport {
         assertThat(count("role_permissions")).isEqualTo(41);
         assertThat(count("system_configs")).isEqualTo(5);
         assertThat(count("users WHERE role_code IN "
-                + "('FOUNDER', 'DEPT_MANAGER', 'TEAM_LEADER', 'EMPLOYEE')")).isEqualTo(4);
-
+                + "('FOUNDER', 'DEPT_MANAGER', 'TEAM_LEADER', 'EMPLOYEE')"))
+                .isEqualTo(18);
         assertThat(count("role_permissions WHERE role_code = 'ADMIN' AND permission_code LIKE 'task:%'"))
                 .isZero();
         assertThat(count("role_permissions WHERE role_code = 'EMPLOYEE' AND permission_code = 'task:execute'"))
@@ -83,7 +83,7 @@ class DatabaseMigrationTest extends EmbeddedPostgresSupport {
                 rs.next(); previousHash = rs.getString(1);
             }
         }
-        assertThat(flyway(upgradeUrl).migrate().migrationsExecuted).isEqualTo(3);
+        assertThat(flyway(upgradeUrl).migrate().migrationsExecuted).isEqualTo(6);
         try (Connection connection = DriverManager.getConnection(upgradeUrl);
                 Statement statement = connection.createStatement()) {
             try (ResultSet rs = statement.executeQuery("SELECT password_hash,phone,auth_version FROM users WHERE username='employee'")) {
@@ -113,7 +113,7 @@ class DatabaseMigrationTest extends EmbeddedPostgresSupport {
                 + "VALUES (?,'旧日期任务','保留原始说明','2026-10-29','2026-10-29','NOT_URGENT') RETURNING id", Long.class, user);
         Long assignment = jdbc.queryForObject("INSERT INTO task_assignments(task_id,assignee_id) VALUES (?,?) RETURNING id", Long.class, task, user);
         var oldHistory = jdbc.queryForList("SELECT version,checksum FROM flyway_schema_history ORDER BY installed_rank");
-        assertThat(Flyway.configure().dataSource(url, "postgres", "").load().migrate().migrationsExecuted).isEqualTo(1);
+        assertThat(Flyway.configure().dataSource(url, "postgres", "").load().migrate().migrationsExecuted).isEqualTo(4);
         assertThat(jdbc.queryForObject("SELECT start_date FROM tasks WHERE id=?", java.time.LocalDateTime.class, task))
                 .isEqualTo(java.time.LocalDateTime.of(2026,10,29,0,0));
         assertThat(jdbc.queryForObject("SELECT deadline FROM tasks WHERE id=?", java.time.LocalDateTime.class, task))

@@ -45,7 +45,7 @@ class LocalMigrationCompatibilityTest extends EmbeddedPostgresSupport {
     }
 
     @Test
-    void serverVersionSixUpgradesAndPreservesUsers() throws Exception {
+    void serverVersionSixUpgradesAndAppliesLatestDemoCleanup() throws Exception {
         var source = database("pandora_server_v6_test");
 
         Flyway.configure()
@@ -55,9 +55,6 @@ class LocalMigrationCompatibilityTest extends EmbeddedPostgresSupport {
                 .migrate();
 
         JdbcTemplate jdbc = new JdbcTemplate(source);
-
-        var usersBefore = jdbc.queryForList(
-                "SELECT id, username, password_hash FROM users ORDER BY id");
 
         String location = LocalMigrationCompatibility.location(
                 source,
@@ -75,11 +72,18 @@ class LocalMigrationCompatibilityTest extends EmbeddedPostgresSupport {
                         .migrationsExecuted)
                 .isEqualTo(5);
 
-        var usersAfter = jdbc.queryForList(
-                "SELECT id, username, password_hash FROM users ORDER BY id");
+        assertThat(
+                jdbc.queryForObject(
+                        "SELECT count(*) FROM users",
+                        Long.class))
+                .isEqualTo(18L);
 
-        assertThat(usersAfter)
-                .containsAll(usersBefore);
+        assertThat(
+                jdbc.queryForObject(
+                        "SELECT count(*) FROM users "
+                                + "WHERE username IN ('founder', 'deptmgr', 'teamlead', 'employee')",
+                        Long.class))
+                .isZero();
 
         assertThat(
                 jdbc.queryForObject(
@@ -105,10 +109,6 @@ class LocalMigrationCompatibilityTest extends EmbeddedPostgresSupport {
                         + "FROM flyway_schema_history "
                         + "WHERE version='6'");
 
-        var users = jdbc.queryForList(
-                "SELECT id, username, password_hash "
-                        + "FROM users ORDER BY id");
-
         String location = LocalMigrationCompatibility.location(
                 source,
                 directory.resolve("pgdata"));
@@ -133,10 +133,17 @@ class LocalMigrationCompatibilityTest extends EmbeddedPostgresSupport {
                 .isEqualTo(before);
 
         assertThat(
-                jdbc.queryForList(
-                        "SELECT id, username, password_hash "
-                                + "FROM users ORDER BY id"))
-                .containsAll(users);
+                jdbc.queryForObject(
+                        "SELECT count(*) FROM users",
+                        Long.class))
+                .isEqualTo(18L);
+
+        assertThat(
+                jdbc.queryForObject(
+                        "SELECT count(*) FROM users "
+                                + "WHERE username IN ('founder', 'deptmgr', 'teamlead', 'employee')",
+                        Long.class))
+                .isZero();
 
         assertThat(
                 jdbc.queryForObject(
