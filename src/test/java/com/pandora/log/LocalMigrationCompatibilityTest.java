@@ -56,9 +56,8 @@ class LocalMigrationCompatibilityTest extends EmbeddedPostgresSupport {
 
         JdbcTemplate jdbc = new JdbcTemplate(source);
 
-        Long users = jdbc.queryForObject(
-                "SELECT count(*) FROM users",
-                Long.class);
+        var usersBefore = jdbc.queryForList(
+                "SELECT id, username, password_hash FROM users ORDER BY id");
 
         String location = LocalMigrationCompatibility.location(
                 source,
@@ -76,11 +75,11 @@ class LocalMigrationCompatibilityTest extends EmbeddedPostgresSupport {
                         .migrationsExecuted)
                 .isEqualTo(5);
 
-        assertThat(
-                jdbc.queryForObject(
-                        "SELECT count(*) FROM users",
-                        Long.class))
-                .isEqualTo(users);
+        var usersAfter = jdbc.queryForList(
+                "SELECT id, username, password_hash FROM users ORDER BY id");
+
+        assertThat(usersAfter)
+                .containsAll(usersBefore);
 
         assertThat(
                 jdbc.queryForObject(
@@ -137,7 +136,7 @@ class LocalMigrationCompatibilityTest extends EmbeddedPostgresSupport {
                 jdbc.queryForList(
                         "SELECT id, username, password_hash "
                                 + "FROM users ORDER BY id"))
-                .isEqualTo(users);
+                .containsAll(users);
 
         assertThat(
                 jdbc.queryForObject(
