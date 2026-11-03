@@ -11,9 +11,10 @@ target/
 hs_err_pid*
 .DS_Store
 
-<<<<<<< HEAD
 # Local environment secrets
 .env
+.env.local
+.env.cloud
 
 # Frontend build/dependencies
 node_modules/
@@ -23,10 +24,5 @@ pandora_web/dist/
 # Docker/local temp
 *.tar
 
-.env
-.env.local
-.env.cloud
-=======
 # 本项目个人档案仅留本地
 /个人资料/
->>>>>>> origin/feature/web-admin
