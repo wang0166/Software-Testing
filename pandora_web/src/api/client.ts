@@ -4,17 +4,21 @@ import { request, requestPage, clearTokens, getToken, getRefreshToken, isMock, s
 import { requireCapability } from './capabilities';
 import { labelToCode, codeToLabel, statusLabel, statusValue } from '../constants/roles';
 import { isMatterHour } from '../utils/matterTime';
+import { normalizeIdentity } from '../utils/identity';
 
 export interface UserRow { id: string; username: string; name: string; dept: string; team: string; role: string; status: string; departmentId?: string | null; teamId?: string | null; idNumber?: string; gender?: string; phone?: string }
 export interface CreateUserInput {
   username: string; password: string; realName: string; role: string; phone: string;
-  departmentId?: number | null; teamId?: number | null; idNumber?: string; gender?: string;
+  departmentId?: number | null; teamId?: number | null; idNumber: string; gender?: string;
 }
 export interface OrgUnit { id: string; name: string; parentId?: string; description?: string }
 /** 公司事项独立于任务派发；时间按上海时区整点记录，兼容旧纯日期响应。 */
 export interface CompanyMatter { id: string; title: string; content: string; sortOrder: number; startDate?: string; deadline?: string }
 export interface CompanyMatterInput { title: string; content: string; sortOrder: number; startDate: string; deadline: string }
-export interface AuditRow { id: string; actor: string; action: string; target: string; time: string; result: string }
+export interface AuditRow { id: string; actor: string; action: string; target: string; time: string; result: string; objectType?: string; objectId?: string; source?: string; summary?: string }
+export interface AuditDetail extends AuditRow { changes: { field: string; before: string | null; after: string | null }[] }
+export interface AuditFilter { actor?: string; action?: string; from?: string; to?: string; objectType?: string; result?: string; page?: number; size?: number }
+const AUDIT_TYPES = new Set(['LOG', 'TASK']);
 export interface RolePerm { roleCode: string; label: string; permissions: string[] }
 
 /** POST /auth/login 返回体（第2节） */
@@ -187,7 +191,7 @@ export const api = {
       body: JSON.stringify({ username: p.username.trim(), password: p.password, realName: p.realName.trim(),
         role: labelToCode(p.role) ?? p.role, phone: p.phone.trim(),
         departmentId: p.departmentId ?? null, teamId: p.teamId ?? null,
-        idNumber: p.idNumber?.trim(), gender: p.gender }),
+        idNumber: normalizeIdentity(p.idNumber), gender: p.gender }),
     });
     await sleep();
     if (demoUserRows().some(u => u.username === p.username.trim())) throw new Error('该账号已存在，换一个');
@@ -299,16 +303,39 @@ export const api = {
     if (i < 0) throw new Error('事项不存在');
     mockMatters[i] = { ...value, id };
   },
-  async listAudits(params: { actor?: string; action?: string; page?: number; size?: number } = {}): Promise<PageData<AuditRow>> {
+  async getAudit(id: string): Promise<AuditDetail> {
     requireCapability('audits');
+    if (!useMock()) {
+      const row = await request<AuditDetail>('/audits/' + encodeURIComponent(id));
+      if (!row || row.id == null) throw new Error('操作记录详情格式不正确');
+      if (row.objectType && !AUDIT_TYPES.has(row.objectType)) throw new Error('此页面仅支持日志和任务操作记录');
+      // 旧记录可不含字段变化；错误结构应明确报错，避免详情页崩溃或伪造内容。
+      if (row.changes != null && (!Array.isArray(row.changes) || row.changes.some(change => !change || typeof change.field !== 'string'
+        || ![change.before, change.after].every(value => value == null || typeof value === 'string')))) throw new Error('操作记录字段变化格式不正确');
+      return { ...row, changes: row.changes ?? [] };
+    }
+    const row = mockAudits.find(item => String(item.id) === String(id));
+    if (!row) throw new Error('操作记录不存在');
+    return { ...row, source: 'LEGACY', summary: '开发演示记录，不代表服务器操作', changes: [] };
+  },
+  async listAudits(params: AuditFilter = {}): Promise<PageData<AuditRow>> {
+    requireCapability('audits');
+    // 默认查询工作日志；每次请求都限定类型，防止其他管理记录混入。
+    const objectType = params.objectType || 'LOG';
+    if (!AUDIT_TYPES.has(objectType)) throw new Error('此页面仅支持日志和任务操作记录');
     const page = params.page ?? 1, size = params.size ?? 20;
     if (!useMock()) {
-      const q = new URLSearchParams({ page: String(page), size: String(size) });
+      const q = new URLSearchParams({ page: String(page), size: String(size), objectType });
       if (params.actor) q.set('actor', params.actor);
       if (params.action) q.set('action', params.action);
-      return requestPage<AuditRow>('/audits?' + q);
+      for (const key of ['from', 'to', 'result'] as const) { if (params[key]) q.set(key, params[key]!); }
+      const data = await requestPage<AuditRow>('/audits?' + q);
+      if (data.items.some(row => row.objectType !== objectType)) throw new Error('操作记录响应与所选业务类型不一致，请核对后端筛选接口');
+      return data;
     }
-    return pageOf(mockAudits.filter(a => (!params.actor || a.actor.includes(params.actor)) && (!params.action || a.action.includes(params.action))), page, size);
+    return pageOf(mockAudits.filter(a => (!params.actor || a.actor.includes(params.actor)) && (!params.action || a.action.includes(params.action))
+      && (!params.result || a.result === params.result || (params.result === 'SUCCESS' && a.result === '成功') || (params.result === 'FAILED' && (a.result === '失败' || a.result.startsWith('拒绝')))) && a.objectType === objectType
+      && (!params.from || a.time.slice(0, 10) >= params.from) && (!params.to || a.time.slice(0, 10) <= params.to)), page, size);
   },
 };
 function toItems<T>(d: unknown): T[] {

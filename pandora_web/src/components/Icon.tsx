@@ -1,4 +1,5 @@
 const paths = {
+  audit: 'M9 3h6v4H9zM9 5H5v16h14V5h-4M8 12h8M8 16h5',
   users: 'M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M16 3a4 4 0 0 1 0 8M22 21v-2a4 4 0 0 0-3-3.87M13 7a4 4 0 1 1-8 0 4 4 0 0 1 8 0Z',
   org: 'M9 3h6v6H9zM3 15h6v6H3zM15 15h6v6h-6zM12 9v3M6 15v-3h12v3',
   matters: 'M8 3h8v4H8zM8 5H5v16h14V5h-3M8 12h8M8 16h5',

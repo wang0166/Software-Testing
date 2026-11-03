@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { api, type AuditRow, type OrgUnit } from '../api/client';
+import { api, type OrgUnit } from '../api/client';
 import { supports } from '../api/capabilities';
 import { isMock } from '../api/http';
 import { useAsync } from '../hooks/hooks';
@@ -8,15 +8,9 @@ import { Unavailable } from '../components/Unavailable';
 import { Icon } from '../components/Icon';
 
 export function Org() {
-  const [tab, setTab] = useState('org');
   return <div>
-    <div className="pd-hero"><div><h2>组织管理</h2><p>维护部门与团队，查看成员及操作记录</p></div></div>
-    <div className="pd-tabs" role="tablist" aria-label="组织管理">
-      <button role="tab" id="org-tab" aria-controls="org-panel" aria-selected={tab === 'org'} onClick={() => setTab('org')}>组织结构</button>
-      <button role="tab" id="audits-tab" aria-controls="audits-panel" aria-selected={tab === 'audits'} onClick={() => setTab('audits')}>审计记录</button>
-    </div>
-    {tab === 'org' && <div id="org-panel" role="tabpanel" aria-labelledby="org-tab">{supports('organization') ? <OrgTab /> : <Unavailable feature="组织管理" />}</div>}
-    {tab === 'audits' && <div id="audits-panel" role="tabpanel" aria-labelledby="audits-tab">{supports('audits') ? <AuditsTab /> : <Unavailable feature="审计查询" />}</div>}
+    <div className="pd-hero"><div><span className="pd-eyebrow">组织与协作</span><h2>组织管理</h2><p>维护部门和团队，让人员归属清晰有序。</p></div></div>
+    {supports('organization') ? <OrgTab /> : <Unavailable feature="组织管理" />}
   </div>;
 }
 
@@ -105,31 +99,5 @@ function TeamMembers({ teamId }: { teamId: string }) {
       {members.data?.total === 0 && <Empty title={query ? '未找到匹配成员' : '该团队暂无成员'} />}
       <div className="pd-row"><span>第 {page} 页 · 共 {members.data?.total ?? 0} 人</span><button className="pd-btn" disabled={page <= 1} onClick={() => setPage(p => p - 1)}>上一页</button><button className="pd-btn" disabled={page * 5 >= (members.data?.total ?? 0)} onClick={() => setPage(p => p + 1)}>下一页</button></div>
     </>}
-  </div>;
-}
-
-function AuditsTab() {
-  const [page, setPage] = useState(1);
-  const [actor, setActor] = useState('');
-  const [action, setAction] = useState('');
-  const [filter, setFilter] = useState({ actor: '', action: '' });
-  const [detail, setDetail] = useState<AuditRow | null>(null);
-  const audits = useAsync(() => api.listAudits({ ...filter, page, size: 10 }), [page, filter]);
-  return <div className="pd-card"><h3 className="pd-sub">操作记录{isMock() && <span className="pd-count">演示样例</span>}</h3>
-    <p className="pd-hint">查询操作人、具体动作、操作对象、发生时间和结果。记录只读。</p>
-    <form className="pd-row" onSubmit={e => { e.preventDefault(); setPage(1); setFilter({ actor: actor.trim(), action: action.trim() }); }}>
-      <input className="pd-input" aria-label="审计操作者" placeholder="操作者" value={actor} onChange={e => setActor(e.target.value)} />
-      <input className="pd-input" aria-label="审计动作" placeholder="动作" value={action} onChange={e => setAction(e.target.value)} />
-      <button className="pd-btn primary" type="submit">查询</button>
-      <button className="pd-btn" type="button" onClick={() => { setActor(''); setAction(''); setPage(1); setFilter({ actor: '', action: '' }); }}>清空</button>
-    </form>
-    {audits.loading ? <Skeleton rows={3} /> : audits.error ? <LoadError error={audits.error} retry={audits.reload} /> : <>
-      <div className="pd-scroll-x"><table className="pd-table"><thead><tr><th>操作者</th><th>动作</th><th>对象</th><th>时间</th><th>结果</th><th>操作</th></tr></thead><tbody>{audits.data?.items.map(a => <tr key={a.id}><td>{a.actor}</td><td>{a.action}</td><td>{a.target}</td><td>{a.time}</td><td>{a.result}</td><td><button className="pd-btn" onClick={() => setDetail(a)}>查看详情</button></td></tr>)}</tbody></table></div>
-      {audits.data?.total === 0 && <Empty title="暂无审计记录" />}
-      <div className="pd-row"><span>第 {page} 页 · 共 {audits.data?.total ?? 0} 条</span><button className="pd-btn" disabled={page <= 1} onClick={() => setPage(p => p - 1)}>上一页</button><button className="pd-btn" disabled={page * 10 >= (audits.data?.total ?? 0)} onClick={() => setPage(p => p + 1)}>下一页</button></div>
-    </>}
-    {detail && <Modal title="操作记录详情" onClose={() => setDetail(null)}>
-      <dl className="pd-record-details">{[['记录编号', detail.id], ['操作者', detail.actor], ['动作', detail.action], ['操作对象', detail.target], ['发生时间', detail.time], ['结果', detail.result]].map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value || '未提供'}</dd></div>)}</dl>
-    </Modal>}
   </div>;
 }

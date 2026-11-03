@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useNavigate, NavLink, useLocation, Navigate } from 'react-router-dom';
 import { api } from '../api/client';
-import { isMock, setMockMode } from '../api/http';
+import { DEVELOPMENT_TOOLS, isMock, setMockMode } from '../api/http';
 import { useToast } from '../components/ui';
 import { useAsync } from '../hooks/hooks';
 import { Icon } from '../components/Icon';
@@ -30,7 +30,7 @@ export function Login() {
     <main className="pd-login-panel"><form className="pd-login-card pd-form" onSubmit={event => { event.preventDefault(); login(); }}><div><h2>管理员登录</h2><p className="pd-hint">输入你的账号，进入工作台</p></div>
       <label>账户名<input className="pd-input" autoComplete="username" value={name} onChange={event => setName(event.target.value)} placeholder="开户时确认的账户名" /></label>
       <label>密码<input className="pd-input" type="password" autoComplete="current-password" value={password} onChange={event => setPassword(event.target.value)} placeholder="请输入密码" /></label>
-      <div className="pd-login-options"><label><input type="checkbox" checked={remember} onChange={event => setRemember(event.target.checked)} />记住账号</label><label><input type="checkbox" checked={demo} onChange={event => setDemo(event.target.checked)} />演示模式</label></div>
+      <div className="pd-login-options"><label><input type="checkbox" checked={remember} onChange={event => setRemember(event.target.checked)} />记住账号</label>{DEVELOPMENT_TOOLS && <label><input type="checkbox" checked={demo} onChange={event => setDemo(event.target.checked)} />演示模式</label>}</div>
       {err && <p className="pd-inline-error" role="alert">{err}</p>}
       <button className="pd-btn primary pd-login-submit" disabled={busy}>{busy ? '登录中…' : '登录'}</button>
       <p className="pd-field-hint">{demo ? '演示模式仅供界面预览。账号 admin，密码任意非空；数据不会写入服务器。' : '管理员专用入口。账户名默认取开户手机号，也支持已有账号。'}</p>
@@ -42,7 +42,8 @@ const navigation = [
   { to: '/users', label: '用户管理', icon: 'users' },
   { to: '/org', label: '组织管理', icon: 'org' },
   { to: '/matters', label: '公司十大事项', icon: 'matters' },
-  { to: '/debug', label: '联调自检', icon: 'tools' },
+  { to: '/audits', label: '操作记录', icon: 'audit' },
+  ...(DEVELOPMENT_TOOLS ? [{ to: '/debug', label: '联调自检', icon: 'tools' } as const] : []),
 ] as const;
 
 export function Layout({ children }: { children: React.ReactNode }) {
