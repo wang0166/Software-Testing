@@ -84,7 +84,7 @@ class DatabaseMigrationTest extends EmbeddedPostgresSupport {
     }
 
     @Test
-    void upgradesVersionFivePreservingLegacyMatterContent()
+    void upgradesVersionFiveAndCleansLegacyMatterData()
             throws SQLException {
 
         String upgradeUrl = createDatabase("pandora_admin_upgrade_test");
@@ -116,7 +116,7 @@ class DatabaseMigrationTest extends EmbeddedPostgresSupport {
              Statement statement = connection.createStatement()) {
 
             /*
-             * V11 会清理 V5 创建的旧 demo 用户，因此 employee 不应继续存在。
+             * V11 会清除 V5 的旧 demo employee。
              */
             try (ResultSet rs = statement.executeQuery(
                     "SELECT count(*) "
@@ -128,15 +128,33 @@ class DatabaseMigrationTest extends EmbeddedPostgresSupport {
             }
 
             /*
-             * 升级时仍然要保留已有事项内容，并且不能凭空生成旧事项日期。
+             * 与旧 demo 数据关联的旧事项也会被 V11 清理。
              */
             try (ResultSet rs = statement.executeQuery(
-                    "SELECT content "
+                    "SELECT count(*) "
                             + "FROM company_matters "
                             + "WHERE title='旧事项'")) {
 
                 assertThat(rs.next()).isTrue();
-                assertThat(rs.getString(1)).isEqualTo("保留内容");
+                assertThat(rs.getLong(1)).isZero();
+            }
+
+            /*
+             * 用 V11 升级后仍然存在的用户创建一条新事项，
+             * 继续验证日期完整性约束。
+             */
+            long matterId;
+
+            try (ResultSet rs = statement.executeQuery(
+                    "INSERT INTO company_matters(title,content,updated_by) "
+                            + "SELECT '升级后事项','约束测试',id "
+                            + "FROM users "
+                            + "ORDER BY id "
+                            + "LIMIT 1 "
+                            + "RETURNING id")) {
+
+                assertThat(rs.next()).isTrue();
+                matterId = rs.getLong(1);
             }
 
             connection.setAutoCommit(false);
@@ -146,7 +164,9 @@ class DatabaseMigrationTest extends EmbeddedPostgresSupport {
                             connection,
                             "UPDATE company_matters "
                                     + "SET start_date='2026-10-29 09:30+08', "
-                                    + "deadline='2026-10-29 18:00+08'"))
+                                    + "deadline='2026-10-29 18:00+08' "
+                                    + "WHERE id="
+                                    + matterId))
                     .isEqualTo("23514");
 
             connection.rollback();
@@ -179,7 +199,10 @@ class DatabaseMigrationTest extends EmbeddedPostgresSupport {
 
         jdbc.update(
                 "UPDATE users "
-                        + "SET username='upgrade_test_employee' "
+                        + "SET username='upgrade_test_employee', "
+                        + "role_code='ADMIN', "
+                        + "department_id=NULL, "
+                        + "team_id=NULL "
                         + "WHERE id=?",
                 user);
 
@@ -268,7 +291,10 @@ class DatabaseMigrationTest extends EmbeddedPostgresSupport {
                         "SELECT count(*) "
                                 + "FROM users "
                                 + "WHERE id=? "
-                                + "AND username='upgrade_test_employee'",
+                                + "AND username='upgrade_test_employee' "
+                                + "AND role_code='ADMIN' "
+                                + "AND department_id IS NULL "
+                                + "AND team_id IS NULL",
                         Long.class,
                         user))
                 .isEqualTo(1L);
