@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../core/app_state.dart';
 import '../core/models.dart';
 import '../core/theme.dart';
+import '../data/repository.dart';
 import '../widgets/business.dart';
 import '../widgets/ui.dart';
 
@@ -9,7 +10,9 @@ import '../widgets/ui.dart';
 /// becomes active, including requests from employees to managers.
 class DispatchPage extends StatefulWidget {
   final AppState app;
-  const DispatchPage({super.key, required this.app});
+  /// When present, this form requests an edit to a task issued by the user.
+  final IssuedTask? editing;
+  const DispatchPage({super.key, required this.app, this.editing});
   @override State<DispatchPage> createState() => _DispatchPageState();
 }
 class _DispatchPageState extends State<DispatchPage> {
@@ -25,9 +28,32 @@ class _DispatchPageState extends State<DispatchPage> {
   @override void initState() {
     super.initState();
     final now = chinaNow;
+    final previous=widget.editing;
     start = DateTime(now.year, now.month, now.day, now.hour, now.minute);
     deadline = start.add(const Duration(days: 7));
-    members = widget.app.repo.companyMembers();
+    if(previous!=null) {
+      title.text=previous.name;
+      detail.text=previous.details;
+      urgency=previous.urgency;
+      type=previous.taskType;
+      start=DateTime.tryParse(previous.startDate) ?? start;
+      deadline=DateTime.tryParse(previous.deadline) ?? deadline;
+      selected.addAll(previous.assigneeIds);
+    }
+    members = _resolveMembers();
+  }
+
+  Future<List<UserProfile>> _resolveMembers() async {
+    final list=await widget.app.repo.companyMembers();
+    final issued=widget.editing;
+    if(issued!=null && !issued.isRequest && issued.assigneeIds.isEmpty) {
+      final assignments=await widget.app.repo.dispatchedAssignments(issued.id);
+      if (assignments.isEmpty) {
+        throw const AppFailure('无法查询任务原有接收人，已阻止可能覆盖接收人的编辑');
+      }
+      if(mounted) setState(() => selected.addAll(assignments.map((e)=>e.assigneeId)));
+    }
+    return list;
   }
   @override void dispose() { title.dispose(); detail.dispose(); search.dispose(); super.dispose(); }
   Future<void> _submit() async {
@@ -38,22 +64,30 @@ class _DispatchPageState extends State<DispatchPage> {
     if (!deadline.isAfter(start)) { toast(context, '截止时间必须晚于开始时间'); return; }
     setState(() => busy = true);
     try {
-      final state = await widget.app.repo.submitDispatchRequest(
-        name: title.text.trim(), details: detail.text.trim(),
-        startDate: taskDateTimeIso(start), deadline: taskDateTimeIso(deadline),
-        urgency: urgency, taskType: type, assigneeIds: selected.toList(),
-      );
+      final editing=widget.editing;
+      final state = editing == null
+        ? await widget.app.repo.submitDispatchRequest(
+            name: title.text.trim(), details: detail.text.trim(),
+            startDate: taskDateTimeIso(start), deadline: taskDateTimeIso(deadline),
+            urgency: urgency, taskType: type, assigneeIds: selected.toList(),
+          )
+        : await widget.app.repo.requestIssuedTaskEdit(editing,
+            name: title.text.trim(), details: detail.text.trim(),
+            startDate: taskDateTimeIso(start), deadline: taskDateTimeIso(deadline),
+            urgency: urgency, taskType: type, assigneeIds: selected.toList(),
+          );
       if (!mounted) return;
-      toast(context, state == 'PENDING' ? '任务派发申请已提交，等待审核' : '任务已由服务端批准');
+      toast(context, state == 'PENDING' ? (editing == null ? '派发申请已提交，等待审核' : '修改已提交，等待审核') : '请求状态：$state');
       Navigator.pop(context, true);
     } catch (e) { if (mounted) toast(context, '申请未成功：$e'); }
     finally { if (mounted) setState(() => busy = false); }
   }
   @override Widget build(BuildContext context) => Scaffold(
-    appBar: AppBar(title: const Text('创建派发任务')),
+    appBar: AppBar(title: Text(widget.editing == null ? '创建派发任务' : '编辑我发布的任务')),
     body: FutureBuilder<List<UserProfile>>(future: members, builder: (context, snap) => ListView(
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 22), children: [
-        const BusinessHeading(title: '任务派发申请', subtitle: '可选择全公司成员 · 创建后须经管理员审核'),
+        BusinessHeading(title: widget.editing == null ? '任务派发申请' : '修改任务申请',
+          subtitle: widget.editing?.isRequest == true ? '修改待审申请 · 不会直接派发' : '可编辑所有任务字段 · 审核前不改变已发布任务'),
         const SizedBox(height: 14),
         TextField(controller: title, maxLength: 200, decoration: const InputDecoration(labelText: '任务标题')),
         const SizedBox(height: 9),
@@ -126,7 +160,7 @@ class _DispatchPageState extends State<DispatchPage> {
       ],
     )),
     bottomNavigationBar: SafeArea(top: false, child: Padding(padding: const EdgeInsets.fromLTRB(16, 9, 16, 10), child: FilledButton(
-      onPressed: busy ? null : _submit, child: Text(busy ? '正在提交申请…' : '提交派发申请（待审核）'),
+      onPressed: busy ? null : _submit, child: Text(busy ? '正在提交申请…' : widget.editing == null ? '提交派发申请（待审核）' : '提交修改申请（待审核）'),
     ))),
   );
   Widget _dateLine(String caption, DateTime value, VoidCallback tap) => Material(

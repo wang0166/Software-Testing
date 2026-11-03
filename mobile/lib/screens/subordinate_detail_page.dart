@@ -4,6 +4,8 @@ import '../core/models.dart';
 import '../core/theme.dart';
 import '../widgets/business.dart';
 import 'log_detail_page.dart';
+import 'subordinate_task_detail_page.dart';
+import '../widgets/subordinate_task_row.dart';
 
 /// 只展示后端授权返回的下属业务信息，绝不推测联系方式或展示私密点评。
 class SubordinateDetailPage extends StatefulWidget {
@@ -17,10 +19,12 @@ class SubordinateDetailPage extends StatefulWidget {
 
 class _SubordinateDetailPageState extends State<SubordinateDetailPage> {
   late Future<List<WorkLog>> _logs;
+  late SubordinateTaskSummary member;
 
   @override
   void initState() {
     super.initState();
+    member=widget.member;
     _loadLogs();
   }
 
@@ -30,9 +34,21 @@ class _SubordinateDetailPageState extends State<SubordinateDetailPage> {
         ..sort((a, b) => b.logDate.compareTo(a.logDate)));
   }
 
+  Future<void> _openTask(TaskItem task) async {
+    await Navigator.push(context, MaterialPageRoute<void>(builder: (_) =>
+      SubordinateTaskDetailPage(app:widget.app,memberId:member.userId,
+        memberName:member.name,task:task)));
+    if (!mounted) return;
+    try {
+      final fresh=await widget.app.repo.subordinatesTaskOverview();
+      if (!mounted) return;
+      final found=fresh.where((m)=>m.userId==member.userId).toList();
+      if(found.isNotEmpty) setState(()=>member=found.first);
+    } catch (_) {/* The task detail already shows API failures. */}
+  }
+
   @override
   Widget build(BuildContext context) {
-    final member = widget.member;
     return Scaffold(
       appBar: AppBar(title: const Text('下属个人信息')),
       body: ListView(
@@ -75,6 +91,11 @@ class _SubordinateDetailPageState extends State<SubordinateDetailPage> {
           const SizedBox(height: 12),
           BusinessPanel(
             title: '当前任务', count: null,
+            trailing:member.visibleIssueCount>0?Container(
+              padding:const EdgeInsets.symmetric(horizontal:7,vertical:4),
+              decoration:BoxDecoration(color:const Color(0xFFD63D39),borderRadius:BorderRadius.circular(13)),
+              child:Text('${member.visibleIssueCount}',
+                style:const TextStyle(color:Colors.white,fontWeight:FontWeight.w900))):null,
             child: Padding(
               padding: const EdgeInsets.symmetric(vertical: 12),
               child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
@@ -83,14 +104,23 @@ class _SubordinateDetailPageState extends State<SubordinateDetailPage> {
                   Expanded(child: _metric('进行中', member.inProgress)),
                   Expanded(child: _metric('已完成', member.completed)),
                 ]),
+                const SizedBox(height: 10),
+                Wrap(spacing:13,runSpacing:7,children:[
+                  Text('待解决问题 ${member.visibleIssueCount}',
+                    style:const TextStyle(color:Palette.coral,fontSize:12,fontWeight:FontWeight.w700)),
+                  Text('逾期 ${member.tasks.where((t)=>t.isOverdue).length}',
+                    style:const TextStyle(color:Palette.coral,fontSize:12,fontWeight:FontWeight.w700)),
+                  Text('完成率填报 ${member.tasks.where((t)=>t.progressPercent!=null).length}/${member.tasks.length}',
+                    style:const TextStyle(color:Palette.muted,fontSize:12)),
+                ]),
                 const SizedBox(height: 12),
                 if (member.tasks.isEmpty)
                   const BusinessEmpty('当前没有可查看的任务')
                 else
                   for (var i = 0; i < member.tasks.length; i++) ...[
                     if (i > 0) const Divider(height: 1, color: Palette.divider),
-                    BusinessRow(index: i + 1, title: member.tasks[i].name,
-                      subtitle: '${taskTypeLabel(member.tasks[i].taskType)} · ${member.tasks[i].statusLabel} · 截止 ${member.tasks[i].deadline ?? '未设置'}'),
+                    SubordinateTaskRow(task:member.tasks[i],index:i+1,
+                      onTap:()=>_openTask(member.tasks[i])),
                   ],
               ]),
             ),

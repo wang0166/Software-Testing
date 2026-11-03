@@ -195,8 +195,7 @@ class _PersonalBoardEditorPageState extends State<PersonalBoardEditorPage> {
                   padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
                   buildDefaultDragHandles: true,
                   itemCount: _entries.length,
-                  onReorder: (oldIndex, newIndex) {
-                    if (newIndex > oldIndex) newIndex--;
+                  onReorderItem: (oldIndex, newIndex) {
                     setState(() {
                       final moved = _entries.removeAt(oldIndex);
                       _entries.insert(newIndex, moved);

@@ -25,6 +25,14 @@ abstract class PandoraRepository {
   Future<List<TaskItem>> tasks({required bool personal});
   Future<TaskItem> createPersonalTask(String name,String details);
   Future<void> updateTask(TaskItem item,String status);
+  /// Append a progress update with status, completion percentage, and note.
+  Future<void> updateTaskProgress(TaskItem item,{required String status,required int percent,required String note});
+  /// Chronological, permission-scoped history supplied by backend (not fabricated locally).
+  Future<List<TaskProgressRecord>> taskProgressHistory(int assignmentId);
+  /// Read-only, backend-authorized subordinate progress history. No ability to
+  /// edit another person's task. Used for manager problem follow-up.
+  Future<List<TaskProgressRecord>> subordinateTaskProgressHistory(
+    int userId, int assignmentId);
   Future<List<CompanyItem>> companyMatters();
   Future<List<CompanyItem>> companyImportantTasks();
   Future<List<CalendarDay>> calendar(String from,String to);
@@ -38,6 +46,16 @@ abstract class PandoraRepository {
     required String taskType, required List<int> assigneeIds});
   /// All authorized subordinates' tasks, regardless of sender.
   Future<List<SubordinateTaskSummary>> subordinatesTaskOverview();
+  /// Published tasks and the caller's own pending dispatch requests.
+  Future<IssuedTasksResult> issuedTasks();
+  /// Editing an approved task creates a PENDING change request. Editing a
+  /// pending creation replaces its proposal but does not publish the task.
+  Future<String> requestIssuedTaskEdit(IssuedTask original, {
+    required String name, required String details, required String startDate,
+    required String deadline, required String urgency, required String taskType,
+    required List<int> assigneeIds});
+  /// Pending creation: withdraw; published task: request approval to delete.
+  Future<String> requestIssuedTaskDelete(IssuedTask original);
   Future<List<DispatchedTask>> dispatchedTasks();
   Future<List<TaskAssignment>> dispatchedAssignments(int taskId);
   Future<void> dispatchTask({required String name,required String details,required String startDate,required String deadline,required String urgency,required List<int> assigneeIds});

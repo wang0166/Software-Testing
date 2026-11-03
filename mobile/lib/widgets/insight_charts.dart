@@ -57,8 +57,10 @@ class TaskCompletionTable extends StatelessWidget {
           : task.status == 'NOT_STARTED' ? 0.0 : null,
       )),
     ];
-    if (rows.isEmpty) return const Text('暂无授权任务数据',
-      style: TextStyle(color: Palette.muted, fontSize: 12));
+    if (rows.isEmpty) {
+      return const Text('暂无授权任务数据',
+        style: TextStyle(color: Palette.muted, fontSize: 12));
+    }
     return Column(children: [
       Container(
         color: const Color(0xFFE9EFF3),
