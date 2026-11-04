@@ -19,7 +19,21 @@ class _LogDetailPageState extends State<LogDetailPage> {
   int? _replyTo;
   @override void initState(){super.initState();_log=widget.log;_reload();}
   @override void dispose(){_text.dispose();super.dispose();}
-  void _reload(){_comments=widget.app.repo.comments(_log.id);}
+  bool get _directManager {
+    final me = widget.app.user!;
+    if (_log.authorRole.isEmpty) return false;
+    return switch (me.role) {
+      'TEAM_LEADER' => _log.authorRole == 'EMPLOYEE' && me.teamId != null && me.teamId == _log.teamId,
+      'DEPT_MANAGER' => _log.authorRole == 'TEAM_LEADER' && me.departmentId != null && me.departmentId == _log.departmentId,
+      'FOUNDER' => _log.authorRole == 'DEPT_MANAGER',
+      _ => false,
+    };
+  }
+  void _reload(){
+    _comments = widget.app.user!.id == _log.authorId || _directManager
+      ? widget.app.repo.comments(_log.id)
+      : Future.value(<LogComment>[]);
+  }
   Future<void> _send() async {
     if(_sending||_text.text.trim().isEmpty)return;
     setState(()=>_sending=true);
@@ -31,7 +45,7 @@ class _LogDetailPageState extends State<LogDetailPage> {
     final me=widget.app.user!;
     final own=_log.authorId==me.id;
     final canReply=own;
-    final canInitial=!own && me.role!='ADMIN';
+    final canInitial=_directManager;
     final canEdit=own&&!_log.submitted&&_log.logDate==todayChina&&chinaNow.hour<22;
     return Scaffold(appBar:AppBar(title:const Text('日志详情'),actions:[if(canEdit)IconButton(tooltip:'编辑草稿',onPressed:()async{
       final result=await Navigator.push<bool>(context,MaterialPageRoute(builder:(_)=>LogEditorPage(app:widget.app,draft:_log)));
@@ -44,6 +58,8 @@ class _LogDetailPageState extends State<LogDetailPage> {
         const SizedBox(height:17),const Text('每日一条 · 提交后不可修改',style:TextStyle(color:Palette.muted,fontSize:11)),
       ])),
       const SizedBox(height:22),const Headline(title:'上级点评与回复',subtitle:'对话仅作者与直属上级可见'),const SizedBox(height:13),
+      if (!own && !canInitial) const SoftCard(child: Text('你可以阅读这条日志，但无权查看或参与其直属上级点评对话。', style: TextStyle(color: Palette.muted))),
+      if (own || canInitial)
       FutureBuilder<List<LogComment>>(future:_comments,builder:(context,s){
         if(s.connectionState!=ConnectionState.done)return const Padding(padding:EdgeInsets.all(20),child:Center(child:CircularProgressIndicator()));
         if(s.hasError)return SoftCard(child:Column(children:[const Icon(Icons.lock_outline,color:Palette.coral),const SizedBox(height:8),Text('${s.error}',style:const TextStyle(color:Palette.muted))]));

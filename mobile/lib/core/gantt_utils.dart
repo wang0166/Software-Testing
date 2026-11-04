@@ -5,10 +5,10 @@ import 'models.dart';
 DateTime ganttDateOnly(DateTime date) =>
     DateTime.utc(date.year, date.month, date.day);
 
-/// Parses the date-only format required by the task API (YYYY-MM-DD).
+/// Accepts legacy date-only and new minute-precision task timestamps.
 DateTime? parseGanttDate(String? raw) {
   if (raw == null) return null;
-  final match = RegExp(r'^(\d{4})-(\d{2})-(\d{2})$').firstMatch(raw);
+  final match = RegExp(r'^(\d{4})-(\d{2})-(\d{2})(?:[T ].*)?$').firstMatch(raw);
   if (match == null) return null;
   final year = int.parse(match.group(1)!);
   final month = int.parse(match.group(2)!);

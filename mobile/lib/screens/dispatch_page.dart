@@ -4,7 +4,7 @@ import '../core/models.dart';
 import '../core/theme.dart';
 import '../widgets/ui.dart';
 
-/// 只有创始人、部门负责人、团队负责人拥有派发入口。
+/// 只有创始人、部门老总、团队长拥有派发入口。
 /// 派发成功后，每个接收者的进度独立保存，检查只能由派发人处理。
 class DispatchPage extends StatefulWidget {
   final AppState app;
@@ -16,8 +16,9 @@ class _DispatchPageState extends State<DispatchPage> {
   @override void initState(){super.initState();_reload();}
   void _reload(){_items=widget.app.repo.dispatchedTasks();}
   Future<void> _newDispatch() async {
-    final title=TextEditingController(),detail=TextEditingController();
-    final start=DateTime(chinaNow.year,chinaNow.month,chinaNow.day);
+    String title = '', detail = '';
+    final now=chinaNow;
+    final start=DateTime(now.year,now.month,now.day,now.hour,now.minute);
     DateTime from=start,to=start.add(const Duration(days:7));
     String urgency='NOT_URGENT';
     final ids=<int>{};
@@ -27,10 +28,26 @@ class _DispatchPageState extends State<DispatchPage> {
       final created=await showDialog<bool>(context:context,builder:(context)=>StatefulBuilder(builder:(ctx,rebuild)=>AlertDialog(
         title:const Text('派发新任务'),
         content:SizedBox(width:460,child:SingleChildScrollView(child:Column(mainAxisSize:MainAxisSize.min,crossAxisAlignment:CrossAxisAlignment.stretch,children:[
-          TextField(controller:title,maxLength:200,decoration:const InputDecoration(labelText:'任务名称')),
-          const SizedBox(height:9),TextField(controller:detail,maxLines:3,decoration:const InputDecoration(labelText:'任务详情')),
-          const SizedBox(height:12),Text('开始 ${dayString(from)} / 截止 ${dayString(to)}',style:const TextStyle(color:Palette.deep,fontSize:12)),
-          Wrap(spacing:8,children:[OutlinedButton.icon(onPressed:()async{final d=await showDatePicker(context:ctx,initialDate:from,firstDate:DateTime(2020),lastDate:DateTime(2100));if(d!=null)rebuild((){from=d;if(to.isBefore(from))to=from;});},icon:const Icon(Icons.today_rounded,size:16),label:const Text('开始日期')),OutlinedButton.icon(onPressed:()async{final d=await showDatePicker(context:ctx,initialDate:to.isBefore(from)?from:to,firstDate:from,lastDate:DateTime(2100));if(d!=null)rebuild(()=>to=d);},icon:const Icon(Icons.event_rounded,size:16),label:const Text('截止日期'))]),
+          TextField(onChanged:(v)=>title=v,maxLength:200,decoration:const InputDecoration(labelText:'任务名称')),
+          const SizedBox(height:9),TextField(onChanged:(v)=>detail=v,maxLines:3,decoration:const InputDecoration(labelText:'任务详情')),
+          const SizedBox(height: 12),
+          const Text('开始时间', style: TextStyle(color: Palette.muted, fontSize: 14, fontWeight: FontWeight.w500)),
+          const SizedBox(height: 4),
+          Text(formatTaskDateTime(from), style: const TextStyle(color: Palette.deep, fontSize: 20, fontWeight: FontWeight.w800)),
+          const SizedBox(height: 7),
+          OutlinedButton.icon(onPressed: () async {
+            final selected = await pickTaskDateTime(ctx, from);
+            if (selected != null) rebuild(() {from = selected; if (!to.isAfter(from)) to = from.add(const Duration(hours: 1));});
+          }, icon: const Icon(Icons.access_time_rounded), label: const Text('选择开始日期和时间')),
+          const SizedBox(height: 8),
+          const Text('截止时间', style: TextStyle(color: Palette.muted, fontSize: 14, fontWeight: FontWeight.w500)),
+          const SizedBox(height: 4),
+          Text(formatTaskDateTime(to), style: const TextStyle(color: Palette.deep, fontSize: 20, fontWeight: FontWeight.w800)),
+          const SizedBox(height: 7),
+          OutlinedButton.icon(onPressed: () async {
+            final selected = await pickTaskDateTime(ctx, to);
+            if (selected != null) rebuild(() => to = selected);
+          }, icon: const Icon(Icons.event_available_rounded), label: const Text('选择截止日期和时间')),
           const SizedBox(height:12),DropdownButtonFormField<String>(initialValue:urgency,items:const [DropdownMenuItem(value:'NOT_URGENT',child:Text('普通任务')),DropdownMenuItem(value:'URGENT',child:Text('紧急任务'))],onChanged:(v)=>rebuild(()=>urgency=v??urgency),decoration:const InputDecoration(labelText:'紧急程度')),
           const SizedBox(height:15),const Text('选择直属下级（可多选）',style:TextStyle(fontWeight:FontWeight.w800)),
           if(people.isEmpty)const Padding(padding:EdgeInsets.all(10),child:Text('暂无可派发的直属下级')),
@@ -39,11 +56,11 @@ class _DispatchPageState extends State<DispatchPage> {
         actions:[TextButton(onPressed:()=>Navigator.pop(ctx,false),child:const Text('取消')),FilledButton(onPressed:()=>Navigator.pop(ctx,true),child:const Text('确认派发'))],
       )));
       if(created!=true||!mounted)return;
-      if(title.text.trim().isEmpty||detail.text.trim().isEmpty||ids.isEmpty){toast(context,'请填写名称、详情并选择接收人');return;}
-      await widget.app.repo.dispatchTask(name:title.text.trim(),details:detail.text.trim(),startDate:dayString(from),deadline:dayString(to),urgency:urgency,assigneeIds:ids.toList());
+      if(title.trim().isEmpty||detail.trim().isEmpty||ids.isEmpty){toast(context,'请填写名称、详情并选择接收人');return;}
+      if (!to.isAfter(from)) {toast(context, '截止时间必须晚于开始时间');return;}
+      await widget.app.repo.dispatchTask(name:title.trim(),details:detail.trim(),startDate:taskDateTimeIso(from),deadline:taskDateTimeIso(to),urgency:urgency,assigneeIds:ids.toList());
       if(mounted){toast(context,'任务已派发');setState(_reload);}
     } catch(e) {if(mounted)toast(context,'$e');}
-    finally {title.dispose();detail.dispose();}
   }
   Future<void> _detail(DispatchedTask task) async {
     await Navigator.push<void>(context,MaterialPageRoute(builder:(_)=>_DispatchDetail(app:widget.app,task:task)));
@@ -80,14 +97,13 @@ class _DispatchDetailState extends State<_DispatchDetail> {
   @override void initState(){super.initState();_refresh();}
   void _refresh(){_future=widget.app.repo.dispatchedAssignments(widget.task.id);}
   Future<void> _review(TaskAssignment a,String result) async {
-    final controller=TextEditingController();
+    String comment = '';
     try {
-      final ok=await showDialog<bool>(context:context,builder:(ctx)=>AlertDialog(title:Text(result=='APPROVED'?'检查通过':'退回修改'),content:TextField(controller:controller,maxLines:3,decoration:const InputDecoration(hintText:'填写检查意见（可选）')),actions:[TextButton(onPressed:()=>Navigator.pop(ctx,false),child:const Text('取消')),FilledButton(onPressed:()=>Navigator.pop(ctx,true),child:const Text('确定'))]));
+      final ok=await showDialog<bool>(context:context,builder:(ctx)=>AlertDialog(title:Text(result=='APPROVED'?'检查通过':'退回修改'),content:TextField(onChanged:(v)=>comment=v,maxLines:3,decoration:const InputDecoration(hintText:'填写检查意见（可选）')),actions:[TextButton(onPressed:()=>Navigator.pop(ctx,false),child:const Text('取消')),FilledButton(onPressed:()=>Navigator.pop(ctx,true),child:const Text('确定'))]));
       if(ok!=true)return;
-      await widget.app.repo.reviewAssignment(a.id,result,controller.text.trim());
+      await widget.app.repo.reviewAssignment(a.id,result,comment.trim());
       if(mounted){toast(context,'检查结果已保存');setState(_refresh);}
     }catch(e){if(mounted)toast(context,'$e');}
-    finally{controller.dispose();}
   }
   @override Widget build(BuildContext context)=>Scaffold(appBar:AppBar(title:const Text('派发任务详情')),body:ListView(padding:const EdgeInsets.all(20),children:[
     SoftCard(child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[Text(widget.task.name,style:Theme.of(context).textTheme.titleLarge),const SizedBox(height:8),Text(widget.task.details,style:const TextStyle(height:1.6,color:Palette.deep)),const SizedBox(height:12),Text('截止 ${widget.task.deadline}',style:const TextStyle(color:Palette.muted))])),
@@ -103,4 +119,15 @@ class _DispatchDetailState extends State<_DispatchDetail> {
       ])))]);
     }),
   ]));
+}
+
+/// 任务派发时间必须精确到分钟（选择日期后再选择时分）。
+String formatTaskDateTime(DateTime value) => '${dayString(value)} ${value.hour.toString().padLeft(2, '0')}:${value.minute.toString().padLeft(2, '0')}';
+String taskDateTimeIso(DateTime value) => '${dayString(value)}T${value.hour.toString().padLeft(2, '0')}:${value.minute.toString().padLeft(2, '0')}:00';
+Future<DateTime?> pickTaskDateTime(BuildContext context, DateTime initial) async {
+  final date = await showDatePicker(context: context, initialDate: initial, firstDate: DateTime(2020), lastDate: DateTime(2100), helpText: '选择任务日期');
+  if (date == null || !context.mounted) return null;
+  final time = await showTimePicker(context: context, initialTime: TimeOfDay.fromDateTime(initial), helpText: '选择小时与分钟', initialEntryMode: TimePickerEntryMode.input);
+  if (time == null) return null;
+  return DateTime(date.year, date.month, date.day, time.hour, time.minute);
 }

@@ -92,6 +92,21 @@ class ApiRepository implements PandoraRepository {
     await _saveTokens(access,refresh);
     return user;
   }
+  // The following endpoints require backend implementation and Web-admin approval.
+  // Never treat HTTP 404/500 as a successful password change.
+  @override Future<void> requestPasswordReset(String username) async {
+    await _request('POST','/auth/password-reset-requests',authenticated:false,body:{'username':username.trim()});
+  }
+  @override Future<void> requestPasswordChange() async {
+    await _request('POST','/account/password-change-requests',body:{});
+  }
+  @override Future<String> passwordChangeStatus() async {
+    final data=mapOf(_data(await _request('GET','/account/password-change-requests/me')));
+    return textOf(data['status'],'NONE');
+  }
+  @override Future<void> completePasswordChange(String newPassword) async {
+    await _request('POST','/account/password-change',body:{'newPassword':newPassword});
+  }
   @override Future<void> logout() async {
     try {
       if(_refreshToken!=null) await _request('POST','/auth/logout',body:{'refreshToken':_refreshToken});
@@ -154,13 +169,13 @@ class ApiRepository implements PandoraRepository {
   }
   @override Future<List<TaskItem>> taskMap() async {
     final data=await _allPages('/task-map');
-    return data.map((e){final j=mapOf(e);final personal=textOf(j['source'])=='PERSONAL';return TaskItem.fromJson({
+    return data.where((e)=>textOf(mapOf(e)['source'])!='PERSONAL').map((e){final j=mapOf(e);return TaskItem.fromJson({
       ...j,
-      'id':personal?j['personalTaskId']:j['assignmentId'],
+      'id':j['assignmentId'],
       'assignmentId':j['assignmentId'],
       'executionStatus':j['executionStatus'],
       'details':textOf(j['details']),
-    },source:personal?'PERSONAL':'RECEIVED');}).toList();
+    },source:'RECEIVED');}).toList();
   }
   @override Future<List<UserProfile>> recipients() async {
     final data=_data(await _request('GET','/tasks/recipients'));
