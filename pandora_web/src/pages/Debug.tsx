@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { API_BASE, getToken, isMock, request, requestPage } from '../api/http';
 const PROBES = [
   { name: '当前身份', path: '/auth/me', implemented: true, paged: false },
-  { name: '公司重要事项', path: '/company-matters?page=1&size=10', implemented: true, paged: true },
+  { name: '事件纪', path: '/company-matters?page=1&size=10', implemented: true, paged: true },
   { name: '用户管理', path: '/users', implemented: true, paged: true },
   { name: '公司资料', path: '/companies', implemented: true, paged: false },
   { name: '组织管理', path: '/departments', implemented: true, paged: false },

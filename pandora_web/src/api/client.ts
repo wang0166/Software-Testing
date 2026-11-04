@@ -300,7 +300,7 @@ export const api = {
     const value = matterInput(m);
     if (!useMock()) return request('/company-matters/' + encodeURIComponent(id), { method: 'PUT', body: JSON.stringify(value) });
     const i = mockMatters.findIndex(x => x.id === id);
-    if (i < 0) throw new Error('事项不存在');
+    if (i < 0) throw new Error('事件不存在');
     mockMatters[i] = { ...value, id };
   },
   async getAudit(id: string): Promise<AuditDetail> {
@@ -363,7 +363,7 @@ function mapUser(u: RawUser): UserRow {
 
 function matterInput(m: CompanyMatterInput): CompanyMatterInput {
   const title = m.title.trim(), content = m.content.trim();
-  if (!title || !content) throw new Error('事项名称和备注不能为空');
+  if (!title || !content) throw new Error('事件名称和备注不能为空');
   if (!Number.isInteger(m.sortOrder)) throw new Error('排序必须为整数');
   if (!isMatterHour(m.startDate) || !isMatterHour(m.deadline)) throw new Error('请填写有效的开始时间和截止时间（精确到小时）');
   if (m.deadline < m.startDate) throw new Error('截止时间不得早于开始时间');

@@ -26,7 +26,7 @@ export function Login() {
     finally { setBusy(false); }
   };
   return <div className="pd-login"><div className="pd-login-shell">
-    <div className="pd-login-intro"><div className="pd-brand"><span className="mark">P</span><span><b>潘多拉</b><small>管理工作台</small></span></div><div className="pd-login-message"><h1>日常管理，<br />从这里开始。</h1><p>集中维护人员、组织与公司重要事项。</p><ul><li><Icon name="users" />成员与账号</li><li><Icon name="org" />部门与团队</li><li><Icon name="matters" />公司重要事项</li></ul></div><small>仅供系统管理员使用</small></div>
+    <div className="pd-login-intro"><div className="pd-brand"><span className="mark">P</span><span><b>潘多拉</b><small>管理工作台</small></span></div><div className="pd-login-message"><h1>日常管理，<br />从这里开始。</h1><p>集中维护人员、组织与事件纪。</p><ul><li><Icon name="users" />成员与账号</li><li><Icon name="org" />部门与团队</li><li><Icon name="matters" />事件纪</li></ul></div><small>仅供系统管理员使用</small></div>
     <main className="pd-login-panel"><form className="pd-login-card pd-form" onSubmit={event => { event.preventDefault(); login(); }}><div><h2>管理员登录</h2><p className="pd-hint">输入你的账号，进入工作台</p></div>
       <label>账户名<input className="pd-input" autoComplete="username" value={name} onChange={event => setName(event.target.value)} placeholder="开户时确认的账户名" /></label>
       <label>密码<input className="pd-input" type="password" autoComplete="current-password" value={password} onChange={event => setPassword(event.target.value)} placeholder="请输入密码" /></label>
@@ -41,7 +41,7 @@ export function Login() {
 const navigation = [
   { to: '/users', label: '用户管理', icon: 'users' },
   { to: '/org', label: '组织管理', icon: 'org' },
-  { to: '/matters', label: '公司十大事项', icon: 'matters' },
+  { to: '/matters', label: '事件纪', icon: 'matters' },
   { to: '/audits', label: '操作记录', icon: 'audit' },
   ...(DEVELOPMENT_TOOLS ? [{ to: '/debug', label: '联调自检', icon: 'tools' } as const] : []),
 ] as const;
