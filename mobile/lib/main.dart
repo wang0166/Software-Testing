@@ -20,7 +20,7 @@ class _PandoraAppState extends State<PandoraApp> {
   @override Widget build(BuildContext context) => AnimatedBuilder(
     animation:app,
     builder:(context,child)=>MaterialApp(
-      title:'潘多拉 · 智能掌上日志',
+      title:'智能掌上日志系统（潘多拉 Pandora）',
       debugShowCheckedModeBanner:false,
       theme:pandoraTheme(),
       home:!app.initialized?

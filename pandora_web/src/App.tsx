@@ -1,8 +1,11 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { Login, Layout, NotFound } from './pages/Login';
 import { Users } from './pages/Users';
-import { Org, Logs, Stats } from './pages/Pages';
+import { Org } from './pages/Pages';
+import { Matters } from './pages/Matters';
 import { Debug } from './pages/Debug';
+import { Audits } from './pages/Audits';
+import { DEVELOPMENT_TOOLS } from './api/http';
 
 export default function App() {
   return (
@@ -11,9 +14,9 @@ export default function App() {
         <Route path="/login" element={<Login />} />
         <Route path="/users" element={<Layout><Users /></Layout>} />
         <Route path="/org" element={<Layout><Org /></Layout>} />
-        <Route path="/logs" element={<Layout><Logs /></Layout>} />
-        <Route path="/stats" element={<Layout><Stats /></Layout>} />
-        <Route path="/debug" element={<Layout><Debug /></Layout>} />
+        <Route path="/matters" element={<Layout><Matters /></Layout>} />
+        <Route path="/audits" element={<Layout><Audits /></Layout>} />
+        {DEVELOPMENT_TOOLS && <Route path="/debug" element={<Layout><Debug /></Layout>} />}
         <Route path="/" element={<Navigate to="/login" />} />
         <Route path="*" element={<NotFound />} />
       </Routes>

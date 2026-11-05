@@ -15,6 +15,8 @@ import com.pandora.log.dto.AdminDtos.CompanyMatterRequest;
 import com.pandora.log.dto.AdminDtos.IdDto;
 import com.pandora.log.dto.MobileDtos.CalendarDto;
 import com.pandora.log.dto.MobileDtos.CompanyItemDto;
+import com.pandora.log.dto.AdminDtos.MatterDto;
+import com.pandora.log.service.AdminMatterService;
 import com.pandora.log.dto.MobileDtos.TaskMapDto;
 import com.pandora.log.service.CalendarService;
 import com.pandora.log.service.ContentService;
@@ -25,17 +27,19 @@ public class ContentController {
 
     private final ContentService contentService;
     private final CalendarService calendarService;
+    private final AdminMatterService matterService;
 
-    public ContentController(ContentService contentService, CalendarService calendarService) {
+    public ContentController(ContentService contentService, CalendarService calendarService, AdminMatterService matterService) {
         this.contentService = contentService;
         this.calendarService = calendarService;
+        this.matterService = matterService;
     }
 
     @GetMapping("/company-matters")
-    public ApiResponse<PageResult<CompanyItemDto>> matters(
+    public ApiResponse<PageResult<MatterDto>> matters(
             @RequestParam(required = false) Integer page,
             @RequestParam(required = false) Integer size) {
-        return ApiResponse.success(contentService.matters(page, size));
+        return ApiResponse.success(matterService.list(page, size));
     }
 
     @PostMapping("/company-matters")

@@ -28,6 +28,7 @@ class ApiRepository implements PandoraRepository {
         case 'POST':return client.post(uri,headers:headers,body:payload).timeout(const Duration(seconds:15));
         case 'PUT':return client.put(uri,headers:headers,body:payload).timeout(const Duration(seconds:15));
         case 'PATCH':return client.patch(uri,headers:headers,body:payload).timeout(const Duration(seconds:15));
+        case 'DELETE':return client.delete(uri,headers:headers,body:payload).timeout(const Duration(seconds:15));
         default:return client.get(uri,headers:headers).timeout(const Duration(seconds:15));
       }
     }
@@ -92,6 +93,21 @@ class ApiRepository implements PandoraRepository {
     await _saveTokens(access,refresh);
     return user;
   }
+  // The following endpoints require backend implementation and Web-admin approval.
+  // Never treat HTTP 404/500 as a successful password change.
+  @override Future<void> requestPasswordReset(String username) async {
+    await _request('POST','/auth/password-reset-requests',authenticated:false,body:{'username':username.trim()});
+  }
+  @override Future<void> requestPasswordChange() async {
+    await _request('POST','/account/password-change-requests',body:{});
+  }
+  @override Future<String> passwordChangeStatus() async {
+    final data=mapOf(_data(await _request('GET','/account/password-change-requests/me')));
+    return textOf(data['status'],'NONE');
+  }
+  @override Future<void> completePasswordChange(String newPassword) async {
+    await _request('POST','/account/password-change',body:{'newPassword':newPassword});
+  }
   @override Future<void> logout() async {
     try {
       if(_refreshToken!=null) await _request('POST','/auth/logout',body:{'refreshToken':_refreshToken});
@@ -101,8 +117,8 @@ class ApiRepository implements PandoraRepository {
     final query=<String,String>{};if(date!=null)query['date']=date;if(status!=null)query['status']=status;
     return (await _allPages('/logs',query:query)).map(WorkLog.fromJson).toList();
   }
-  @override Future<WorkLog> saveLog(String content,{int? id}) async {
-    final result=_data(await _request(id==null?'POST':'PUT',id==null?'/logs':'/logs/$id',body:{'content':content.trim()}));
+  @override Future<WorkLog> saveLog(String content,{int? id,String? date}) async {
+    final result=_data(await _request(id==null?'POST':'PUT',id==null?'/logs':'/logs/$id',body:{'content':content.trim(),if(date!=null)'logDate':date}));
     return WorkLog.fromJson(result);
   }
   @override Future<WorkLog> submitLog(int id) async {
@@ -144,6 +160,35 @@ class ApiRepository implements PandoraRepository {
       await _request('PATCH','/tasks/assignments/${item.id}/progress',body:{'status':status});
     }
   }
+  // New backend contract. Do not silently fall back to status-only PATCH:
+  // an old backend might acknowledge a status but discard percent/note.
+  @override Future<void> updateTaskProgress(TaskItem item,{
+    required String status,required int percent,required String note}) async {
+    final issue=taskProgressValidation(item,status,percent,note);
+    if(issue!=null) throw AppFailure(issue);
+    final result=mapOf(_data(await _request('POST',
+      '/tasks/assignments/${item.id}/progress-updates',body:{
+      'status':status,'progressPercent':percent,'note':note.trim(),
+    })));
+    if(intOf(result['id'])<=0 && textOf(result['createdAt']).isEmpty) {
+      throw const AppFailure('服务器未确认进度记录已保存，请与后端核对接口');
+    }
+  }
+  @override Future<List<TaskProgressRecord>> taskProgressHistory(int assignmentId) async {
+    final data=_data(await _request('GET',
+      '/tasks/assignments/$assignmentId/progress-updates'));
+    return _items(data).map(TaskProgressRecord.fromJson).toList()
+      ..sort((a,b)=>b.createdAt.compareTo(a.createdAt));
+  }
+  @override Future<List<TaskProgressRecord>> subordinateTaskProgressHistory(
+      int userId, int assignmentId) async {
+    // Backend MUST enforce viewer's organization hierarchy AND assignment ownership.
+    // This route is not supported by the previous Spring Boot version.
+    final data=_data(await _request('GET',
+      '/tasks/subordinates/$userId/assignments/$assignmentId/progress-updates'));
+    return _items(data).map(TaskProgressRecord.fromJson).toList()
+      ..sort((a,b)=>b.createdAt.compareTo(a.createdAt));
+  }
   @override Future<List<CompanyItem>> companyMatters() async =>
     (await _allPages('/company-matters')).map(CompanyItem.fromJson).toList();
   @override Future<List<CompanyItem>> companyImportantTasks() async =>
@@ -154,18 +199,73 @@ class ApiRepository implements PandoraRepository {
   }
   @override Future<List<TaskItem>> taskMap() async {
     final data=await _allPages('/task-map');
-    return data.map((e){final j=mapOf(e);final personal=textOf(j['source'])=='PERSONAL';return TaskItem.fromJson({
+    return data.where((e)=>textOf(mapOf(e)['source'])!='PERSONAL').map((e){final j=mapOf(e);return TaskItem.fromJson({
       ...j,
-      'id':personal?j['personalTaskId']:j['assignmentId'],
+      'id':j['assignmentId'],
       'assignmentId':j['assignmentId'],
       'executionStatus':j['executionStatus'],
       'details':textOf(j['details']),
-    },source:personal?'PERSONAL':'RECEIVED');}).toList();
+    },source:'RECEIVED');}).toList();
   }
   @override Future<List<UserProfile>> recipients() async {
     final data=_data(await _request('GET','/tasks/recipients'));
     return _items(data).map(UserProfile.fromJson).toList();
   }
+  @override Future<List<UserProfile>> companyMembers() async =>
+    (await _allPages('/tasks/recipients/all')).map(UserProfile.fromJson).toList();
+  @override Future<String> submitDispatchRequest({required String name,required String details,
+    required String startDate, required String deadline, required String urgency,
+    required String taskType, required List<int> assigneeIds}) async {
+    final data=mapOf(_data(await _request('POST','/tasks/dispatch-requests',body:{
+      'name':name, 'details':details, 'startDate':startDate, 'deadline':deadline,
+      'urgency':urgency, 'taskType':taskType, 'assigneeIds':assigneeIds,
+    })));
+    final status=textOf(data['status']);
+    if(status!='PENDING' && status!='APPROVED') throw const AppFailure('服务器未确认任务审核状态');
+    return status;
+  }
+  @override Future<List<SubordinateTaskSummary>> subordinatesTaskOverview() async =>
+    (await _allPages('/tasks/subordinates/overview')).map(SubordinateTaskSummary.fromJson).toList();
+  @override Future<IssuedTasksResult> issuedTasks() async {
+    // Existing API supplies live tasks. The request-history endpoint is a new
+    // backend contract; report unsupported history rather than inventing it.
+    final active=(await _allPages('/tasks/dispatched'))
+        .map((e)=>IssuedTask.fromJson(e)).toList();
+    try {
+      final pending=(await _allPages('/tasks/dispatch-requests/mine'))
+          .map((e)=>IssuedTask.fromJson(e,request:true)).toList();
+      return IssuedTasksResult([...pending, ...active]);
+    } on AppFailure catch (e) {
+      return IssuedTasksResult(active, notice:'派发申请记录尚不可用：${e.message}。已发布任务仍可查看。');
+    }
+  }
+
+  @override Future<String> requestIssuedTaskEdit(IssuedTask original, {
+    required String name, required String details, required String startDate,
+    required String deadline, required String urgency, required String taskType,
+    required List<int> assigneeIds}) async {
+    if(original.changePending) throw const AppFailure('该任务已有待审核变更，请等待审核完成');
+    final body={'name':name.trim(),'details':details.trim(),'startDate':startDate,
+      'deadline':deadline,'urgency':urgency,'taskType':taskType,'assigneeIds':assigneeIds};
+    final data=mapOf(_data(await _request(original.isRequest?'PUT':'POST',
+      original.isRequest?'/tasks/dispatch-requests/${original.id}':'/tasks/${original.id}/change-requests',
+      body:original.isRequest?body:{...body,'action':'UPDATE'})));
+    final status=textOf(data['status']);
+    if(status!='PENDING') throw const AppFailure('服务器未确认修改申请为待审核，未视为成功');
+    return status;
+  }
+
+  @override Future<String> requestIssuedTaskDelete(IssuedTask original) async {
+    if(original.changePending) throw const AppFailure('该任务有待审核变更，不能重复申请');
+    final data=mapOf(_data(await _request(original.isRequest?'DELETE':'POST',
+      original.isRequest?'/tasks/dispatch-requests/${original.id}':'/tasks/${original.id}/change-requests',
+      body:original.isRequest?null:{'action':'DELETE'})));
+    final status=textOf(data['status']);
+    if(original.isRequest && status=='WITHDRAWN') return status;
+    if(!original.isRequest && status=='PENDING') return status;
+    throw const AppFailure('服务器未确认撤回或删除审核状态，未视为成功');
+  }
+
   @override Future<List<DispatchedTask>> dispatchedTasks() async =>
       (await _allPages('/tasks/dispatched')).map(DispatchedTask.fromJson).toList();
   @override Future<List<TaskAssignment>> dispatchedAssignments(int taskId) async {

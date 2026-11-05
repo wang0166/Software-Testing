@@ -87,33 +87,96 @@ class AuthContractTest extends EmbeddedPostgresSupport {
 
     @BeforeEach
     void resetFixtures() {
+        /*
+         * 先删除所有可能通过外键引用 users 的业务数据。
+         *
+         * 特别是 work_logs.author_id -> users.id。
+         * V9/V10/V11 引入种子数据后，如果直接删除非 ADMIN 用户，
+         * PostgreSQL 会因为 work_logs 等表仍引用这些用户而拒绝删除。
+         */
+        jdbcTemplate.update("DELETE FROM task_reviews");
+        jdbcTemplate.update("DELETE FROM task_assignments");
+        jdbcTemplate.update("DELETE FROM tasks");
+        jdbcTemplate.update("DELETE FROM personal_tasks");
+
+        jdbcTemplate.update("DELETE FROM log_comments");
+        jdbcTemplate.update("DELETE FROM work_logs");
+
+        jdbcTemplate.update("DELETE FROM company_important_tasks");
+        jdbcTemplate.update("DELETE FROM company_matters");
+
+        jdbcTemplate.update("DELETE FROM refresh_tokens");
+
+        /*
+         * 解除组织结构对用户的引用，再删除测试用户。
+         */
         jdbcTemplate.update("UPDATE companies SET founder_id = NULL");
         jdbcTemplate.update("UPDATE departments SET manager_id = NULL");
         jdbcTemplate.update("UPDATE teams SET leader_id = NULL");
-        jdbcTemplate.update("DELETE FROM refresh_tokens");
+
         jdbcTemplate.update("DELETE FROM users WHERE role_code <> 'ADMIN'");
+
         jdbcTemplate.update("DELETE FROM teams");
         jdbcTemplate.update("DELETE FROM departments");
         jdbcTemplate.update("DELETE FROM companies");
-        jdbcTemplate.update("UPDATE users SET password_hash = ?, status = 'ACTIVE', "
-                        + "failed_attempts = 0, locked_until = NULL WHERE role_code = 'ADMIN'",
+
+        /*
+         * 每个测试开始前恢复管理员账号状态。
+         */
+        jdbcTemplate.update(
+                "UPDATE users SET password_hash = ?, status = 'ACTIVE', "
+                        + "failed_attempts = 0, locked_until = NULL "
+                        + "WHERE role_code = 'ADMIN'",
                 passwordEncoder.encode(ADMIN_PASSWORD));
 
+        /*
+         * 重建 AuthContractTest 自己需要的 fixture。
+         */
         long companyId = jdbcTemplate.queryForObject(
-                "INSERT INTO companies (name) VALUES ('Pandora') RETURNING id", Long.class);
-        departmentId = jdbcTemplate.queryForObject(
-                "INSERT INTO departments (company_id, name) VALUES (?, '研发部') RETURNING id",
-                Long.class, companyId);
-        teamId = jdbcTemplate.queryForObject(
-                "INSERT INTO teams (department_id, name) VALUES (?, '一组') RETURNING id",
-                Long.class, departmentId);
+                "INSERT INTO companies (name) VALUES ('Pandora') RETURNING id",
+                Long.class);
 
-        insertUser("employee1", "EMPLOYEE", departmentId, teamId, "ACTIVE", null, 0,
+        departmentId = jdbcTemplate.queryForObject(
+                "INSERT INTO departments (company_id, name) "
+                        + "VALUES (?, '研发部') RETURNING id",
+                Long.class,
+                companyId);
+
+        teamId = jdbcTemplate.queryForObject(
+                "INSERT INTO teams (department_id, name) "
+                        + "VALUES (?, '一组') RETURNING id",
+                Long.class,
+                departmentId);
+
+        insertUser(
+                "employee1",
+                "EMPLOYEE",
+                departmentId,
+                teamId,
+                "ACTIVE",
+                null,
+                0,
                 EMPLOYEE_PASSWORD);
-        insertUser("disabled1", "EMPLOYEE", departmentId, teamId, "DISABLED", null, 0,
+
+        insertUser(
+                "disabled1",
+                "EMPLOYEE",
+                departmentId,
+                teamId,
+                "DISABLED",
+                null,
+                0,
                 EMPLOYEE_PASSWORD);
-        insertUser("locked1", "EMPLOYEE", departmentId, teamId, "ACTIVE",
-                OffsetDateTime.now().plusMinutes(10), 5, EMPLOYEE_PASSWORD);
+
+        insertUser(
+                "locked1",
+                "EMPLOYEE",
+                departmentId,
+                teamId,
+                "ACTIVE",
+                OffsetDateTime.now().plusMinutes(10),
+                5,
+                EMPLOYEE_PASSWORD);
     }
 
     @Test
@@ -184,7 +247,9 @@ class AuthContractTest extends EmbeddedPostgresSupport {
                 .andExpect(status().isOk());
 
         Integer failedAttempts = jdbcTemplate.queryForObject(
-                "SELECT failed_attempts FROM users WHERE username = 'employee1'", Integer.class);
+                "SELECT failed_attempts FROM users WHERE username = 'employee1'",
+                Integer.class);
+
         assertThat(failedAttempts).isZero();
     }
 
@@ -194,7 +259,7 @@ class AuthContractTest extends EmbeddedPostgresSupport {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(loginBody("disabled1", EMPLOYEE_PASSWORD)))
                 .andExpect(status().isUnauthorized())
-                .andExpect(jsonPath("$.code").value(40103));
+                .andExpect(jsonPath("$.code").value(40104));
     }
 
     @Test
@@ -208,14 +273,21 @@ class AuthContractTest extends EmbeddedPostgresSupport {
 
     @Test
     void rejectsInvalidAndExpiredAccessToken() throws Exception {
-        mockMvc.perform(get("/api/auth/me").header(HttpHeaders.AUTHORIZATION, "Bearer not-a-jwt"))
+        mockMvc.perform(get("/api/auth/me")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer not-a-jwt"))
                 .andExpect(status().isUnauthorized())
                 .andExpect(jsonPath("$.code").value(40102));
 
         User admin = userMapper.findByUsername("admin");
-        String expiredToken = jwtService.createAccessToken(admin, Duration.ofMinutes(-5));
 
-        mockMvc.perform(get("/api/auth/me").header(HttpHeaders.AUTHORIZATION, "Bearer " + expiredToken))
+        String expiredToken = jwtService.createAccessToken(
+                admin,
+                Duration.ofMinutes(-5));
+
+        mockMvc.perform(get("/api/auth/me")
+                        .header(
+                                HttpHeaders.AUTHORIZATION,
+                                "Bearer " + expiredToken))
                 .andExpect(status().isUnauthorized())
                 .andExpect(jsonPath("$.code").value(40102));
     }
@@ -233,42 +305,76 @@ class AuthContractTest extends EmbeddedPostgresSupport {
         JsonNode admin = getJson("/api/auth/me", adminToken);
 
         assertThat(admin.path("code").asInt()).isZero();
-        assertThat(admin.path("data").path("username").asText()).isEqualTo("admin");
-        assertThat(admin.path("data").path("role").asText()).isEqualTo("ADMIN");
-        List<String> adminPermissions = toList(admin.path("data").path("permissions"));
-        assertThat(adminPermissions).contains("user:manage", "content:read");
-        assertThat(adminPermissions).noneMatch(code -> code.startsWith("task:"));
+        assertThat(admin.path("data").path("username").asText())
+                .isEqualTo("admin");
+        assertThat(admin.path("data").path("role").asText())
+                .isEqualTo("ADMIN");
 
-        String employeeToken = loginToken("employee1", EMPLOYEE_PASSWORD);
-        JsonNode employee = getJson("/api/auth/me", employeeToken);
+        List<String> adminPermissions =
+                toList(admin.path("data").path("permissions"));
 
-        assertThat(employee.path("data").path("role").asText()).isEqualTo("EMPLOYEE");
-        assertThat(employee.path("data").path("departmentId").asLong()).isEqualTo(departmentId);
-        assertThat(employee.path("data").path("teamId").asLong()).isEqualTo(teamId);
-        List<String> employeePermissions = toList(employee.path("data").path("permissions"));
+        assertThat(adminPermissions)
+                .contains("user:manage", "content:read");
+
+        assertThat(adminPermissions)
+                .noneMatch(code -> code.startsWith("task:"));
+
+        String employeeToken =
+                loginToken("employee1", EMPLOYEE_PASSWORD);
+
+        JsonNode employee =
+                getJson("/api/auth/me", employeeToken);
+
+        assertThat(employee.path("data").path("role").asText())
+                .isEqualTo("EMPLOYEE");
+
+        assertThat(employee.path("data").path("departmentId").asLong())
+                .isEqualTo(departmentId);
+
+        assertThat(employee.path("data").path("teamId").asLong())
+                .isEqualTo(teamId);
+
+        List<String> employeePermissions =
+                toList(employee.path("data").path("permissions"));
+
         assertThat(employeePermissions)
-                .contains("log:write", "task:execute", "task:self", "content:read")
+                .contains(
+                        "log:write",
+                        "task:execute",
+                        "task:self",
+                        "content:read")
                 .doesNotContain("task:dispatch");
     }
 
     @Test
     void rotatesRefreshTokenAndRejectsReuse() throws Exception {
-        String refreshToken = loginJson("employee1", EMPLOYEE_PASSWORD)
-                .path("data").path("refreshToken").asText();
+        String refreshToken =
+                loginJson("employee1", EMPLOYEE_PASSWORD)
+                        .path("data")
+                        .path("refreshToken")
+                        .asText();
 
-        MvcResult result = mockMvc.perform(post("/api/auth/refresh")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(refreshBody(refreshToken)))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.code").value(0))
-                .andExpect(jsonPath("$.data.accessToken").isNotEmpty())
-                .andExpect(jsonPath("$.data.refreshToken").isNotEmpty())
-                .andExpect(jsonPath("$.data.tokenType").value("Bearer"))
-                .andReturn();
+        MvcResult result =
+                mockMvc.perform(post("/api/auth/refresh")
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content(refreshBody(refreshToken)))
+                        .andExpect(status().isOk())
+                        .andExpect(jsonPath("$.code").value(0))
+                        .andExpect(jsonPath("$.data.accessToken").isNotEmpty())
+                        .andExpect(jsonPath("$.data.refreshToken").isNotEmpty())
+                        .andExpect(jsonPath("$.data.tokenType").value("Bearer"))
+                        .andReturn();
 
-        JsonNode refreshed = objectMapper.readTree(
-                result.getResponse().getContentAsString(StandardCharsets.UTF_8));
-        assertThat(refreshed.path("data").path("refreshToken").asText()).isNotEqualTo(refreshToken);
+        JsonNode refreshed =
+                objectMapper.readTree(
+                        result.getResponse()
+                                .getContentAsString(StandardCharsets.UTF_8));
+
+        assertThat(
+                refreshed.path("data")
+                        .path("refreshToken")
+                        .asText())
+                .isNotEqualTo(refreshToken);
 
         mockMvc.perform(post("/api/auth/refresh")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -279,8 +385,11 @@ class AuthContractTest extends EmbeddedPostgresSupport {
 
     @Test
     void logoutIsIdempotentAndRevokesRefreshToken() throws Exception {
-        String refreshToken = loginJson("employee1", EMPLOYEE_PASSWORD)
-                .path("data").path("refreshToken").asText();
+        String refreshToken =
+                loginJson("employee1", EMPLOYEE_PASSWORD)
+                        .path("data")
+                        .path("refreshToken")
+                        .asText();
 
         mockMvc.perform(post("/api/auth/logout")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -309,40 +418,68 @@ class AuthContractTest extends EmbeddedPostgresSupport {
 
     @Test
     void revokesExistingAccessTokenWhenAccountIsDisabled() throws Exception {
-        String token = loginToken("employee1", EMPLOYEE_PASSWORD);
-        assertThat(getJson("/api/auth/me", token).path("code").asInt()).isZero();
+        String token =
+                loginToken("employee1", EMPLOYEE_PASSWORD);
 
-        jdbcTemplate.update("UPDATE users SET status = 'DISABLED' WHERE username = 'employee1'");
+        assertThat(
+                getJson("/api/auth/me", token)
+                        .path("code")
+                        .asInt())
+                .isZero();
 
-        mockMvc.perform(get("/api/auth/me").header(HttpHeaders.AUTHORIZATION, "Bearer " + token))
+        jdbcTemplate.update(
+                "UPDATE users SET status = 'DISABLED' "
+                        + "WHERE username = 'employee1'");
+
+        mockMvc.perform(get("/api/auth/me")
+                        .header(
+                                HttpHeaders.AUTHORIZATION,
+                                "Bearer " + token))
                 .andExpect(status().isUnauthorized())
-                .andExpect(jsonPath("$.code").value(40103));
+                .andExpect(jsonPath("$.code").value(40104));
 
-        jdbcTemplate.update("UPDATE users SET status = 'ACTIVE' WHERE username = 'employee1'");
+        jdbcTemplate.update(
+                "UPDATE users SET status = 'ACTIVE' "
+                        + "WHERE username = 'employee1'");
 
-        assertThat(getJson("/api/auth/me", token).path("code").asInt()).isZero();
+        assertThat(
+                getJson("/api/auth/me", token)
+                        .path("code")
+                        .asInt())
+                .isZero();
     }
 
     @Test
     void revokesExistingAccessTokenWhenAccountIsLocked() throws Exception {
-        String token = loginToken("employee1", EMPLOYEE_PASSWORD);
+        String token =
+                loginToken("employee1", EMPLOYEE_PASSWORD);
 
-        jdbcTemplate.update("UPDATE users SET failed_attempts = 5, "
-                + "locked_until = now() + interval '10 minutes' WHERE username = 'employee1'");
+        jdbcTemplate.update(
+                "UPDATE users SET failed_attempts = 5, "
+                        + "locked_until = now() + interval '10 minutes' "
+                        + "WHERE username = 'employee1'");
 
-        mockMvc.perform(get("/api/auth/me").header(HttpHeaders.AUTHORIZATION, "Bearer " + token))
+        mockMvc.perform(get("/api/auth/me")
+                        .header(
+                                HttpHeaders.AUTHORIZATION,
+                                "Bearer " + token))
                 .andExpect(status().isLocked())
                 .andExpect(jsonPath("$.code").value(40103));
     }
 
     @Test
     void hasNoRegistrationEndpoint() throws Exception {
-        String token = loginToken("admin", ADMIN_PASSWORD);
+        String token =
+                loginToken("admin", ADMIN_PASSWORD);
 
         mockMvc.perform(post("/api/auth/register")
-                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
+                        .header(
+                                HttpHeaders.AUTHORIZATION,
+                                "Bearer " + token)
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(loginBody("new-user", "password123")))
+                        .content(loginBody(
+                                "new-user",
+                                "password123")))
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.code").value(40400));
     }
@@ -351,7 +488,9 @@ class AuthContractTest extends EmbeddedPostgresSupport {
     void validatesLoginPayload() throws Exception {
         mockMvc.perform(post("/api/auth/login")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"username\":\"\",\"password\":\"\"}"))
+                        .content(
+                                "{\"username\":\"\","
+                                        + "\"password\":\"\"}"))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value(40001));
     }
@@ -363,9 +502,19 @@ class AuthContractTest extends EmbeddedPostgresSupport {
                 .andExpect(jsonPath("$.status").value("UP"));
     }
 
-    private void insertUser(String username, String roleCode, Long department, Long team, String status,
-            OffsetDateTime lockedUntil, int failedAttempts, String rawPassword) {
-        jdbcTemplate.update("INSERT INTO users (username, password_hash, real_name, role_code, "
+    private void insertUser(
+            String username,
+            String roleCode,
+            Long department,
+            Long team,
+            String status,
+            OffsetDateTime lockedUntil,
+            int failedAttempts,
+            String rawPassword) {
+
+        jdbcTemplate.update(
+                "INSERT INTO users "
+                        + "(username, password_hash, real_name, role_code, "
                         + "department_id, team_id, status, failed_attempts, locked_until) "
                         + "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 username,
@@ -379,36 +528,72 @@ class AuthContractTest extends EmbeddedPostgresSupport {
                 lockedUntil);
     }
 
-    private String loginBody(String username, String password) throws Exception {
-        return objectMapper.writeValueAsString(Map.of("username", username, "password", password));
+    private String loginBody(
+            String username,
+            String password) throws Exception {
+
+        return objectMapper.writeValueAsString(
+                Map.of(
+                        "username", username,
+                        "password", password));
     }
 
-    private String refreshBody(String refreshToken) throws Exception {
-        return objectMapper.writeValueAsString(Map.of("refreshToken", refreshToken));
+    private String refreshBody(
+            String refreshToken) throws Exception {
+
+        return objectMapper.writeValueAsString(
+                Map.of("refreshToken", refreshToken));
     }
 
-    private JsonNode loginJson(String username, String password) throws Exception {
-        MvcResult result = mockMvc.perform(post("/api/auth/login")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(loginBody(username, password)))
-                .andExpect(status().isOk())
-                .andReturn();
-        return objectMapper.readTree(result.getResponse().getContentAsString(StandardCharsets.UTF_8));
+    private JsonNode loginJson(
+            String username,
+            String password) throws Exception {
+
+        MvcResult result =
+                mockMvc.perform(post("/api/auth/login")
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content(loginBody(username, password)))
+                        .andExpect(status().isOk())
+                        .andReturn();
+
+        return objectMapper.readTree(
+                result.getResponse()
+                        .getContentAsString(StandardCharsets.UTF_8));
     }
 
-    private String loginToken(String username, String password) throws Exception {
-        return loginJson(username, password).path("data").path("accessToken").asText();
+    private String loginToken(
+            String username,
+            String password) throws Exception {
+
+        return loginJson(username, password)
+                .path("data")
+                .path("accessToken")
+                .asText();
     }
 
-    private JsonNode getJson(String path, String token) throws Exception {
-        MvcResult result = mockMvc.perform(get(path).header(HttpHeaders.AUTHORIZATION, "Bearer " + token))
-                .andExpect(status().isOk())
-                .andReturn();
-        return objectMapper.readTree(result.getResponse().getContentAsString(StandardCharsets.UTF_8));
+    private JsonNode getJson(
+            String path,
+            String token) throws Exception {
+
+        MvcResult result =
+                mockMvc.perform(get(path)
+                                .header(
+                                        HttpHeaders.AUTHORIZATION,
+                                        "Bearer " + token))
+                        .andExpect(status().isOk())
+                        .andReturn();
+
+        return objectMapper.readTree(
+                result.getResponse()
+                        .getContentAsString(StandardCharsets.UTF_8));
     }
 
     private List<String> toList(JsonNode node) {
-        return objectMapper.convertValue(node, objectMapper.getTypeFactory()
-                .constructCollectionType(List.class, String.class));
+        return objectMapper.convertValue(
+                node,
+                objectMapper.getTypeFactory()
+                        .constructCollectionType(
+                                List.class,
+                                String.class));
     }
 }

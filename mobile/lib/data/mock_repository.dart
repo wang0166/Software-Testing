@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../core/models.dart';
+import '../core/task_issue_utils.dart';
 import 'repository.dart';
 
 class MockRepository implements PandoraRepository {
@@ -9,6 +10,9 @@ class MockRepository implements PandoraRepository {
     UserProfile(id:13,username:'demo002',name:'陈星禾',role:'EMPLOYEE',departmentId:3,teamId:8),
     UserProfile(id:8,username:'leader',name:'周知夏',role:'TEAM_LEADER',departmentId:3,teamId:8),
     UserProfile(id:3,username:'manager',name:'苏以安',role:'DEPT_MANAGER',departmentId:3),
+    UserProfile(id:21,username:'product01',name:'顾清禾',role:'EMPLOYEE',departmentId:2,teamId:5),
+    UserProfile(id:22,username:'productleader',name:'沈嘉宁',role:'TEAM_LEADER',departmentId:2,teamId:5),
+    UserProfile(id:2,username:'productmanager',name:'唐予宁',role:'DEPT_MANAGER',departmentId:2),
     UserProfile(id:1,username:'founder',name:'许远山',role:'FOUNDER'),
     UserProfile(id:99,username:'admin',name:'系统管理员',role:'ADMIN'),
   ];
@@ -34,6 +38,24 @@ class MockRepository implements PandoraRepository {
       }
     }
     throw const AppFailure('演示账号或密码不正确');
+  }
+  @override Future<void> requestPasswordReset(String username) async {
+    if (!users.any((e) => e.username == username.trim())) throw const AppFailure('演示账号不存在');
+    // Local demo only; no real admin Web service receives this request.
+    (await _prefs).setString('pandora_demo_reset_${username.trim()}', 'PENDING');
+  }
+  @override Future<void> requestPasswordChange() async {
+    final pref = await _prefs;
+    final key = 'pandora_demo_password_request_${_user.id}';
+    if (pref.getString(key) == 'PENDING') throw const AppFailure('申请正在等待管理员审核');
+    await pref.setString(key, 'PENDING');
+  }
+  @override Future<String> passwordChangeStatus() async {
+    return (await _prefs).getString('pandora_demo_password_request_${_user.id}') ?? 'NONE';
+  }
+  @override Future<void> completePasswordChange(String newPassword) async {
+    // The demo deliberately cannot approve itself; approval belongs to the Web administrator.
+    throw const AppFailure('演示模式无管理员审批服务，请连接后端完成修改');
   }
   @override Future<void> logout() async {_current=null;(await _prefs).remove('pandora_mock_user');}
 
@@ -74,8 +96,7 @@ class MockRepository implements PandoraRepository {
     var changed=false;
     final result=<WorkLog>[];
     for(final log in logs) {
-      final expired=log.logDate.compareTo(date)<0 ||
-          (log.logDate==date && now.hour>=22);
+      final expired=log.logDate==date && now.hour>=22;
       if(log.status=='DRAFT' && expired) {
         result.add(WorkLog(
           id:log.id,authorId:log.authorId,authorName:log.authorName,
@@ -94,7 +115,8 @@ class MockRepository implements PandoraRepository {
   Future<void> _setLogs(List<WorkLog> logs) async {(await _prefs).setString('pandora_mock_logs_v1',jsonEncode(logs.map((e)=>e.toJson()).toList()));}
   bool _canSee(UserProfile viewer,UserProfile author) {
     switch(viewer.role) {
-      case 'ADMIN': case 'FOUNDER': return true;
+      case 'FOUNDER': return true;
+      case 'ADMIN': return false;
       case 'DEPT_MANAGER': return author.departmentId==viewer.departmentId;
       case 'TEAM_LEADER': return author.teamId==viewer.teamId;
       default: return author.id==viewer.id;
@@ -109,26 +131,39 @@ class MockRepository implements PandoraRepository {
     };
   }
   UserProfile _findUser(int id)=>users.firstWhere((u)=>u.id==id,orElse:()=>_user);
-  bool get _canChangeToday {final now=chinaNow;return now.hour<22;}
+  bool _canChangeDay(String day) {
+    final parsed = DateTime.tryParse(day);
+    if (parsed == null) return false;
+    final now = chinaNow;
+    final today = DateTime(now.year, now.month, now.day);
+    final delta = today.difference(DateTime(parsed.year, parsed.month, parsed.day)).inDays;
+    return delta >= 0 && delta <= 2;
+  }
 
   @override Future<List<WorkLog>> logs({String? date,String? status}) async {
     await _wait();
     final viewer=_user;
     final all=await _allLogs();
-    return all.where((l)=>_canSee(viewer,_findUser(l.authorId)) && (date==null||l.logDate==date) && (status==null||l.status==status)).toList()
-      ..sort((a,b){final r=b.logDate.compareTo(a.logDate);return r!=0?r:b.id.compareTo(a.id);});
+    return all.where((l)=>_canSee(viewer,_findUser(l.authorId)) && (date==null||l.logDate==date) && (status==null||l.status==status)).map((l) {
+      final author = _findUser(l.authorId);
+      return WorkLog(id:l.id,authorId:l.authorId,authorName:l.authorName,logDate:l.logDate,content:l.content,status:l.status,isImportant:l.isImportant,submittedAt:l.submittedAt,
+        departmentId:author.departmentId,teamId:author.teamId,
+        departmentName:author.departmentId == 3 ? '技术研发部' : author.departmentId == 2 ? '产品设计部' : '公司管理层',
+        teamName:author.teamId == 8 ? '移动研发团队' : author.teamId == 5 ? '产品规划团队' : '部门管理', authorRole: author.role);
+    }).toList()..sort((a,b){final r=b.logDate.compareTo(a.logDate);return r!=0?r:b.id.compareTo(a.id);});
   }
-  @override Future<WorkLog> saveLog(String content,{int? id}) async {
+  @override Future<WorkLog> saveLog(String content,{int? id,String? date}) async {
     final me=_user;
     if(!me.canWriteLog) throw const AppFailure('管理员没有日志写入权限');
     if(content.trim().isEmpty) throw const AppFailure('日志内容不能为空');
-    if(!_canChangeToday) throw const AppFailure('已过今日22:00截止时间，无法编辑');
+    final day = date ?? todayChina;
+    if(!_canChangeDay(day)) throw const AppFailure('只能写入最近三个自然日的日志');
     final all=await _allLogs();
-    final today=todayChina;
+    final today=day;
     final existing=all.where((e)=>e.authorId==me.id && e.logDate==today).toList();
-    if(existing.isNotEmpty && (id==null || existing.first.id!=id)) throw const AppFailure('今天已经有日志，请编辑原有草稿');
-    if(id!=null && (existing.isEmpty || existing.first.submitted)) throw const AppFailure('已提交日志不可修改');
-    final log=WorkLog(id:id ?? (all.isEmpty?1:all.map((e)=>e.id).reduce((a,b)=>a>b?a:b)+1),authorId:me.id,authorName:me.name,logDate:today,content:content.trim(),status:'DRAFT');
+    if(existing.isNotEmpty && (id==null || existing.first.id!=id)) throw const AppFailure('所选日期已有日志，请编辑原有记录');
+    if(id!=null && existing.isEmpty) throw const AppFailure('要编辑的日志不存在');
+    final log=WorkLog(id:id ?? (all.isEmpty?1:all.map((e)=>e.id).reduce((a,b)=>a>b?a:b)+1),authorId:me.id,authorName:me.name,logDate:today,content:content.trim(),status:existing.isNotEmpty ? existing.first.status : 'DRAFT',submittedAt:existing.isNotEmpty ? existing.first.submittedAt : null);
     all.removeWhere((e)=>e.id==id);
     all.add(log);
     await _setLogs(all);
@@ -141,7 +176,7 @@ class MockRepository implements PandoraRepository {
     if(i<0||all[i].authorId!=me.id) throw const AppFailure('无权提交此日志');
     final old=all[i];
     if(old.submitted) return old;
-    if(!_canChangeToday||old.logDate!=todayChina) throw const AppFailure('今天已截止，无法提交');
+    if(!_canChangeDay(old.logDate)) throw const AppFailure('仅允许提交最近三个自然日的日志');
     final updated=WorkLog(id:old.id,authorId:old.authorId,authorName:old.authorName,logDate:old.logDate,content:old.content,status:'SUBMITTED',isImportant:old.isImportant,submittedAt:DateTime.now().toUtc().toIso8601String());
     all[i]=updated;await _setLogs(all);return updated;
   }
@@ -196,20 +231,76 @@ class MockRepository implements PandoraRepository {
   List<TaskItem> _taskSeeds(int userId)=>[
     TaskItem(id:210,name:'完善本周工作计划',details:'梳理本周目标、风险与时间节点，及时同步团队',status:'IN_PROGRESS',source:'PERSONAL'),
     TaskItem(id:211,name:'整理需求文档',details:'补充本次迭代的验收要求与功能清单',status:'NOT_STARTED',source:'PERSONAL'),
-    TaskItem(id:310,name:'完成模块联调',details:'对照接口文档验证主要业务流程',status:'IN_PROGRESS',source:'RECEIVED',urgency:'URGENT',startDate:dayString(chinaNow.subtract(const Duration(days:2))),deadline:dayString(chinaNow.add(const Duration(days:3)))),
-    TaskItem(id:311,name:'提交迭代周报',details:'总结本周成果与下周安排',status:'COMPLETED',source:'RECEIVED',startDate:dayString(chinaNow.subtract(const Duration(days:1))),deadline:dayString(chinaNow.add(const Duration(days:1)))),
+    TaskItem(id:310,progressPercent:60,progressNote:'已完成大部分接口联调，正在修复数据同步问题',name:'完成模块联调',taskType:'DEVELOPMENT',details:'对照接口文档验证主要业务流程',status:'IN_PROGRESS',source:'RECEIVED',urgency:'URGENT',startDate:dayString(chinaNow.subtract(const Duration(days:2))),deadline:dayString(chinaNow.add(const Duration(days:3)))),
+    TaskItem(id:311,progressPercent:100,name:'提交迭代周报',taskType:'OPERATION',details:'总结本周成果与下周安排',status:'COMPLETED',source:'RECEIVED',startDate:dayString(chinaNow.subtract(const Duration(days:1))),deadline:dayString(chinaNow.add(const Duration(days:1)))),
     // The following are demo-only assigned tasks so month/week rows can
     // illustrate multi-day overlaps. No production API data is fabricated.
-    TaskItem(id:312,name:'检查用例评审',details:'评审移动端核心功能测试用例',status:'NOT_STARTED',source:'RECEIVED',startDate:dayString(chinaNow.add(const Duration(days:1))),deadline:dayString(chinaNow.add(const Duration(days:4)))),
-    TaskItem(id:313,name:'移动端界面完善',details:'检查导航、交互状态与视觉一致性',status:'IN_PROGRESS',source:'RECEIVED',startDate:dayString(chinaNow.subtract(const Duration(days:4))),deadline:dayString(chinaNow.add(const Duration(days:2)))),
-    TaskItem(id:314,name:'回归测试',details:'复测已修复问题和关键页面',status:'NOT_STARTED',source:'RECEIVED',startDate:dayString(chinaNow.add(const Duration(days:5))),deadline:dayString(chinaNow.add(const Duration(days:8)))),
+    TaskItem(id:312,name:'检查用例评审',taskType:'TESTING',details:'评审移动端核心功能测试用例',status:'NOT_STARTED',source:'RECEIVED',startDate:dayString(chinaNow.add(const Duration(days:1))),deadline:dayString(chinaNow.add(const Duration(days:4)))),
+    TaskItem(id:313,progressPercent:35,name:'移动端界面完善',taskType:'PRODUCT',details:'检查导航、交互状态与视觉一致性',status:'IN_PROGRESS',source:'RECEIVED',startDate:dayString(chinaNow.subtract(const Duration(days:4))),deadline:dayString(chinaNow.add(const Duration(days:2)))),
+    TaskItem(id:314,name:'回归测试',taskType:'TESTING',details:'复测已修复问题和关键页面',status:'NOT_STARTED',source:'RECEIVED',startDate:dayString(chinaNow.add(const Duration(days:5))),deadline:dayString(chinaNow.add(const Duration(days:8)))),
   ];
   Future<List<TaskItem>> _myTasks() async => _tasksFor(_user.id);
+
+  // A visible, resolvable example of a subordinate incident, for demo builds
+  // only.  It is an actual demo assignment and progress record, NOT a fake
+  // badge count.  Two different teams get an example so founder / department /
+  // team-level accounts can all verify the red badge without first creating an
+  // incident on another account.  Production ApiRepository never uses this.
+  TaskItem? _showcaseIssue(int userId) {
+    if (userId != 13 && userId != 21) return null;
+    return TaskItem(
+      id: 399,
+      name: '【演示】跨部门接口协作',
+      details: '演示任务：下属上报接口鉴权异常，需管理者查看反馈并协助解决。',
+      status: 'BLOCKED',
+      source: 'RECEIVED',
+      urgency: 'URGENT',
+      taskType: 'DEVELOPMENT',
+      progressPercent: 45,
+      progressNote: '【演示异常】接口鉴权失败，等待上级协调权限。',
+      startDate: dayString(chinaNow.subtract(const Duration(days: 1))),
+      deadline: dayString(chinaNow.add(const Duration(days: 2))),
+    );
+  }
+
   Future<List<TaskItem>> _tasksFor(int userId) async {
-    final p=await _prefs,key='pandora_mock_tasks_$userId';
-    final raw=p.getString(key);
-    if(raw==null) return _taskSeeds(userId);
-    try{return (jsonDecode(raw) as List).map((e)=>TaskItem.fromJson(e,source:textOf(mapOf(e)['source'],'PERSONAL'))).toList();}catch(_){return _taskSeeds(userId);}
+    final p = await _prefs;
+    final key = 'pandora_mock_tasks_$userId';
+    final raw = p.getString(key);
+    List<TaskItem> items;
+    if (raw == null) {
+      items = _taskSeeds(userId);
+    } else {
+      try {
+        items = (jsonDecode(raw) as List).map((e) => TaskItem.fromJson(
+          e, source: textOf(mapOf(e)['source'], 'PERSONAL'))).toList();
+      } catch (_) {
+        items = _taskSeeds(userId);
+      }
+    }
+
+    // V1.10.3 demo-data migration: also works for users who already launched
+    // V1.10.2 and have saved their local task list. Never duplicates an issue.
+    // Once the assignee resolves the task, its saved status is preserved.
+    final example = _showcaseIssue(userId);
+    if (example != null && !items.any((t) => t.id == example.id && t.source == 'RECEIVED')) {
+      items = [...items, example];
+      await _writeTasksFor(userId, items);
+      final historyKey = _progressKey(userId, example.id);
+      if (p.getString(historyKey) == null) {
+        final name = users.firstWhere((u) => u.id == userId).name;
+        final event = TaskProgressRecord(
+          id: DateTime.now().microsecondsSinceEpoch,
+          status: 'BLOCKED',
+          note: example.progressNote,
+          authorName: name,
+          createdAt: DateTime.now().toUtc().toIso8601String(),
+          percent: example.progressPercent,
+        );
+        await p.setString(historyKey, jsonEncode([event.toJson()]));
+      }
+    }
+    return items;
   }
   Future<void> _writeTasks(List<TaskItem> items) async => _writeTasksFor(_user.id,items);
   Future<void> _writeTasksFor(int id,List<TaskItem> items) async {(await _prefs).setString('pandora_mock_tasks_$id',jsonEncode(items.map((e)=>e.toJson()).toList()));}
@@ -231,27 +322,267 @@ class MockRepository implements PandoraRepository {
     if(i<0) throw const AppFailure('任务不存在');
     final old=all[i];
     if(old.source=='RECEIVED' && !(old.status==status || (old.status=='NOT_STARTED'&&status=='IN_PROGRESS') || (old.status=='IN_PROGRESS'&&status=='COMPLETED'))) throw const AppFailure('接收任务进度只能逐步推进');
-    all[i]=TaskItem(id:old.id,name:old.name,details:old.details,status:status,source:old.source,deadline:old.deadline,startDate:old.startDate,taskId:old.taskId,senderId:old.senderId,urgency:old.urgency,reviewStatus:old.reviewStatus);
+    all[i]=TaskItem(id:old.id,name:old.name,details:old.details,status:status,source:old.source,deadline:old.deadline,startDate:old.startDate,taskId:old.taskId,senderId:old.senderId,urgency:old.urgency,reviewStatus:old.reviewStatus,taskType:old.taskType,assigneeName:old.assigneeName,progressNote:old.progressNote,progressPercent:old.progressPercent,progressUpdatedAt:old.progressUpdatedAt);
     await _writeTasks(all);
   }
-  @override Future<List<CompanyItem>> companyMatters() async =>const [
-    CompanyItem(id:1,title:'推动数字化协作升级',content:'让团队信息透明、工作流清晰，持续优化组织协作体验'),
-    CompanyItem(id:2,title:'本季度客户体验提升',content:'聚焦需求闭环与交付质量，持续收集反馈'),
-    CompanyItem(id:3,title:'强化项目风险管理',content:'建立问题追踪机制，确保关键节点按期完成'),
+  String _progressKey(int userId,int taskId) => 'pandora_v19_progress_${userId}_$taskId';
+  Future<List<TaskProgressRecord>> _progressFor(int userId, int assignmentId) async {
+    final raw=(await _prefs).getString(_progressKey(userId,assignmentId));
+    if(raw==null) return [];
+    try {
+      return (jsonDecode(raw) as List).map(TaskProgressRecord.fromJson).toList()
+        ..sort((a,b)=>b.createdAt.compareTo(a.createdAt));
+    } catch (_) {throw const AppFailure('历史进度记录格式异常');}
+  }
+
+  bool _canInspectSubordinate(UserProfile viewer, UserProfile member) {
+    if(viewer.id==member.id || member.role=='ADMIN') return false;
+    return switch(viewer.role) {
+      'FOUNDER' => true,
+      'DEPT_MANAGER' => member.departmentId==viewer.departmentId,
+      'TEAM_LEADER' => member.teamId==viewer.teamId && member.role=='EMPLOYEE',
+      _ => false,
+    };
+  }
+
+  @override Future<List<TaskProgressRecord>> subordinateTaskProgressHistory(
+      int userId, int assignmentId) async {
+    if(!users.any((u)=>u.id==userId)) {
+      throw const AppFailure('员工不存在或无权限访问');
+    }
+    final member=_findUser(userId);
+    if(!_canInspectSubordinate(_user,member)) {
+      throw const AppFailure('无权限查看该员工任务反馈');
+    }
+    final tasks=await _tasksFor(userId);
+    if(!tasks.any((t)=>t.id==assignmentId && t.source=='RECEIVED')) {
+      throw const AppFailure('无法查看该员工未授权的任务');
+    }
+    return _progressFor(userId,assignmentId);
+  }
+
+  @override Future<List<TaskProgressRecord>> taskProgressHistory(int assignmentId) async {
+    final tasks=await _myTasks();
+    if(!tasks.any((e)=>e.id==assignmentId && e.source=='RECEIVED')) {
+      throw const AppFailure('只能查看自己接收任务的进度历史');
+    }
+    return _progressFor(_user.id,assignmentId);
+  }
+  @override Future<void> updateTaskProgress(TaskItem item,{
+    required String status,required int percent,required String note}) async {
+    final me=_user;
+    final all=await _myTasks();
+    final i=all.indexWhere((e)=>e.id==item.id && e.source=='RECEIVED');
+    if(i<0) throw const AppFailure('只能更新本人收到的任务');
+    final old=all[i];
+    final problem=taskProgressValidation(old,status,percent,note);
+    if(problem!=null) throw AppFailure(problem);
+    final now=DateTime.now().toUtc().toIso8601String();
+    final record=TaskProgressRecord(id:DateTime.now().microsecondsSinceEpoch,
+      status:status,note:note.trim(),percent:percent,authorName:me.name,
+      createdAt:now);
+    final previous=await taskProgressHistory(item.id);
+    all[i]=TaskItem(id:old.id,name:old.name,details:old.details,status:status,
+      source:old.source,urgency:old.urgency,startDate:old.startDate,
+      deadline:old.deadline,taskId:old.taskId,senderId:old.senderId,
+      reviewStatus:old.reviewStatus,taskType:old.taskType,
+      assigneeName:old.assigneeName,progressNote:note.trim(),
+      progressPercent:percent,progressUpdatedAt:now);
+    await _writeTasks(all);
+    await (await _prefs).setString(_progressKey(me.id,item.id),
+      jsonEncode([record,...previous].map((e)=>e.toJson()).toList()));
+  }
+  @override Future<List<CompanyItem>> companyMatters() async => const [
+    CompanyItem(id:1,title:'公司年度战略目标评审',content:'战略事项 · 明确部门重点与季度里程碑'),
+    CompanyItem(id:2,title:'产品质量专项治理',content:'高优先级 · 建立问题闭环和质量标准'),
+    CompanyItem(id:3,title:'重点客户交付保障',content:'客户事项 · 重点跟踪交付和验收节点'),
+    CompanyItem(id:4,title:'研发效率改进计划',content:'研发事项 · 优化联调和版本发布流程'),
+    CompanyItem(id:5,title:'统一任务审批制度',content:'管理事项 · 任务跨部门派发需审核'),
+    CompanyItem(id:6,title:'全员安全培训安排',content:'行政事项 · 覆盖账号安全及数据保护'),
+    CompanyItem(id:7,title:'预算执行和成本分析',content:'财务事项 · 定期复核预算使用情况'),
+    CompanyItem(id:8,title:'员工发展与人才盘点',content:'组织事项 · 优化能力发展规划'),
+    CompanyItem(id:9,title:'企业内部信息协同',content:'运营事项 · 推动信息透明与职责清晰'),
+    CompanyItem(id:10,title:'第四季度业务复盘',content:'战略事项 · 汇总目标、偏差和下一步计划'),
   ];
-  @override Future<List<CompanyItem>> companyImportantTasks() async=>const [
-    CompanyItem(id:1,title:'完成潘多拉核心模块',content:'推进日志、点评、统计与移动端联调'),
-    CompanyItem(id:2,title:'交付新版项目文档',content:'维护接口契约、测试用例与操作说明'),
+  @override Future<List<CompanyItem>> companyImportantTasks() async => const [
+    CompanyItem(id:1,title:'完成潘多拉移动端联调',content:'研发中心 · 整体验收'),
+    CompanyItem(id:2,title:'实施公司级重点任务审核',content:'管理办公室 · 流程评审'),
+    CompanyItem(id:3,title:'完成组织权限审计',content:'技术平台部 · 访问控制'),
+    CompanyItem(id:4,title:'发布本月客户交付清单',content:'客户成功部 · 交付节点'),
+    CompanyItem(id:5,title:'完成核心报表数据校验',content:'数据分析组 · 指标核对'),
+    CompanyItem(id:6,title:'开展应用安全检查',content:'技术平台部 · 关键操作审计'),
+    CompanyItem(id:7,title:'组织年度战略评审会议',content:'管理办公室 · 日程准备'),
+    CompanyItem(id:8,title:'完成新员工入职培训',content:'人力资源部 · 完成确认'),
+    CompanyItem(id:9,title:'优化任务可视化看板',content:'产品研发部 · 体验优化'),
+    CompanyItem(id:10,title:'提交季度成本管理报告',content:'财务管理部 · 审核归档'),
   ];
   @override Future<List<CalendarDay>> calendar(String from,String to) async {
     final all=await logs();
     final start=DateTime.parse(from),end=DateTime.parse(to);
     if(end.difference(start).inDays>31) throw const AppFailure('日期范围不能超过31天');
     final received=await tasks(personal:false);
-    return [for(var i=0;i<=end.difference(start).inDays;i++) () {final day=dayString(start.add(Duration(days:i)));final lc=all.where((e)=>e.logDate==day).length;final tc=received.where((e)=>e.deadline!=null && (e.startDate==null?e.deadline==day:(e.startDate!.compareTo(day)<=0 && e.deadline!.compareTo(day)>=0))).length;return CalendarDay(date:day,mark:tc>0?'GREEN':lc>0?'RED':'NONE',logCount:lc,taskCount:tc);}()];
+    return [for(var i=0;i<=end.difference(start).inDays;i++) () {final day=dayString(start.add(Duration(days:i)));final lc=all.where((e)=>e.logDate==day).length;final tc=received.where((e)=>e.deadline!=null && (e.startDate==null?e.deadline!.substring(0,10)==day:(e.startDate!.substring(0,10).compareTo(day)<=0 && e.deadline!.substring(0,10).compareTo(day)>=0))).length;return CalendarDay(date:day,mark:tc>0?'GREEN':lc>0?'RED':'NONE',logCount:lc,taskCount:tc);}()];
   }
   @override Future<List<TaskItem>> taskMap() async =>
-    [...await tasks(personal:false),...await tasks(personal:true)];
+    await tasks(personal:false);
+
+  @override Future<List<UserProfile>> companyMembers() async {
+    final viewer = _user;
+    return users.where((u) => u.role != 'ADMIN' && u.id != viewer.id).toList();
+  }
+  @override Future<String> submitDispatchRequest({required String name, required String details,
+    required String startDate, required String deadline, required String urgency,
+    required String taskType, required List<int> assigneeIds}) async {
+    final allowed = (await companyMembers()).map((u) => u.id).toSet();
+    if (name.trim().isEmpty || details.trim().isEmpty || assigneeIds.isEmpty) throw const AppFailure('请填写任务信息');
+    if (assigneeIds.any((id) => !allowed.contains(id))) throw const AppFailure('接收人不存在或无权限');
+    if (startDate.compareTo(deadline) >= 0) throw const AppFailure('截止时间必须晚于开始时间');
+    final prefs = await _prefs;
+    final key = 'pandora_mock_dispatch_requests_${_user.id}';
+    final saved = prefs.getStringList(key) ?? <String>[];
+    saved.add(jsonEncode({'id': DateTime.now().microsecondsSinceEpoch,
+      'name':name.trim(), 'details':details.trim(), 'urgency':urgency,
+      'taskType':taskType, 'assigneeIds':assigneeIds,
+      'startDate':startDate, 'deadline':deadline, 'status':'PENDING'}));
+    await prefs.setStringList(key, saved);
+    // No task is dispatched before administrator approval.
+    return 'PENDING';
+  }
+  String get _issuedChangesKey => 'pandora_mock_issued_changes_${_user.id}';
+  String get _requestsKey => 'pandora_mock_dispatch_requests_${_user.id}';
+
+  Future<List<Map<String,dynamic>>> _myRequests() async {
+    final prefs=await _prefs;
+    final raw=prefs.getStringList(_requestsKey) ?? [];
+    return [for(var i=0;i<raw.length;i++) () {
+      final entry=mapOf(jsonDecode(raw[i]));
+      // Support requests generated by the previous V1.7 demo version.
+      if(entry['id']==null) entry['id']=-(i+1);
+      return entry;
+    }()];
+  }
+  Future<void> _writeRequests(List<Map<String,dynamic>> items) async =>
+    (await _prefs).setStringList(_requestsKey,items.map(jsonEncode).toList());
+
+  Future<List<Map<String,dynamic>>> _myChanges() async {
+    final raw=(await _prefs).getStringList(_issuedChangesKey) ?? [];
+    return raw.map((e)=>mapOf(jsonDecode(e))).toList();
+  }
+  Future<void> _writeChanges(List<Map<String,dynamic>> changes) async =>
+    (await _prefs).setStringList(_issuedChangesKey,changes.map(jsonEncode).toList());
+
+  @override Future<IssuedTasksResult> issuedTasks() async {
+    final changes=await _myChanges();
+    final active=await _myDispatched();
+    final requestItems=(await _myRequests()).map((j)=>
+      IssuedTask.fromJson(j,request:true)).toList().reversed;
+    final activeItems=active.reversed.map((t)=>IssuedTask(
+      id:t.id,name:t.name,details:t.details,urgency:t.urgency,
+      startDate:t.startDate,deadline:t.deadline,assigneeCount:t.assigneeCount,
+      changePending:changes.any((j)=>intOf(j['taskId'])==t.id && j['status']=='PENDING'),
+    )).toList();
+    // Recipient IDs are resolved only for tasks issued by the current user.
+    final withRecipients=<IssuedTask>[];
+    for(final t in activeItems) {
+      final ids=(await dispatchedAssignments(t.id)).map((a)=>a.assigneeId).toList();
+      withRecipients.add(IssuedTask(id:t.id,name:t.name,details:t.details,
+        urgency:t.urgency,startDate:t.startDate,deadline:t.deadline,
+        assigneeCount:ids.length,assigneeIds:ids,changePending:t.changePending));
+    }
+    return IssuedTasksResult([...requestItems,...withRecipients]);
+  }
+
+  void _checkIssueChange(String name,String details,String startDate,
+    String deadline,List<int> assigneeIds) {
+    if(name.trim().isEmpty || details.trim().isEmpty || assigneeIds.isEmpty) {
+      throw const AppFailure('任务标题、内容及接收人不能为空');
+    }
+    if(startDate.compareTo(deadline)>=0) throw const AppFailure('截止时间必须晚于开始时间');
+    if(assigneeIds.any((id)=>!users.any((u)=>u.id==id && u.role!='ADMIN' && u.id!=_user.id))) {
+      throw const AppFailure('接收人不属于可派发成员范围');
+    }
+  }
+
+  @override Future<String> requestIssuedTaskEdit(IssuedTask original, {
+    required String name, required String details, required String startDate,
+    required String deadline, required String urgency, required String taskType,
+    required List<int> assigneeIds}) async {
+    _checkIssueChange(name,details,startDate,deadline,assigneeIds);
+    final data={'name':name.trim(),'details':details.trim(),
+      'startDate':startDate,'deadline':deadline,'urgency':urgency,
+      'taskType':taskType,'assigneeIds':assigneeIds,'status':'PENDING'};
+    if(original.isRequest) {
+      final all=await _myRequests();
+      final index=all.indexWhere((j)=>intOf(j['id'])==original.id);
+      if(index<0 || all[index]['status']!='PENDING') {
+        throw const AppFailure('只有本人待审核的派发申请允许修改');
+      }
+      all[index]={...all[index],...data};
+      await _writeRequests(all);
+      return 'PENDING';
+    }
+    final all=await _myDispatched();
+    if(!all.any((t)=>t.id==original.id)) throw const AppFailure('无权修改他人发布的任务');
+    final changes=await _myChanges();
+    if(changes.any((j)=>intOf(j['taskId'])==original.id && j['status']=='PENDING')) {
+      throw const AppFailure('已有待审核变更申请，不能重复提交');
+    }
+    changes.add({...data,'action':'UPDATE','taskId':original.id});
+    await _writeChanges(changes);
+    // Active task remains unchanged pending approval.
+    return 'PENDING';
+  }
+
+  @override Future<String> requestIssuedTaskDelete(IssuedTask original) async {
+    if(original.isRequest) {
+      final all=await _myRequests();
+      final before=all.length;
+      all.removeWhere((j)=>intOf(j['id'])==original.id && j['status']=='PENDING');
+      if(all.length==before) throw const AppFailure('无法撤回该派发申请');
+      await _writeRequests(all);
+      return 'WITHDRAWN';
+    }
+    final active=await _myDispatched();
+    if(!active.any((t)=>t.id==original.id)) throw const AppFailure('无权删除他人发布的任务');
+    final changes=await _myChanges();
+    if(changes.any((j)=>intOf(j['taskId'])==original.id && j['status']=='PENDING')) {
+      throw const AppFailure('已有待审核变更，不能重复提交');
+    }
+    changes.add({'taskId':original.id,'action':'DELETE','status':'PENDING'});
+    await _writeChanges(changes);
+    // Only administrator approval may remove the published task.
+    return 'PENDING';
+  }
+
+  @override Future<List<SubordinateTaskSummary>> subordinatesTaskOverview() async {
+    final me = _user;
+    if (!(const ['TEAM_LEADER','DEPT_MANAGER','FOUNDER']).contains(me.role)) return [];
+    final list = <SubordinateTaskSummary>[];
+    for (final member in users) {
+      if (member.id == me.id || member.role == 'ADMIN') continue;
+      final allowed = _canInspectSubordinate(me,member);
+      if (!allowed) continue;
+      final originals = (await _tasksFor(member.id))
+        .where((t) => t.source == 'RECEIVED').toList();
+      final tasks = <TaskItem>[];
+      for(final t in originals) {
+        final history = await _progressFor(member.id,t.id);
+        final issueCount = unresolvedIssueEvents(t,history);
+        tasks.add(TaskItem.fromJson({
+          ...t.toJson(), 'openIssueCount': issueCount,
+        },source:'RECEIVED'));
+      }
+      list.add(SubordinateTaskSummary(userId:member.id, name:member.name,
+        departmentName:'${member.roleLabel} · ${member.departmentId ?? '公司级'}',
+        role: member.role, teamName: member.teamId == null ? '部门直属' : '团队 ${member.teamId}',
+        username: member.username,
+        total:tasks.length, inProgress:tasks.where((t)=>t.status=='IN_PROGRESS').length,
+        completed:tasks.where((t)=>t.status=='COMPLETED').length,
+        openIssueCount:tasks.fold<int>(0,(total,t)=>total+t.visibleIssueCount), tasks:tasks));
+    }
+    return list;
+  }
+
   @override Future<List<UserProfile>> recipients() async {
     final me=_user;
     if(me.role=='TEAM_LEADER') return users.where((u)=>u.role=='EMPLOYEE' && u.teamId==me.teamId).toList();
@@ -281,7 +612,7 @@ class MockRepository implements PandoraRepository {
     for(final u in users){
       for(final t in await _tasksFor(u.id)){
         if(t.source=='RECEIVED'&&t.taskId==taskId&&t.senderId==sender.id) {
-          result.add(TaskAssignment(id:t.id,assigneeId:u.id,assigneeName:u.name,status:t.status,reviewStatus:t.reviewStatus));
+          result.add(TaskAssignment(id:t.id,assigneeId:u.id,assigneeName:u.name,status:t.status,reviewStatus:t.reviewStatus,progressPercent:t.progressPercent,progressNote:t.progressNote));
         }
       }
     }
@@ -321,12 +652,27 @@ class MockRepository implements PandoraRepository {
       if(index<0)continue;
       final old=inbox[index];
       if(old.reviewStatus!='PENDING')throw const AppFailure('仅待检查的任务可审核');
-      inbox[index]=_copyTask(old,reviewStatus:result,status:result=='RETURNED'?'IN_PROGRESS':old.status);
+      final resetPercent = result=='RETURNED' && old.progressPercent==100 ? 95 : old.progressPercent;
+      inbox[index]=TaskItem(id:old.id,name:old.name,details:old.details,
+        status:result=='RETURNED'?'IN_PROGRESS':old.status,source:old.source,
+        deadline:old.deadline,startDate:old.startDate,taskId:old.taskId,
+        senderId:old.senderId,urgency:old.urgency,reviewStatus:result,
+        taskType:old.taskType,assigneeName:old.assigneeName,
+        progressNote:old.progressNote,progressPercent:resetPercent,
+        progressUpdatedAt:DateTime.now().toUtc().toIso8601String());
       await _writeTasksFor(receiver.id,inbox);
+      final key=_progressKey(receiver.id,old.id);
+      final prefs=await _prefs;
+      final raw=prefs.getString(key);
+      final existing=raw==null?<dynamic>[]:listOf(jsonDecode(raw));
+      final event=TaskProgressRecord(id:DateTime.now().microsecondsSinceEpoch,
+        status:result,note:comment,authorName:me.name,
+        createdAt:DateTime.now().toUtc().toIso8601String(),percent:resetPercent);
+      await prefs.setString(key,jsonEncode([event.toJson(),...existing]));
       return;
     }
     throw const AppFailure('无权检查此任务');
   }
-  TaskItem _copyTask(TaskItem old,{String? status,String? reviewStatus})=>TaskItem(id:old.id,name:old.name,details:old.details,status:status??old.status,source:old.source,deadline:old.deadline,startDate:old.startDate,taskId:old.taskId,senderId:old.senderId,urgency:old.urgency,reviewStatus:reviewStatus??old.reviewStatus);
+  TaskItem _copyTask(TaskItem old,{String? status,String? reviewStatus})=>TaskItem(id:old.id,name:old.name,details:old.details,status:status??old.status,source:old.source,deadline:old.deadline,startDate:old.startDate,taskId:old.taskId,senderId:old.senderId,urgency:old.urgency,reviewStatus:reviewStatus??old.reviewStatus,taskType:old.taskType,assigneeName:old.assigneeName,progressNote:old.progressNote,progressPercent:old.progressPercent,progressUpdatedAt:old.progressUpdatedAt);
 
 }

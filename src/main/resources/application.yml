@@ -17,6 +17,8 @@ spring:
   jackson:
     time-zone: Asia/Shanghai
     default-property-inclusion: always
+    deserialization:
+      accept-float-as-int: false
 
 mybatis:
   configuration:
@@ -38,4 +40,4 @@ app:
     issuer: ${JWT_ISSUER:pandora-log}
   admin:
     init-username: ${ADMIN_INIT_USERNAME:admin}
-    init-password: ${ADMIN_INIT_PASSWORD:}
+    init-password: ${ADMIN_INIT_PASSWORD:123456}

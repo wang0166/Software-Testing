@@ -1,6 +1,7 @@
 package com.pandora.log.dto;
 
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.time.OffsetDateTime;
 import java.util.List;
 
@@ -31,7 +32,8 @@ public final class MobileDtos {
             boolean isImportant,
             OffsetDateTime submittedAt,
             OffsetDateTime createdAt,
-            OffsetDateTime updatedAt) {
+            OffsetDateTime updatedAt,
+            String authorRole, Long departmentId, String departmentName, Long teamId, String teamName) {
     }
 
     public record LogCommentDto(
@@ -82,8 +84,8 @@ public final class MobileDtos {
             Long id,
             String name,
             String details,
-            LocalDate startDate,
-            LocalDate deadline,
+            LocalDateTime startDate,
+            LocalDateTime deadline,
             String urgency,
             int assigneeCount,
             int completedCount,
@@ -107,8 +109,8 @@ public final class MobileDtos {
             Long senderId,
             String name,
             String details,
-            LocalDate startDate,
-            LocalDate deadline,
+            LocalDateTime startDate,
+            LocalDateTime deadline,
             String urgency,
             OffsetDateTime createdAt,
             OffsetDateTime updatedAt,
@@ -120,8 +122,8 @@ public final class MobileDtos {
             Long taskId,
             String name,
             String details,
-            LocalDate startDate,
-            LocalDate deadline,
+            LocalDateTime startDate,
+            LocalDateTime deadline,
             String urgency,
             String executionStatus,
             String reviewStatus,
@@ -154,8 +156,8 @@ public final class MobileDtos {
             Long taskId,
             String name,
             String details,
-            LocalDate startDate,
-            LocalDate deadline,
+            LocalDateTime startDate,
+            LocalDateTime deadline,
             String urgency,
             String executionStatus,
             String reviewStatus,
@@ -214,7 +216,8 @@ public final class MobileDtos {
             Long personalTaskId,
             String name,
             String details,
-            LocalDate deadline,
+            LocalDateTime startDate,
+            LocalDateTime deadline,
             String urgency,
             String executionStatus,
             String reviewStatus) {

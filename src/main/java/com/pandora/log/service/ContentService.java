@@ -37,10 +37,6 @@ public class ContentService {
         this.auditService = auditService;
     }
 
-    public PageResult<CompanyItemDto> matters(Integer page, Integer size) {
-        return list("company_matters", page, size);
-    }
-
     public PageResult<CompanyItemDto> importantTasks(Integer page, Integer size) {
         return list("company_important_tasks", page, size);
     }
