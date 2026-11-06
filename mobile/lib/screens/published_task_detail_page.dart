@@ -128,15 +128,9 @@ class _PublishedTaskDetailPageState extends State<PublishedTaskDetailPage> {
                       Row(children:[
                         Expanded(child:Text(item.assigneeName,
                           style:const TextStyle(fontWeight:FontWeight.w800,color:Palette.deep))),
-                        Text(_status(item.status),style:TextStyle(
-                          color:item.status=='BLOCKED'?Palette.coral:Palette.primary,fontSize:12)),
-                        const SizedBox(width:8),
-                        Text(item.progressPercent==null?'未填报':'${item.progressPercent}%',
-                          style:const TextStyle(color:Palette.muted,fontSize:12)),
+                        Text(item.status == 'COMPLETED' ? '已完成' : '进行中',
+                          style:const TextStyle(color:Palette.primary,fontSize:12)),
                       ]),
-                      if(item.progressNote.isNotEmpty) Padding(
-                        padding:const EdgeInsets.only(top:6),
-                        child:Text(item.progressNote,style:const TextStyle(color:Palette.muted,fontSize:12))),
                       if(item.reviewStatus=='PENDING') Padding(
                         padding:const EdgeInsets.only(top:6),child:Wrap(spacing:7,children:[
                           OutlinedButton(onPressed:busy?null:()=>_review(item,'RETURNED'),child:const Text('退回检查')),

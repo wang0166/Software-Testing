@@ -48,7 +48,7 @@ class _HomePageState extends State<HomePage> {
     final deadlineLabel = deadline == null || deadline.isEmpty
       ? '未设置截止' : '截止 ${deadline.replaceFirst('T', ' ')}';
     final urgent = task.urgency == 'URGENT' ? '紧急 · ' : '';
-    return '${task.statusLabel} · $urgent$deadlineLabel';
+    return '${task.status == 'COMPLETED' ? '已完成' : '进行中'} · $urgent$deadlineLabel';
   }
 
   Future<void> _openReceivedTask(TaskItem task) async {
@@ -85,7 +85,7 @@ class _HomePageState extends State<HomePage> {
       )).toList();
       return Padding(
         padding: const EdgeInsets.fromLTRB(12, 10, 12, 9),
-        child: Column(children: [
+        child: ListView(children: [
           Padding(
             padding: const EdgeInsets.symmetric(vertical: 4),
             child: Row(children: [
@@ -111,7 +111,7 @@ class _HomePageState extends State<HomePage> {
             ]),
           ),
           const SizedBox(height: 8),
-          Expanded(flex: 4, child: Row(children: [
+          SizedBox(height: 240, child: Row(children: [
             Expanded(child: _HomeTile(
               key: const Key('event_history_panel'),
               title: '事件纪', order: '01', records: matters,
@@ -125,7 +125,7 @@ class _HomePageState extends State<HomePage> {
             )),
           ])),
           const SizedBox(height: 10),
-          Expanded(flex: 6, child: DailyTodosCalendar(
+          SizedBox(height: 675, child: DailyTodosCalendar(
             key: ValueKey('daily_todo_${widget.app.user?.id ?? 0}'),
             userId: widget.app.user?.id ?? 0,
           )),

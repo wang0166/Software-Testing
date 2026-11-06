@@ -21,6 +21,22 @@ class _LogsPageState extends State<LogsPage> {
   final _search = TextEditingController();
   String _filter = '部门日志';
   String? _department;
+  String _logStatus = '全部状态';
+  DateTimeRange? _dateRange;
+  bool _newestFirst = true;
+  int _shown = 20;
+
+  Future<void> _selectDates() async {
+    final picked = await showDateRangePicker(context: context,
+      firstDate: DateTime(2020), lastDate: DateTime(2100),
+      initialDateRange: _dateRange, helpText: '按日期筛选日志');
+    if (picked != null && mounted) {
+      setState(() {
+        _dateRange = picked;
+        _shown = 20;
+      });
+    }
+  }
   @override void initState() {super.initState(); _refresh();}
   @override void dispose() {_search.dispose(); super.dispose();}
   void _refresh() {
@@ -34,6 +50,7 @@ class _LogsPageState extends State<LogsPage> {
       _filter = mode;
       _department = null;
       _selectedSubordinateId = null;
+      _shown = 20;
       if (mode == '我的下属') {
         _subordinates ??= widget.app.repo.subordinatesTaskOverview();
       }
@@ -108,9 +125,56 @@ class _LogsPageState extends State<LogsPage> {
           selectedSubordinateId: _selectedSubordinateId,
           search: _search.text,
         );
+        final matching = visible.where((l) {
+          if (_logStatus == '已提交' && !l.submitted) return false;
+          if (_logStatus == '草稿' && l.submitted) return false;
+          if (_dateRange != null) {
+            final day = DateTime.tryParse(l.logDate);
+            if (day == null || day.isBefore(_dateRange!.start) ||
+                day.isAfter(_dateRange!.end)) {
+              return false;
+            }
+          }
+          return true;
+        }).toList()..sort((a, b) => _newestFirst
+          ? b.logDate.compareTo(a.logDate)
+          : a.logDate.compareTo(b.logDate));
         final groups = <String, Map<String, List<WorkLog>>>{};
-        for (final log in visible) {groups.putIfAbsent(_dept(log), () => {}).putIfAbsent(_team(log), () => []).add(log);}
-        return RefreshIndicator(onRefresh: () async {setState(_refresh); await _future;}, child: ListView(padding: const EdgeInsets.fromLTRB(20, 0, 20, 115), children: [
+        for (final log in matching.take(_shown)) {
+          groups.putIfAbsent(_dept(log), () => {})
+            .putIfAbsent(_team(log), () => []).add(log);
+        }
+        return RefreshIndicator(onRefresh: () async {setState(_refresh); await _future;},
+          child: ListView(padding: const EdgeInsets.fromLTRB(20, 0, 20, 115), children: [
+          Wrap(spacing: 8, runSpacing: 5, crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              SizedBox(width: 109, height: 40, child: DropdownButtonFormField<String>(
+                key: ValueKey(_logStatus), initialValue: _logStatus,
+                isExpanded: true, decoration: const InputDecoration(contentPadding:
+                  EdgeInsets.symmetric(horizontal: 8, vertical: 7)),
+                items: ['全部状态', '已提交', '草稿'].map((label) => DropdownMenuItem(
+                  value: label, child: Text(label, style: const TextStyle(fontSize: 11))))
+                  .toList(),
+                onChanged: (v) {
+                  if (v != null) {
+                    setState(() {
+                      _logStatus = v;
+                      _shown = 20;
+                    });
+                  }
+                },
+              )),
+              ActionChip(label: Text(_dateRange == null ? '日期范围'
+                : '${_dateRange!.start.month}/${_dateRange!.start.day}—${_dateRange!.end.month}/${_dateRange!.end.day}'),
+                onPressed: _selectDates),
+              ActionChip(label: Text(_newestFirst ? '最新优先' : '最早优先'),
+                onPressed: () => setState(() => _newestFirst = !_newestFirst)),
+              if (_dateRange != null) ActionChip(label: const Text('清除日期'),
+                onPressed: () => setState(() => _dateRange = null)),
+            ]),
+          Padding(padding: const EdgeInsets.only(top: 7, bottom: 9),
+            child: Text('匹配 ${matching.length} 条 · 当前展示 ${matching.length < _shown ? matching.length : _shown} 条',
+              style: const TextStyle(color: Palette.muted, fontSize: 11))),
           if (_filter == '部门日志') ...[
             const Text('部门筛选', style: TextStyle(color: Palette.deep, fontWeight: FontWeight.w800, fontSize: 12)),
             const SizedBox(height: 8),
@@ -148,6 +212,10 @@ class _LogsPageState extends State<LogsPage> {
               ...groups[dept]![team]!.map(_logTile),
             ], const SizedBox(height: 14),
           ],
+          if (matching.length > _shown)
+            TextButton.icon(onPressed: () => setState(() => _shown += 20),
+              icon: const Icon(Icons.expand_more),
+              label: Text('加载更多日志（剩余 ${matching.length - _shown} 条）')),
         ]));
           });
         },
