@@ -40,18 +40,27 @@ void main() {
     expect(find.text('任务执行台账'), findsOneWidget);
   });
 
-  testWidgets('四宫格后两个信息模块具有独立编辑入口', (tester) async {
+  testWidgets('甲方新版首页仅有事件纪、任务看板和每日事项', (tester) async {
+    await tester.binding.setSurfaceSize(const Size(390, 780));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
     final app = AppState();
     await tester.runAsync(() => app.login('demo001', 'demo123456'));
     await tester.pumpWidget(MaterialApp(home: Scaffold(body:
       HomePage(app: app, onTab: (_) {}))));
+    await tester.pump(const Duration(milliseconds: 500));
     await tester.pumpAndSettle();
-    expect(find.byKey(const Key('home_edit_03')), findsOneWidget);
-    expect(find.byKey(const Key('home_edit_04')), findsOneWidget);
-    expect(find.byKey(const Key('home_edit_01')), findsNothing);
+    expect(find.byKey(const Key('event_history_panel')), findsOneWidget);
+    expect(find.byKey(const Key('task_board_panel')), findsOneWidget);
+    expect(find.byKey(const Key('daily_todo_panel')), findsOneWidget);
+    // The removed personal-info/log sections must NOT reappear.
+    expect(find.byKey(const Key('home_edit_03')), findsNothing);
+    expect(find.byKey(const Key('home_edit_04')), findsNothing);
+    expect(find.text('个人10大信息'), findsNothing);
+    expect(find.text('日志展示'), findsNothing);
+    expect(tester.takeException(), isNull);
   });
 
-  testWidgets('AI 地图预留入口不会伪装成已经接入的 AI', (tester) async {
+  testWidgets('AI 地图在演示模式下明确提示未连接 DeepSeek 服务', (tester) async {
     final app = AppState();
     await tester.runAsync(() => app.login('demo001', 'demo123456'));
     await tester.pumpWidget(MaterialApp(home: Scaffold(body:
@@ -59,6 +68,7 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const Key('ai_map_section_2')));
     await tester.pumpAndSettle();
-    expect(find.text('AI 数据分析 · 接口预留'), findsOneWidget);
+    expect(find.text('AI 数据分析 · DeepSeek'), findsOneWidget);
+    expect(find.textContaining('未连接后端'), findsOneWidget);
   });
 }

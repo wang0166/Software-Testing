@@ -41,9 +41,9 @@ void main() {
     await tester.tap(find.byKey(const Key('login_button')));
     await tester.pump(const Duration(milliseconds: 300));
     await tester.pumpAndSettle();
-    expect(find.text('信息导图'), findsOneWidget);
-    expect(find.text('导图'), findsOneWidget);
-    expect(find.text('视图'), findsOneWidget);
+    expect(find.text('事件纪'), findsOneWidget);
+    expect(find.text('首页'), findsWidgets);
+    expect(find.text('公司'), findsOneWidget);
     expect(find.text('日志'), findsOneWidget);
     expect(find.text('AI地图'), findsOneWidget);
     expect(find.text('我的'), findsOneWidget);

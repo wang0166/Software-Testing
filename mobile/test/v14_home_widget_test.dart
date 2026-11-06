@@ -8,7 +8,7 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   setUp(() => SharedPreferences.setMockInitialValues({}));
 
-  testWidgets('导图四面板固定于同一屏，内容各自滚动', (tester) async {
+  testWidgets('首页事件纪、任务看板、每日事项同屏展示', (tester) async {
     await tester.binding.setSurfaceSize(const Size(390, 780));
     addTearDown(() => tester.binding.setSurfaceSize(null));
     final app = AppState();
@@ -16,14 +16,16 @@ void main() {
     await tester.pumpWidget(MaterialApp(
       home: Scaffold(body: HomePage(app: app, onTab: (_) {})),
     ));
+    await tester.pump(const Duration(milliseconds: 500));
     await tester.pumpAndSettle();
 
-    expect(find.text('公司10大重要事项'), findsOneWidget);
-    expect(find.text('公司10大任务派发'), findsOneWidget);
-    expect(find.text('个人10大信息'), findsOneWidget);
-    expect(find.text('日志展示'), findsOneWidget);
-    // 不存在第五个整个首页的滚动容器；4 个 ListView 各属一面板。
-    expect(find.byType(ListView), findsNWidgets(4));
+    expect(find.text('事件纪'), findsOneWidget);
+    expect(find.text('任务看板'), findsOneWidget);
+    expect(find.text('每日事项'), findsOneWidget);
+    expect(find.text('个人10大信息'), findsNothing);
+    expect(find.text('日志展示'), findsNothing);
+    expect(find.byKey(const Key('daily_todo_month_grid')), findsOneWidget);
+    expect(find.byType(ListView), findsNWidgets(2));
     expect(tester.takeException(), isNull);
   });
 }

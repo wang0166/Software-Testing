@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../core/daily_todos.dart';
 import '../core/models.dart';
 import '../core/task_issue_utils.dart';
 import 'repository.dart';
@@ -426,6 +427,10 @@ class MockRepository implements PandoraRepository {
   @override Future<List<TaskItem>> taskMap() async =>
     await tasks(personal:false);
 
+  @override Future<AiAnalysis> aiMapAnalysis({bool refresh=false}) async {
+    throw const AppFailure('当前为演示数据模式，未连接后端，无法调用 DeepSeek 分析');
+  }
+
   @override Future<List<UserProfile>> companyMembers() async {
     final viewer = _user;
     return users.where((u) => u.role != 'ADMIN' && u.id != viewer.id).toList();
@@ -617,6 +622,37 @@ class MockRepository implements PandoraRepository {
       }
     }
     return result;
+  }
+  Future<List<DailyTodo>> _loadDaily() async {
+    final raw=(await _prefs).getString('pandora_mock_daily_${_user.id}');
+    if(raw==null) return [];
+    try{return (jsonDecode(raw) as List).map(DailyTodo.fromJson).toList();}catch(_){return [];}
+  }
+  Future<void> _saveDaily(List<DailyTodo> items) async {
+    await (await _prefs).setString('pandora_mock_daily_${_user.id}',
+      jsonEncode(items.map((e)=>e.toJson()).toList()));
+  }
+  @override Future<List<DailyTodo>> dailyItems({String? from,String? to}) async {
+    final all=await _loadDaily();
+    return all.where((e)=>(from==null||e.date.compareTo(from)>=0) &&
+      (to==null||e.date.compareTo(to)<=0)).toList();
+  }
+  @override Future<DailyTodo> createDailyItem({required String date,required String title,String note='',bool completed=false}) async {
+    if(title.trim().isEmpty) throw const AppFailure('请填写事项名称');
+    final all=await _loadDaily();
+    final item=DailyTodo(id:'${DateTime.now().microsecondsSinceEpoch}',
+      date:date,title:title.trim(),note:note.trim(),completed:completed);
+    all.add(item); await _saveDaily(all); return item;
+  }
+  @override Future<DailyTodo> updateDailyItem(DailyTodo item) async {
+    final all=await _loadDaily();
+    final index=all.indexWhere((e)=>e.id==item.id);
+    if(index<0) throw const AppFailure('事项不存在或无权修改');
+    all[index]=item; await _saveDaily(all); return item;
+  }
+  @override Future<void> deleteDailyItem(String id) async {
+    final all=await _loadDaily();
+    await _saveDaily(all.where((e)=>e.id!=id).toList());
   }
   @override Future<void> dispatchTask({required String name,required String details,required String startDate,required String deadline,required String urgency,required List<int> assigneeIds}) async {
     if(name.trim().isEmpty||details.trim().isEmpty||assigneeIds.isEmpty) throw const AppFailure('请填写任务信息并选择接收人');

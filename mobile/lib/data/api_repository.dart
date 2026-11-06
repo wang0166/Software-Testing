@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:http/http.dart' as http;
+import '../core/daily_todos.dart';
 import '../core/models.dart';
 import 'repository.dart';
 
@@ -18,18 +19,18 @@ class ApiRepository implements PandoraRepository {
     final normalized=baseUrl.endsWith('/')?baseUrl.substring(0,baseUrl.length-1):baseUrl;
     return Uri.parse('$normalized$path').replace(queryParameters:query);
   }
-  Future<Map<String,dynamic>> _request(String method,String path,{Map<String,String>? query,Object? body,bool authenticated=true,bool retry=true}) async {
+  Future<Map<String,dynamic>> _request(String method,String path,{Map<String,String>? query,Object? body,bool authenticated=true,bool retry=true,Duration timeout=const Duration(seconds:15)}) async {
     Future<http.Response> send() async {
       final headers=<String,String>{'Content-Type':'application/json; charset=utf-8'};
       if(authenticated&&_accessToken!=null) headers['Authorization']='Bearer $_accessToken';
       final uri=_uri(path,query);
       final payload=body==null?null:jsonEncode(body);
       switch(method) {
-        case 'POST':return client.post(uri,headers:headers,body:payload).timeout(const Duration(seconds:15));
-        case 'PUT':return client.put(uri,headers:headers,body:payload).timeout(const Duration(seconds:15));
-        case 'PATCH':return client.patch(uri,headers:headers,body:payload).timeout(const Duration(seconds:15));
-        case 'DELETE':return client.delete(uri,headers:headers,body:payload).timeout(const Duration(seconds:15));
-        default:return client.get(uri,headers:headers).timeout(const Duration(seconds:15));
+        case 'POST':return client.post(uri,headers:headers,body:payload).timeout(timeout);
+        case 'PUT':return client.put(uri,headers:headers,body:payload).timeout(timeout);
+        case 'PATCH':return client.patch(uri,headers:headers,body:payload).timeout(timeout);
+        case 'DELETE':return client.delete(uri,headers:headers,body:payload).timeout(timeout);
+        default:return client.get(uri,headers:headers).timeout(timeout);
       }
     }
     try {
@@ -206,6 +207,37 @@ class ApiRepository implements PandoraRepository {
       'executionStatus':j['executionStatus'],
       'details':textOf(j['details']),
     },source:'RECEIVED');}).toList();
+  }
+  @override Future<AiAnalysis> aiMapAnalysis({bool refresh=false}) async {
+    final data=await _request('POST','/ai/map/analysis',
+      body:{'refresh':refresh}, timeout:const Duration(seconds:90));
+    return AiAnalysis.fromJson(_data(data));
+  }
+  // 每日待办：云端为准，服务端按登录用户隔离，客户端不再自行编造 AI/统计数据。
+  @override Future<List<DailyTodo>> dailyItems({String? from,String? to}) async {
+    final query=<String,String?>{'from':from,'to':to}
+      ..removeWhere((_,value)=>value==null);
+    final data=_data(await _request('GET','/daily-items',
+      query:query.isEmpty?null:query.cast<String,String>()));
+    return _items(data).map(DailyTodo.fromJson)
+      .where((item)=>item.id.isNotEmpty).toList();
+  }
+  @override Future<DailyTodo> createDailyItem({required String date,
+    required String title,String note='',bool completed=false}) async {
+    final data=_data(await _request('POST','/daily-items',
+      body:{'date':date,'title':title,'note':note,'completed':completed}));
+    final item=DailyTodo.fromJson(data);
+    if(item.id.isEmpty) throw const AppFailure('服务器未返回每日事项编号');
+    return item;
+  }
+  @override Future<DailyTodo> updateDailyItem(DailyTodo item) async {
+    final data=_data(await _request('PUT','/daily-items/${item.id}',
+      body:{'date':item.date,'title':item.title,'note':item.note,
+        'completed':item.completed}));
+    return DailyTodo.fromJson(data);
+  }
+  @override Future<void> deleteDailyItem(String id) async {
+    await _request('DELETE','/daily-items/$id');
   }
   @override Future<List<UserProfile>> recipients() async {
     final data=_data(await _request('GET','/tasks/recipients'));

@@ -1,3 +1,4 @@
+import '../core/daily_todos.dart';
 import '../core/models.dart';
 
 class AppFailure implements Exception {
@@ -37,6 +38,8 @@ abstract class PandoraRepository {
   Future<List<CompanyItem>> companyImportantTasks();
   Future<List<CalendarDay>> calendar(String from,String to);
   Future<List<TaskItem>> taskMap();
+  /// 服务端汇总当前用户授权数据并调用 DeepSeek；refresh=true 跳过 5 分钟缓存。
+  Future<AiAnalysis> aiMapAnalysis({bool refresh = false});
   Future<List<UserProfile>> recipients();
   /// Company-wide candidate list for dispatch approval requests.
   Future<List<UserProfile>> companyMembers();
@@ -56,6 +59,12 @@ abstract class PandoraRepository {
     required List<int> assigneeIds});
   /// Pending creation: withdraw; published task: request approval to delete.
   Future<String> requestIssuedTaskDelete(IssuedTask original);
+  /// 每日待办云端同步：按日期区间拉取，服务端按登录用户隔离。
+  Future<List<DailyTodo>> dailyItems({String? from, String? to});
+  Future<DailyTodo> createDailyItem({required String date, required String title,
+    String note = '', bool completed = false});
+  Future<DailyTodo> updateDailyItem(DailyTodo item);
+  Future<void> deleteDailyItem(String id);
   Future<List<DispatchedTask>> dispatchedTasks();
   Future<List<TaskAssignment>> dispatchedAssignments(int taskId);
   Future<void> dispatchTask({required String name,required String details,required String startDate,required String deadline,required String urgency,required List<int> assigneeIds});
