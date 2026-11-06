@@ -10,7 +10,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import com.pandora.log.common.BusinessException;
 import com.pandora.log.common.CurrentUser;
-import com.pandora.log.common.CurrentUserContext;
+import com.pandora.log.security.CurrentUserContext;
 import com.pandora.log.common.ErrorCode;
 import com.pandora.log.dto.MobileDtos.DailyItemDto;
 import com.pandora.log.dto.MobileDtos.DailyItemRequest;

@@ -87,6 +87,18 @@ public final class MobileDtos {
             List<Long> assigneeIds) {
     }
 
+    // 任务变更申请：UPDATE 携带完整任务字段，DELETE 只需 action。
+    public record ChangeRequestDto(
+            String action,
+            String name,
+            String details,
+            String startDate,
+            String deadline,
+            String urgency,
+            String taskType,
+            List<Long> assigneeIds) {
+    }
+
     public record DispatchResultDto(Long taskId, int assigneeCount) {
     }
 
