@@ -89,7 +89,19 @@ class MobileBackendContractTest extends EmbeddedPostgresSupport {
         for (String end:List.of("2026-10-29T09:30:00","2026-10-29T08:30:00","2026-10-29T10:30:01","2026-02-30T10:30:00","2026-10-29T10:30:00+08:00")) {
             response(post("/api/tasks"),leader,task("2026-10-29T09:30:00",end,employeeId),400);
         }
-        response(post("/api/tasks"),leader,task("2026-10-29T09:30:00","2026-10-29T10:30:00",otherId),403);
+        // 同公司跨部门允许派发；跨公司仍拒绝
+        long foreignCompany=jdbc.queryForObject(
+                "INSERT INTO companies(name) VALUES ('外部公司') RETURNING id",Long.class);
+        long foreignDepartment=jdbc.queryForObject(
+                "INSERT INTO departments(name,company_id) VALUES ('外部部门',?) RETURNING id",
+                Long.class,foreignCompany);
+        long foreignTeam=jdbc.queryForObject(
+                "INSERT INTO teams(name,department_id) VALUES ('外部团队',?) RETURNING id",
+                Long.class,foreignDepartment);
+        long foreignId=user("outsider","EMPLOYEE",foreignDepartment,foreignTeam);
+        response(post("/api/tasks"),leader,task("2026-10-29T09:30:00","2026-10-29T10:30:00",foreignId),403);
+        // 派发给上级不能走直接派发，必须提交派发申请
+        response(post("/api/tasks"),leader,task("2026-10-29T09:30:00","2026-10-29T10:30:00",managerId),409);
         assertThat(jdbc.queryForObject("SELECT count(*) FROM tasks",Long.class)).isZero();
     }
     @Test void legacyDateRequestsStillCoverTheWholeDay() throws Exception {
@@ -245,10 +257,22 @@ class MobileBackendContractTest extends EmbeddedPostgresSupport {
     }
 
     @Test void subordinateOverviewAndDispatchRequestRestoreCompanyModule() throws Exception {
-        JsonNode request=ok(post("/api/tasks/dispatch-requests"),leader,Map.of(
+        // 派发给下级不需要审核，直接生成任务
+        JsonNode direct=ok(post("/api/tasks/dispatch-requests"),leader,Map.of(
                 "name","派发申请任务","details","完整说明","startDate","2026-10-29T09:30:00",
                 "deadline","2026-10-29T17:45:00","urgency","NOT_URGENT","taskType","GENERAL",
                 "assigneeIds",List.of(employeeId)));
+        assertThat(direct.path("status").asText()).isEqualTo("APPROVED");
+        assertThat(direct.path("requestId").isNull()).isTrue();
+        long taskId=direct.path("taskId").asLong();
+        assertThat(taskId).isPositive();
+        assertThat(ok(get("/api/tasks/dispatch-requests/mine"),leader,null).path("items").size()).isZero();
+
+        // 派发给上级必须审核，由接收人的上级（部门负责人）审批
+        JsonNode request=ok(post("/api/tasks/dispatch-requests"),leader,Map.of(
+                "name","向上派发任务","details","需要上级确认","startDate","2026-10-29T09:30:00",
+                "deadline","2026-10-29T17:45:00","urgency","NOT_URGENT","taskType","GENERAL",
+                "assigneeIds",List.of(managerId)));
         assertThat(request.path("status").asText()).isEqualTo("PENDING");
         assertThat(request.path("taskId").isNull()).isTrue();
         long requestId=request.path("requestId").asLong();
@@ -260,15 +284,16 @@ class MobileBackendContractTest extends EmbeddedPostgresSupport {
         JsonNode approved=ok(post("/api/tasks/dispatch-requests/"+requestId+"/approve"),manager,
                 Map.of("comment","同意派发"));
         assertThat(approved.path("status").asText()).isEqualTo("APPROVED");
-        long taskId=approved.path("taskId").asLong();
-        assertThat(taskId).isPositive();
+        assertThat(approved.path("taskId").asLong()).isPositive();
         assertThat(ok(get("/api/tasks/dispatch-requests/mine"),leader,null)
                 .path("items").get(0).path("status").asText()).isEqualTo("APPROVED");
 
         JsonNode recipients=ok(get("/api/tasks/recipients/all"),leader,null);
-        assertThat(recipients.path("items").size()).isEqualTo(1);
-        assertThat(recipients.path("items").get(0).path("id").asLong()).isEqualTo(employeeId);
-        assertThat(recipients.path("items").get(0).path("realName").asText()).isEqualTo("member");
+        assertThat(recipients.path("items").size()).isEqualTo(3);
+        assertThat(recipients.path("items").get(0).path("id").asLong()).isEqualTo(managerId);
+        assertThat(recipients.path("items").get(0).path("realName").asText()).isEqualTo("manager");
+        assertThat(recipients.path("items").get(1).path("id").asLong()).isEqualTo(employeeId);
+        assertThat(recipients.path("items").get(2).path("id").asLong()).isEqualTo(otherId);
 
         JsonNode overview=ok(get("/api/tasks/subordinates/overview"),leader,null);
         assertThat(overview.path("total").asInt()).isEqualTo(1);

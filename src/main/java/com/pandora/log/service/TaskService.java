@@ -227,6 +227,10 @@ public class TaskService {
         if (!allowed.containsAll(assigneeIds)) {
             throw new BusinessException(ErrorCode.CANNOT_DISPATCH);
         }
+        // 直接派发不允许绕过审核：接收人包含上级时必须走派发申请。
+        if (requiresApproval(currentUser, assigneeIds)) {
+            throw new BusinessException(ErrorCode.DISPATCH_REQUIRES_APPROVAL);
+        }
 
         Long taskId = jdbcTemplate.queryForObject(
                 "INSERT INTO tasks (sender_id, name, details, start_date, deadline, urgency) "
@@ -256,6 +260,13 @@ public class TaskService {
             throw new BusinessException(ErrorCode.CANNOT_DISPATCH);
         }
 
+        // 派发给下级或同级不需要审核，直接生成任务；只有接收人包含上级时才进入审核流程。
+        if (!requiresApproval(currentUser, values.assigneeIds())) {
+            Long taskId = createTask(currentUser.id(), values, values.assigneeIds());
+            return new DispatchRequestResultDto(null, null, taskId, "APPROVED",
+                    values.assigneeIds().size());
+        }
+
         Long requestId = jdbcTemplate.queryForObject(
                 "INSERT INTO task_dispatch_requests (requester_id, name, details, start_date, deadline, "
                         + "urgency, task_type) VALUES (?, ?, ?, ?, ?, ?, ?) RETURNING id",
@@ -263,17 +274,6 @@ public class TaskService {
                 values.deadline(), values.urgency(), values.taskType());
         insertDispatchAssignees(requestId, values.assigneeIds());
 
-        // 创始人没有更高上级，避免审批死锁，直接按通过处理并生成任务。
-        if ("FOUNDER".equals(currentUser.roleCode())) {
-            Long taskId = createTask(currentUser.id(), values, values.assigneeIds());
-            jdbcTemplate.update(
-                    "UPDATE task_dispatch_requests SET status = 'APPROVED', reviewer_id = ?, "
-                            + "review_comment = '创始人派发自动通过', reviewed_at = now(), "
-                            + "created_task_id = ?, updated_at = now() WHERE id = ?",
-                    currentUser.id(), taskId, requestId);
-            return new DispatchRequestResultDto(requestId, requestId, taskId, "APPROVED",
-                    values.assigneeIds().size());
-        }
         return new DispatchRequestResultDto(requestId, requestId, null, "PENDING",
                 values.assigneeIds().size());
     }
@@ -1065,20 +1065,10 @@ public class TaskService {
     }
 
     private boolean isSuperiorOf(CurrentUser currentUser, Long targetId) {
-        if (targetId == null) {
+        UserRef target = userRef(targetId);
+        if (target == null) {
             return false;
         }
-        List<UserRef> rows = jdbcTemplate.query(
-                "SELECT role_code, department_id, team_id FROM users WHERE id = ? AND status = 'ACTIVE'",
-                (rs, index) -> new UserRef(
-                        rs.getString("role_code"),
-                        rs.getObject("department_id") == null ? null : rs.getLong("department_id"),
-                        rs.getObject("team_id") == null ? null : rs.getLong("team_id")),
-                targetId);
-        if (rows.isEmpty()) {
-            return false;
-        }
-        UserRef target = rows.get(0);
         return switch (currentUser.roleCode()) {
             case "FOUNDER" -> !"FOUNDER".equals(target.roleCode());
             case "DEPT_MANAGER" -> Set.of("TEAM_LEADER", "EMPLOYEE").contains(target.roleCode())
@@ -1087,6 +1077,48 @@ public class TaskService {
                     && java.util.Objects.equals(currentUser.teamId(), target.teamId());
             default -> false;
         };
+    }
+
+    /** 接收人包含上级时必须审核；全部是下级或同级时直接派发生效。 */
+    private boolean requiresApproval(CurrentUser currentUser, List<Long> assigneeIds) {
+        return assigneeIds.stream().anyMatch(assigneeId -> isSuperiorTo(currentUser, assigneeId));
+    }
+
+    /** 判断接收人是否为当前用户的上级，与 isSuperiorOf 互为反向。 */
+    private boolean isSuperiorTo(CurrentUser currentUser, Long targetId) {
+        if (targetId == null || targetId.equals(currentUser.id())) {
+            return false;
+        }
+        UserRef target = userRef(targetId);
+        if (target == null) {
+            return false;
+        }
+        if ("FOUNDER".equals(target.roleCode())) {
+            return !"FOUNDER".equals(currentUser.roleCode());
+        }
+        return switch (currentUser.roleCode()) {
+            case "EMPLOYEE" -> ("TEAM_LEADER".equals(target.roleCode())
+                    && java.util.Objects.equals(currentUser.teamId(), target.teamId()))
+                    || ("DEPT_MANAGER".equals(target.roleCode())
+                    && java.util.Objects.equals(currentUser.departmentId(), target.departmentId()));
+            case "TEAM_LEADER" -> "DEPT_MANAGER".equals(target.roleCode())
+                    && java.util.Objects.equals(currentUser.departmentId(), target.departmentId());
+            default -> false;
+        };
+    }
+
+    private UserRef userRef(Long userId) {
+        if (userId == null) {
+            return null;
+        }
+        List<UserRef> rows = jdbcTemplate.query(
+                "SELECT role_code, department_id, team_id FROM users WHERE id = ? AND status = 'ACTIVE'",
+                (rs, index) -> new UserRef(
+                        rs.getString("role_code"),
+                        rs.getObject("department_id") == null ? null : rs.getLong("department_id"),
+                        rs.getObject("team_id") == null ? null : rs.getLong("team_id")),
+                userId);
+        return rows.isEmpty() ? null : rows.get(0);
     }
 
     private ApproverScope approverScope(CurrentUser currentUser) {
@@ -1283,17 +1315,37 @@ public class TaskService {
     }
 
     private RecipientQuery recipientQuery(CurrentUser currentUser) {
+        // 派发范围放宽到全公司：同公司内除本人和管理员外的在职成员均可接收。
+        Long companyId = companyIdOf(currentUser);
+        if (companyId == null) {
+            throw new BusinessException(ErrorCode.CANNOT_DISPATCH);
+        }
+        return new RecipientQuery(
+                "u.status = 'ACTIVE' AND u.id <> ? AND u.role_code <> 'ADMIN' "
+                        + "AND (u.department_id IN (SELECT d.id FROM departments d WHERE d.company_id = ?) "
+                        + "OR u.id = (SELECT c.founder_id FROM companies c WHERE c.id = ?))",
+                new Object[] { currentUser.id(), companyId, companyId });
+    }
+
+    /** 解析当前用户所属公司；创始人通过企业表反查，其余角色沿部门/团队上溯。 */
+    private Long companyIdOf(CurrentUser currentUser) {
         return switch (currentUser.roleCode()) {
-            case "FOUNDER" -> new RecipientQuery(
-                    "u.role_code = 'DEPT_MANAGER' AND u.status = 'ACTIVE'", new Object[0]);
-            case "DEPT_MANAGER" -> new RecipientQuery(
-                    "u.role_code = 'TEAM_LEADER' AND u.status = 'ACTIVE' AND u.department_id = ?",
-                    new Object[] { currentUser.departmentId() });
-            case "TEAM_LEADER" -> new RecipientQuery(
-                    "u.role_code = 'EMPLOYEE' AND u.status = 'ACTIVE' AND u.team_id = ?",
-                    new Object[] { currentUser.teamId() });
-            default -> throw new BusinessException(ErrorCode.CANNOT_DISPATCH);
+            case "FOUNDER" -> firstId("SELECT id FROM companies WHERE founder_id = ?", currentUser.id());
+            case "DEPT_MANAGER" -> firstId("SELECT company_id FROM departments WHERE id = ?",
+                    currentUser.departmentId());
+            case "TEAM_LEADER", "EMPLOYEE" -> firstId(
+                    "SELECT d.company_id FROM teams t JOIN departments d ON d.id = t.department_id "
+                            + "WHERE t.id = ?", currentUser.teamId());
+            default -> null;
         };
+    }
+
+    private Long firstId(String sql, Long argument) {
+        if (argument == null) {
+            return null;
+        }
+        List<Long> ids = jdbcTemplate.queryForList(sql, Long.class, argument);
+        return ids.isEmpty() ? null : ids.get(0);
     }
 
     private SubordinateScope subordinateScope(CurrentUser currentUser) {
@@ -1314,20 +1366,9 @@ public class TaskService {
     }
 
     private Set<Long> allowedRecipientIds(CurrentUser currentUser) {
-        String sql = switch (currentUser.roleCode()) {
-            case "FOUNDER" -> "SELECT u.id FROM users u WHERE u.role_code = 'DEPT_MANAGER' AND u.status = 'ACTIVE'";
-            case "DEPT_MANAGER" -> "SELECT u.id FROM users u WHERE u.role_code = 'TEAM_LEADER' "
-                    + "AND u.status = 'ACTIVE' AND u.department_id = ?";
-            case "TEAM_LEADER" -> "SELECT u.id FROM users u WHERE u.role_code = 'EMPLOYEE' "
-                    + "AND u.status = 'ACTIVE' AND u.team_id = ?";
-            default -> throw new BusinessException(ErrorCode.CANNOT_DISPATCH);
-        };
-        List<Long> ids = "FOUNDER".equals(currentUser.roleCode())
-                ? jdbcTemplate.queryForList(sql, Long.class)
-                : jdbcTemplate.queryForList(sql, Long.class, "DEPT_MANAGER".equals(currentUser.roleCode())
-                        ? currentUser.departmentId()
-                        : currentUser.teamId());
-        return new HashSet<>(ids);
+        RecipientQuery query = recipientQuery(currentUser);
+        return new HashSet<>(jdbcTemplate.queryForList(
+                "SELECT u.id FROM users u WHERE " + query.filter(), Long.class, query.args()));
     }
 
     private void requireDispatchPermission(CurrentUser currentUser) {
