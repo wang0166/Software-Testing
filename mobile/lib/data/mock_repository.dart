@@ -426,6 +426,10 @@ class MockRepository implements PandoraRepository {
   @override Future<List<TaskItem>> taskMap() async =>
     await tasks(personal:false);
 
+  @override Future<AiAnalysis> aiMapAnalysis({bool refresh=false}) async {
+    throw const AppFailure('当前为演示数据模式，未连接后端，无法调用 DeepSeek 分析');
+  }
+
   @override Future<List<UserProfile>> companyMembers() async {
     final viewer = _user;
     return users.where((u) => u.role != 'ADMIN' && u.id != viewer.id).toList();

@@ -50,6 +50,10 @@ Web 端管理员需有查看、批准、拒绝申请的独立接口与 UI；移�
 
 现有 `/company-matters`、`/company-important-tasks` 和 `/logs` 已用于首页；如需各“十大”按重要性排序，需为公司事项和个人事项提供 `priority/rank` 或专用列表接口。
 
-## AI地图（尚未实现模型服务）
+## AI地图（已接入 DeepSeek）
 
-现有 `/task-map` 只提供任务列表。目前的页面仅按任务状态展示节点。如需真正 AI 关系图，需增加如 `POST /api/ai/task-graph` 或经确认的后端接口，具备输入授权校验、输出引用、隐私保护，并禁止未经授权的外部数据发送。
+`POST /api/ai/map/analysis`，请求体可选 `{"refresh": true}`。服务端先按当前登录用户的权限汇总日志与任务，再调用 DeepSeek 返回结构化分析：`summary / highlights / risks / suggestions / model / generatedAt / dataScope`。
+
+- 密钥只从后端环境变量 `DEEPSEEK_API_KEY` 读取，不下发到客户端；可选 `DEEPSEEK_BASE_URL`、`DEEPSEEK_MODEL`、`DEEPSEEK_TIMEOUT_SECONDS`。
+- 未配置密钥时返回 `HTTP 503 / code 50301`，移动端展示“未配置”提示，不生成任何伪造结论。
+- 服务端按用户缓存 5 分钟，`refresh=true` 强制重新分析；成功与失败都会写入 `operation_audits`。

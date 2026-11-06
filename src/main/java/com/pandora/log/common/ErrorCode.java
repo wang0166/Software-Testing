@@ -36,7 +36,9 @@ public enum ErrorCode {
     PASSWORD_APPROVAL_REQUIRED(40320, 403, "需要有效的密码修改批准"),
     PASSWORD_RESET_INVALID(40020, 400, "恢复凭据无效或已过期"),
     TOO_MANY_REQUESTS(42901, 429, "请求过于频繁，请稍后重试"),
-    INTERNAL_ERROR(50000, 500, "服务内部错误");
+    INTERNAL_ERROR(50000, 500, "服务内部错误"),
+    AI_UPSTREAM_FAILED(50201, 502, "AI 分析服务调用失败，请稍后重试"),
+    AI_NOT_CONFIGURED(50301, 503, "AI 分析服务未配置，请联系管理员设置 DEEPSEEK_API_KEY");
 
     private final int code;
     private final int httpStatus;

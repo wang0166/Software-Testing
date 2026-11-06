@@ -37,6 +37,8 @@ abstract class PandoraRepository {
   Future<List<CompanyItem>> companyImportantTasks();
   Future<List<CalendarDay>> calendar(String from,String to);
   Future<List<TaskItem>> taskMap();
+  /// 服务端汇总当前用户授权数据并调用 DeepSeek；refresh=true 跳过 5 分钟缓存。
+  Future<AiAnalysis> aiMapAnalysis({bool refresh = false});
   Future<List<UserProfile>> recipients();
   /// Company-wide candidate list for dispatch approval requests.
   Future<List<UserProfile>> companyMembers();

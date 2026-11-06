@@ -18,18 +18,18 @@ class ApiRepository implements PandoraRepository {
     final normalized=baseUrl.endsWith('/')?baseUrl.substring(0,baseUrl.length-1):baseUrl;
     return Uri.parse('$normalized$path').replace(queryParameters:query);
   }
-  Future<Map<String,dynamic>> _request(String method,String path,{Map<String,String>? query,Object? body,bool authenticated=true,bool retry=true}) async {
+  Future<Map<String,dynamic>> _request(String method,String path,{Map<String,String>? query,Object? body,bool authenticated=true,bool retry=true,Duration timeout=const Duration(seconds:15)}) async {
     Future<http.Response> send() async {
       final headers=<String,String>{'Content-Type':'application/json; charset=utf-8'};
       if(authenticated&&_accessToken!=null) headers['Authorization']='Bearer $_accessToken';
       final uri=_uri(path,query);
       final payload=body==null?null:jsonEncode(body);
       switch(method) {
-        case 'POST':return client.post(uri,headers:headers,body:payload).timeout(const Duration(seconds:15));
-        case 'PUT':return client.put(uri,headers:headers,body:payload).timeout(const Duration(seconds:15));
-        case 'PATCH':return client.patch(uri,headers:headers,body:payload).timeout(const Duration(seconds:15));
-        case 'DELETE':return client.delete(uri,headers:headers,body:payload).timeout(const Duration(seconds:15));
-        default:return client.get(uri,headers:headers).timeout(const Duration(seconds:15));
+        case 'POST':return client.post(uri,headers:headers,body:payload).timeout(timeout);
+        case 'PUT':return client.put(uri,headers:headers,body:payload).timeout(timeout);
+        case 'PATCH':return client.patch(uri,headers:headers,body:payload).timeout(timeout);
+        case 'DELETE':return client.delete(uri,headers:headers,body:payload).timeout(timeout);
+        default:return client.get(uri,headers:headers).timeout(timeout);
       }
     }
     try {
@@ -206,6 +206,11 @@ class ApiRepository implements PandoraRepository {
       'executionStatus':j['executionStatus'],
       'details':textOf(j['details']),
     },source:'RECEIVED');}).toList();
+  }
+  @override Future<AiAnalysis> aiMapAnalysis({bool refresh=false}) async {
+    final data=await _request('POST','/ai/map/analysis',
+      body:{'refresh':refresh}, timeout:const Duration(seconds:90));
+    return AiAnalysis.fromJson(_data(data));
   }
   @override Future<List<UserProfile>> recipients() async {
     final data=_data(await _request('GET','/tasks/recipients'));

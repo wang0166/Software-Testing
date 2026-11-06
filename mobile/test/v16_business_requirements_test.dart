@@ -51,7 +51,7 @@ void main() {
     expect(find.byKey(const Key('home_edit_01')), findsNothing);
   });
 
-  testWidgets('AI 地图预留入口不会伪装成已经接入的 AI', (tester) async {
+  testWidgets('AI 地图在演示模式下明确提示未连接 DeepSeek 服务', (tester) async {
     final app = AppState();
     await tester.runAsync(() => app.login('demo001', 'demo123456'));
     await tester.pumpWidget(MaterialApp(home: Scaffold(body:
@@ -59,6 +59,7 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const Key('ai_map_section_2')));
     await tester.pumpAndSettle();
-    expect(find.text('AI 数据分析 · 接口预留'), findsOneWidget);
+    expect(find.text('AI 数据分析 · DeepSeek'), findsOneWidget);
+    expect(find.textContaining('未连接后端'), findsOneWidget);
   });
 }
