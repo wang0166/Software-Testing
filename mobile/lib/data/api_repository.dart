@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:http/http.dart' as http;
+import '../core/daily_todos.dart';
 import '../core/models.dart';
 import 'repository.dart';
 
@@ -211,6 +212,32 @@ class ApiRepository implements PandoraRepository {
     final data=await _request('POST','/ai/map/analysis',
       body:{'refresh':refresh}, timeout:const Duration(seconds:90));
     return AiAnalysis.fromJson(_data(data));
+  }
+  // 每日待办：云端为准，服务端按登录用户隔离，客户端不再自行编造 AI/统计数据。
+  @override Future<List<DailyTodo>> dailyItems({String? from,String? to}) async {
+    final query=<String,String?>{'from':from,'to':to}
+      ..removeWhere((_,value)=>value==null);
+    final data=_data(await _request('GET','/daily-items',
+      query:query.isEmpty?null:query.cast<String,String>()));
+    return _items(data).map(DailyTodo.fromJson)
+      .where((item)=>item.id.isNotEmpty).toList();
+  }
+  @override Future<DailyTodo> createDailyItem({required String date,
+    required String title,String note='',bool completed=false}) async {
+    final data=_data(await _request('POST','/daily-items',
+      body:{'date':date,'title':title,'note':note,'completed':completed}));
+    final item=DailyTodo.fromJson(data);
+    if(item.id.isEmpty) throw const AppFailure('服务器未返回每日事项编号');
+    return item;
+  }
+  @override Future<DailyTodo> updateDailyItem(DailyTodo item) async {
+    final data=_data(await _request('PUT','/daily-items/${item.id}',
+      body:{'date':item.date,'title':item.title,'note':item.note,
+        'completed':item.completed}));
+    return DailyTodo.fromJson(data);
+  }
+  @override Future<void> deleteDailyItem(String id) async {
+    await _request('DELETE','/daily-items/$id');
   }
   @override Future<List<UserProfile>> recipients() async {
     final data=_data(await _request('GET','/tasks/recipients'));

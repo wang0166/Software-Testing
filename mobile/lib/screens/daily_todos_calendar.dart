@@ -2,11 +2,14 @@ import 'package:flutter/material.dart';
 import '../core/daily_todos.dart';
 import '../core/models.dart';
 import '../core/theme.dart';
+import '../data/repository.dart';
 
 /// The user's private month-view todo calendar. No company-task or log APIs.
+/// 传入 [repo] 时读写云端 `/api/daily-items`；为空时退回本地存储（离线与组件测试）。
 class DailyTodosCalendar extends StatefulWidget {
   final int userId;
-  const DailyTodosCalendar({super.key, required this.userId});
+  final PandoraRepository? repo;
+  const DailyTodosCalendar({super.key, required this.userId, this.repo});
   @override
   State<DailyTodosCalendar> createState() => _DailyTodosCalendarState();
 }
@@ -39,13 +42,31 @@ class _DailyTodosCalendarState extends State<DailyTodosCalendar> {
   Future<void> _reload() async {
     if (mounted) setState(() { _loading = true; _loadError = null; });
     try {
-      final loaded = await _storage.read();
+      await _loadItems();
       if (!mounted) return;
-      setState(() { _items = loaded; _loading = false; });
+      setState(() { _loading = false; });
     } catch (e) {
       if (!mounted) return;
       setState(() { _loadError = '$e'; _loading = false; });
     }
+  }
+
+  /// 云端模式下按当前可见月份拉取，避免一次请求全量历史；本地模式保持原行为。
+  Future<void> _loadItems() async {
+    final repo = widget.repo;
+    final firstDay = DateTime(_month.year, _month.month, 1);
+    final from = dayString(firstDay);
+    final to = dayString(DateTime(_month.year, _month.month,
+      DateUtils.getDaysInMonth(_month.year, _month.month)));
+    if (repo == null) {
+      _items = await _storage.read();
+      return;
+    }
+    final cloud = await repo.dailyItems(from: from, to: to);
+    _items = [
+      ..._items.where((e) => e.date.compareTo(from) < 0 || e.date.compareTo(to) > 0),
+      ...cloud,
+    ];
   }
 
   void _moveMonth(int delta) {
@@ -55,6 +76,7 @@ class _DailyTodosCalendarState extends State<DailyTodosCalendar> {
       final days = DateUtils.getDaysInMonth(newMonth.year, newMonth.month);
       _selected = DateTime(newMonth.year, newMonth.month, _selected.day.clamp(1, days).toInt());
     });
+    if (widget.repo != null) _reload();
   }
 
   Future<void> _chooseDate() async {
@@ -64,27 +86,77 @@ class _DailyTodosCalendarState extends State<DailyTodosCalendar> {
       helpText: '选择每日事项日期',
     );
     if (date != null && mounted) {
+      final changedMonth = date.year != _month.year || date.month != _month.month;
       setState(() {
         _selected = DateTime(date.year, date.month, date.day);
         _month = DateTime(date.year, date.month);
       });
+      if (changedMonth && widget.repo != null) _reload();
     }
   }
 
   List<DailyTodo> get _selectedItems => _items
       .where((item) => item.date == dayString(_selected)).toList();
 
-  Future<void> _save(List<DailyTodo> updated) async {
+  /// 云端模式按单条增删改落库；本地模式继续整表写入 SharedPreferences。
+  Future<void> _persist(DailyTodo draft) async {
     if (_saving) return;
     setState(() => _saving = true);
     try {
-      await _storage.write(updated);
-      if (!mounted) return;
-      setState(() => _items = updated);
+      final repo = widget.repo;
+      if (repo == null) {
+        final stored = draft.id.isEmpty
+          ? DailyTodo(
+              id: '${DateTime.now().microsecondsSinceEpoch}',
+              date: draft.date, title: draft.title,
+              note: draft.note, completed: draft.completed)
+          : draft;
+        final updated = [..._items]..removeWhere((e) => e.id == stored.id);
+        updated.add(stored);
+        await _storage.write(updated);
+        _items = updated;
+      } else {
+        final saved = draft.id.isEmpty
+          ? await repo.createDailyItem(date: draft.date, title: draft.title,
+              note: draft.note, completed: draft.completed)
+          : await repo.updateDailyItem(draft);
+        _items = [
+          ..._items.where((e) => e.id != draft.id && e.id != saved.id),
+          saved,
+        ];
+      }
+      if (mounted) setState(() {});
     } catch (error) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('保存每日事项失败：$error')),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _saving = false);
+      }
+    }
+  }
+
+  Future<void> _delete(DailyTodo item) async {
+    if (_saving) return;
+    setState(() => _saving = true);
+    try {
+      final repo = widget.repo;
+      if (repo == null) {
+        final updated = _items.where((e) => e.id != item.id).toList();
+        await _storage.write(updated);
+        _items = updated;
+      } else {
+        await repo.deleteDailyItem(item.id);
+        _items = _items.where((e) => e.id != item.id).toList();
+      }
+      if (mounted) setState(() {});
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('删除每日事项失败：$error')),
         );
       }
     } finally {
@@ -129,7 +201,7 @@ class _DailyTodosCalendarState extends State<DailyTodosCalendar> {
                   setDialogState(() => errorText = '请输入事项名称');
                   return;
                 }
-                final id = item?.id ?? DateTime.now().microsecondsSinceEpoch.toString();
+                final id = item?.id ?? '';
                 Navigator.pop(dialogContext, DailyTodo(
                   id: id, date: dayString(_selected), title: draftTitle.trim(),
                   note: draftNote.trim(), completed: item?.completed ?? false,
@@ -142,10 +214,7 @@ class _DailyTodosCalendarState extends State<DailyTodosCalendar> {
       ),
     );
     if (result == null || !mounted) return;
-    final updated = [..._items];
-    updated.removeWhere((e) => e.id == result.id);
-    updated.add(result);
-    await _save(updated);
+    await _persist(result);
   }
 
   Future<void> _remove(DailyTodo item) async {
@@ -161,7 +230,7 @@ class _DailyTodosCalendarState extends State<DailyTodosCalendar> {
       ),
     );
     if (sure == true && mounted) {
-      await _save(_items.where((e) => e.id != item.id).toList());
+      await _delete(item);
     }
   }
 
@@ -382,9 +451,7 @@ class _DailyTodosCalendarState extends State<DailyTodosCalendar> {
                         key: Key('daily_todo_check_${item.id}'),
                         value: item.completed,
                         onChanged: _saving ? null : (value) =>
-                          _save(_items.map((e) => e.id == item.id
-                            ? e.copyWith(completed: value ?? false)
-                            : e).toList()),
+                          _persist(item.copyWith(completed: value ?? false)),
                         visualDensity: VisualDensity.compact,
                       ),
                       Expanded(child: InkWell(
