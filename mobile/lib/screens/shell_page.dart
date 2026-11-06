@@ -10,7 +10,7 @@ import 'logs_page.dart';
 import 'task_map_page.dart';
 import 'profile_page.dart';
 
-/// 主导航名称和顺序固定为：导图、视图、日志、AI地图、我的。
+/// 主导航名称和顺序： 首页、公司、日志、AI地图、我的。
 /// 在 Shell 层轮询两个独立计数，角标仅放在工作视图的子页标签上。
 class ShellPage extends StatefulWidget {
   final AppState app;
@@ -33,7 +33,7 @@ class _ShellPageState extends State<ShellPage> with WidgetsBindingObserver {
       .contains(widget.app.user?.role);
   bool get _canUseTasks => widget.app.user?.canUseTasks ?? false;
 
-  static const labels = ['导图', '视图', '日志', 'AI地图', '我的'];
+  static const labels = ['首页', '公司', '日志', 'AI地图', '我的'];
   static const icons = [
     Icons.account_tree_outlined, Icons.calendar_month_outlined, Icons.article_outlined,
     Icons.schema_outlined, Icons.person_outline_rounded,
@@ -137,7 +137,7 @@ class _ShellPageState extends State<ShellPage> with WidgetsBindingObserver {
   @override
   Widget build(BuildContext context) {
     final pages = <Widget>[
-      HomePage(app: widget.app, onTab: (i) {
+      HomePage(app: widget.app, onTaskViewed: _onTaskViewed, onTab: (i) {
         setState(() => _index = i);
         if (i == 1) _refreshAllBadges();
       }),

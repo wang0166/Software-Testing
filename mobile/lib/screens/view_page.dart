@@ -73,7 +73,7 @@ class _ViewPageState extends State<ViewPage> {
         : null,
     body: Column(children: [
       Padding(padding: const EdgeInsets.fromLTRB(16, 18, 16, 10), child: BusinessHeading(
-        title: '工作视图', subtitle: '日历、任务与团队工作一目了然',
+        title: '公司', subtitle: '日历、任务与团队工作一目了然',
         action: selected == 0 ? TextButton(
           onPressed: () => Navigator.push(context, MaterialPageRoute<void>(
             builder: (_) => CalendarPage(app: widget.app, initialMode: 3,

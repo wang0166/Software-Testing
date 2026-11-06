@@ -13,7 +13,7 @@ void main() {
     expect(taskTypeLabel(task.taskType), '测试');
   });
 
-  test('演示模式公司首页四大面板有直接展示内容', () async {
+  test('演示模式保留事件纪和任务看板数据源', () async {
     final repo = MockRepository();
     await repo.login('founder', 'demo123456');
     expect((await repo.companyMatters()).length, 10);
