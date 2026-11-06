@@ -12,6 +12,7 @@ import com.pandora.log.common.CurrentUser;
 import com.pandora.log.common.ErrorCode;
 import com.pandora.log.common.PageQuery;
 import com.pandora.log.common.PageResult;
+import com.pandora.log.dto.AdminDtos.CompanyMatterRequest;
 import com.pandora.log.dto.MobileDtos.CompanyItemDto;
 import com.pandora.log.security.CurrentUserContext;
 
@@ -27,14 +28,76 @@ public class ContentService {
 
     private final JdbcTemplate jdbcTemplate;
     private final CurrentUserContext currentUserContext;
+    private final AuditService auditService;
 
-    public ContentService(JdbcTemplate jdbcTemplate, CurrentUserContext currentUserContext) {
+    public ContentService(JdbcTemplate jdbcTemplate, CurrentUserContext currentUserContext,
+            AuditService auditService) {
         this.jdbcTemplate = jdbcTemplate;
         this.currentUserContext = currentUserContext;
+        this.auditService = auditService;
     }
 
     public PageResult<CompanyItemDto> importantTasks(Integer page, Integer size) {
         return list("company_important_tasks", page, size);
+    }
+
+    public Long createMatter(CompanyMatterRequest request) {
+        CurrentUser currentUser = requireMatterManage();
+        if (request == null) {
+            throw validation("请求体不能为空");
+        }
+        String title = requireText(request.title(), "标题不能为空", 200);
+        String content = requireText(request.content(), "内容不能为空", 0);
+        int sortOrder = request.sortOrder() == null ? 0 : request.sortOrder();
+        Long id = jdbcTemplate.queryForObject(
+                "INSERT INTO company_matters (title, content, sort_order, updated_by) "
+                        + "VALUES (?, ?, ?, ?) RETURNING id",
+                Long.class, title, content, sortOrder, currentUser.id());
+        auditService.record("创建公司事项", "COMPANY_MATTER", String.valueOf(id), title, "SUCCESS");
+        return id;
+    }
+
+    public CompanyItemDto updateMatter(Long id, CompanyMatterRequest request) {
+        CurrentUser currentUser = requireMatterManage();
+        if (request == null) {
+            throw validation("请求体不能为空");
+        }
+        String title = requireText(request.title(), "标题不能为空", 200);
+        String content = requireText(request.content(), "内容不能为空", 0);
+        int sortOrder = request.sortOrder() == null ? 0 : request.sortOrder();
+        int updated = jdbcTemplate.update(
+                "UPDATE company_matters SET title = ?, content = ?, sort_order = ?, updated_by = ?, "
+                        + "updated_at = now() WHERE id = ?",
+                title, content, sortOrder, currentUser.id(), id);
+        if (updated == 0) {
+            throw new BusinessException(ErrorCode.NOT_FOUND);
+        }
+        auditService.record("编辑公司事项", "COMPANY_MATTER", String.valueOf(id), title, "SUCCESS");
+        return jdbcTemplate.query("SELECT id, title, content, sort_order, updated_at FROM company_matters WHERE id = ?",
+                MAPPER, id).get(0);
+    }
+
+    private CurrentUser requireMatterManage() {
+        CurrentUser currentUser = currentUserContext.require();
+        if (!currentUser.hasPermission("company-matter:manage")) {
+            throw new BusinessException(ErrorCode.FORBIDDEN);
+        }
+        return currentUser;
+    }
+
+    private static String requireText(String value, String message, int maxLength) {
+        String clean = value == null ? "" : value.trim();
+        if (clean.isEmpty()) {
+            throw validation(message);
+        }
+        if (maxLength > 0 && clean.length() > maxLength) {
+            throw validation("长度不能超过 " + maxLength + " 个字符");
+        }
+        return clean;
+    }
+
+    private static BusinessException validation(String message) {
+        return new BusinessException(ErrorCode.VALIDATION_FAILED, message);
     }
 
     private PageResult<CompanyItemDto> list(String table, Integer page, Integer size) {
