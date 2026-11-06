@@ -37,6 +37,23 @@ public final class AdminDtos {
     }
     public record CompanyDto(Long id, String name, Long founderId) { }
     public record CompanyRequest(@NotBlank @Size(max = 100) String name) implements StrictRequest { }
+    public record CompanyMatterRequest(
+            @NotBlank @Size(max = 200) String title,
+            @NotBlank String content,
+            Integer sortOrder) implements StrictRequest { }
+
+    public record DepartmentCreateRequest(
+            @NotBlank @Size(max = 100) String name,
+            Long companyId) implements StrictRequest { }
+
+    public record TeamCreateRequest(
+            @NotBlank @Size(max = 100) String name,
+            @NotNull @Positive Long departmentId) implements StrictRequest { }
+
+    public record OrgUnitDto(
+            Long id,
+            String name,
+            Long parentId) { }
     public record DepartmentDto(Long id, String name, String description, Long companyId, Long managerId) { }
     public record TeamDto(Long id, String name, String description, Long departmentId, Long leaderId) { }
     public record DepartmentRequest(@NotBlank @Size(max = 100) String name,
