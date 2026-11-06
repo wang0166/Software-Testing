@@ -28,7 +28,7 @@ public class AuditService {
             rs.getString("actor"),
             rs.getString("action"),
             rs.getString("target"),
-            rs.getObject("created_at", java.time.OffsetDateTime.class).atZoneSameInstant(ZONE).format(TIME_FORMAT),
+            rs.getObject("created_at", java.time.OffsetDateTime.class),
             rs.getString("result"));
 
     private final JdbcTemplate jdbcTemplate;

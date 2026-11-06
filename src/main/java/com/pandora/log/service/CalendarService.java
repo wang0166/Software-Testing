@@ -107,14 +107,25 @@ public class CalendarService {
         List<TaskMapItemDto> items = jdbcTemplate.query(
                 "SELECT * FROM ("
                         + "SELECT 'DISPATCHED' AS source, t.id AS task_id, a.id AS assignment_id, "
-                        + "CAST(NULL AS BIGINT) AS personal_task_id, t.name, t.details, t.start_date, t.deadline, t.urgency, "
-                        + "a.execution_status, a.review_status, a.updated_at "
-                        + "FROM task_assignments a JOIN tasks t ON t.id = a.task_id WHERE a.assignee_id = ? "
+                        + "CAST(NULL AS BIGINT) AS personal_task_id, t.name, t.details, t.start_date, t.deadline, "
+                        + "t.urgency, a.execution_status, a.review_status, t.task_type, "
+                        + "latest.progress_percent, latest.note AS progress_note, "
+                        + "latest.created_at AS progress_updated_at, "
+                        + "CASE WHEN latest.execution_status = 'BLOCKED' THEN 1 ELSE 0 END AS open_issue_count, "
+                        + "a.updated_at "
+                        + "FROM task_assignments a JOIN tasks t ON t.id = a.task_id "
+                        + "LEFT JOIN LATERAL (SELECT pu.execution_status, pu.progress_percent, pu.note, pu.created_at "
+                        + "FROM task_progress_updates pu WHERE pu.assignment_id = a.id "
+                        + "ORDER BY pu.created_at DESC, pu.id DESC LIMIT 1) latest ON true "
+                        + "WHERE a.assignee_id = ? "
                         + "UNION ALL "
                         + "SELECT 'PERSONAL' AS source, CAST(NULL AS BIGINT) AS task_id, "
                         + "CAST(NULL AS BIGINT) AS assignment_id, p.id AS personal_task_id, p.name, p.details, "
-                        + "CAST(NULL AS TIMESTAMP) AS start_date, CAST(NULL AS TIMESTAMP) AS deadline, CAST(NULL AS VARCHAR) AS urgency, p.status AS execution_status, "
-                        + "CAST(NULL AS VARCHAR) AS review_status, p.updated_at "
+                        + "CAST(NULL AS TIMESTAMP) AS start_date, CAST(NULL AS TIMESTAMP) AS deadline, "
+                        + "CAST(NULL AS VARCHAR) AS urgency, p.status AS execution_status, "
+                        + "CAST(NULL AS VARCHAR) AS review_status, CAST(NULL AS VARCHAR) AS task_type, "
+                        + "CAST(NULL AS INTEGER) AS progress_percent, CAST(NULL AS VARCHAR) AS progress_note, "
+                        + "CAST(NULL AS TIMESTAMPTZ) AS progress_updated_at, 0 AS open_issue_count, p.updated_at "
                         + "FROM personal_tasks p WHERE p.owner_id = ?"
                         + ") m ORDER BY m.updated_at DESC, m.source, m.name LIMIT ? OFFSET ?",
                 (rs, index) -> new TaskMapItemDto(
@@ -128,7 +139,12 @@ public class CalendarService {
                         rs.getObject("deadline", LocalDateTime.class),
                         rs.getString("urgency"),
                         rs.getString("execution_status"),
-                        rs.getString("review_status")),
+                        rs.getString("review_status"),
+                        rs.getString("task_type"),
+                        rs.getObject("progress_percent", Integer.class),
+                        rs.getString("progress_note"),
+                        rs.getObject("progress_updated_at", java.time.OffsetDateTime.class),
+                        rs.getInt("open_issue_count")),
                 currentUser.id(), currentUser.id(), pageQuery.size(), pageQuery.offset());
 
         return new TaskMapDto(total == null ? 0 : total, pageQuery.page(), pageQuery.size(), items);

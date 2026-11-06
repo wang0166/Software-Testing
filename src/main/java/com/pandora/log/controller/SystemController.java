@@ -23,11 +23,9 @@ import com.pandora.log.service.ConfigService;
 public class SystemController {
 
     private final ConfigService configService;
-    private final AuditService auditService;
 
-    public SystemController(ConfigService configService, AuditService auditService) {
+    public SystemController(ConfigService configService) {
         this.configService = configService;
-        this.auditService = auditService;
     }
 
     @GetMapping("/configs")
@@ -39,15 +37,6 @@ public class SystemController {
     public ApiResponse<ConfigItemDto> updateConfig(@PathVariable String key,
             @RequestBody ConfigUpdateRequest request) {
         return ApiResponse.success(configService.update(key, request == null ? null : request.value()));
-    }
-
-    @GetMapping("/audits")
-    public ApiResponse<PageResult<AuditDto>> audits(
-            @RequestParam(required = false) String actor,
-            @RequestParam(required = false) String action,
-            @RequestParam(required = false) Integer page,
-            @RequestParam(required = false) Integer size) {
-        return ApiResponse.success(auditService.list(actor, action, page, size));
     }
 
     public record ConfigList(List<ConfigItemDto> items) {

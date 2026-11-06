@@ -1,6 +1,7 @@
 package com.pandora.log.dto;
 
 import java.time.OffsetDateTime;
+import java.util.List;
 import jakarta.validation.constraints.*;
 import com.fasterxml.jackson.annotation.JsonFormat;
 import com.fasterxml.jackson.annotation.JsonAnySetter;
@@ -51,4 +52,31 @@ public final class AdminDtos {
             @NotNull @JsonFormat(without = JsonFormat.Feature.ADJUST_DATES_TO_CONTEXT_TIME_ZONE) OffsetDateTime deadline) implements StrictRequest { }
     public record AuditDto(Long id, String actor, String action, String target,
             OffsetDateTime time, String result) { }
+
+    // ---- 管理端（Web）使用的精简请求/响应模型 ----
+
+    public record UserCreateRequest(String username, String password, String realName, String role,
+            Long departmentId, Long teamId) { }
+
+    public record UserUpdateRequest(String realName, String role, Long departmentId, Long teamId) { }
+
+    public record PasswordResetRequest(String password) { }
+
+    public record OrgUnitDto(Long id, String name, Long parentId) { }
+
+    public record DepartmentCreateRequest(String name, Long companyId) { }
+
+    public record TeamCreateRequest(String name, Long departmentId) { }
+
+    public record RoleDto(String code, String name, List<String> permissions) { }
+
+    public record PermissionDto(String code, String name, String module) { }
+
+    public record RolePermissionsRequest(List<String> permissions) { }
+
+    public record ConfigItemDto(String key, String value) { }
+
+    public record ConfigUpdateRequest(String value) { }
+
+    public record CompanyMatterRequest(String title, String content, Integer sortOrder) { }
 }
