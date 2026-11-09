@@ -173,18 +173,32 @@ jobs:
       # Configure SSH connection
       # --------------------------------------------------------
       - name: Configure SSH
+        shell: bash
         env:
           ECS_HOST: ${{ secrets.ECS_HOST }}
+          ECS_USER: ${{ secrets.ECS_USER }}
           ECS_SSH_KEY: ${{ secrets.ECS_SSH_KEY }}
         run: |
-          mkdir -p ~/.ssh
-          chmod 700 ~/.ssh
-
-          printf '%s\n' "$ECS_SSH_KEY" > ~/.ssh/pandora_deploy_key
-          chmod 600 ~/.ssh/pandora_deploy_key
-
-          ssh-keyscan -H "$ECS_HOST" >> ~/.ssh/known_hosts
-          chmod 600 ~/.ssh/known_hosts
+          set -e
+          if [ -z "$ECS_HOST" ]; then
+            echo "ECS_HOST secret is missing."
+            exit 1
+          fi
+          if [ -z "$ECS_USER" ]; then
+            echo "ECS_USER secret is missing."
+            exit 1
+          fi
+          if [ -z "$ECS_SSH_KEY" ]; then
+            echo "ECS_SSH_KEY secret is missing."
+            exit 1
+          fi
+          mkdir -p "$HOME/.ssh"
+          chmod 700 "$HOME/.ssh"
+          printf '%s\n' "$ECS_SSH_KEY" > "$HOME/.ssh/pandora_deploy_key"
+          chmod 600 "$HOME/.ssh/pandora_deploy_key"
+          ssh-keyscan -T 10 -H "$ECS_HOST" >> "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/known_hosts"
+          echo "SSH configuration completed."
 
       # --------------------------------------------------------
       # Deploy exact Git commit SHA
@@ -198,7 +212,7 @@ jobs:
           ECS_USER: ${{ secrets.ECS_USER }}
           IMAGE_TAG: ${{ github.sha }}
         run: |
-          ssh -i ~/.ssh/pandora_deploy_key \
+          ssh -i "$HOME/.ssh/pandora_deploy_key" \
             "$ECS_USER@$ECS_HOST" \
             "cd /opt/pandora && \
              IMAGE_TAG='$IMAGE_TAG' docker compose pull backend web && \
@@ -224,7 +238,7 @@ jobs:
           ECS_HOST: ${{ secrets.ECS_HOST }}
           ECS_USER: ${{ secrets.ECS_USER }}
         run: |
-          ssh -i ~/.ssh/pandora_deploy_key \
+          ssh -i "$HOME/.ssh/pandora_deploy_key" \
             "$ECS_USER@$ECS_HOST" '
               set -e
 
