@@ -240,7 +240,8 @@ class _DailyTodosCalendarState extends State<DailyTodosCalendar> {
     final days = DateUtils.getDaysInMonth(_month.year, _month.month);
     final rows = ((offset + days + 6) / 7).floor();
     final cells = rows * 7;
-    final itemHeight = (bounds.maxHeight / rows).clamp(29.0, 53.0).toDouble();
+    final itemHeight = ((bounds.maxHeight - (rows - 1) * 2) / rows)
+      .clamp(29.0, 85.0).toDouble();
     return GridView.builder(
       key: const Key('daily_todo_month_grid'),
       physics: itemHeight * rows > bounds.maxHeight
@@ -261,23 +262,54 @@ class _DailyTodosCalendarState extends State<DailyTodosCalendar> {
         final selected = date.year == _selected.year &&
           date.month == _selected.month && date.day == _selected.day;
         final today = DateUtils.isSameDay(date, chinaNow);
+        // The home calendar uses the same compact date/task-title layout,
+        // but its entries are strictly private DailyTodo records.
+        final maxVisible = itemHeight >= 68 ? 2 : 1;
+        final hidden = dayItems.length - maxVisible;
         return Material(
-          color: selected ? Palette.deep : (today ? const Color(0xFFE1F2EF) : const Color(0xFFF5F7F9)),
-          borderRadius: BorderRadius.circular(5),
+          color: selected ? const Color(0xFFF0F7FA) : Colors.white,
+          borderRadius: BorderRadius.circular(6),
           child: InkWell(
             key: Key('daily_todo_day_$day'),
-            borderRadius: BorderRadius.circular(5),
+            borderRadius: BorderRadius.circular(6),
             onTap: () => setState(() => _selected = date),
-            child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-              Text('$n', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700,
-                color: selected ? Colors.white : Palette.deep)),
-              if (dayItems.isNotEmpty)
-                Container(margin: const EdgeInsets.only(top: 3),
-                  width: 5, height: 5,
-                  decoration: BoxDecoration(shape: BoxShape.circle,
-                    color: selected ? Colors.white :
-                      (dayItems.every((e) => e.completed) ? Palette.muted : Palette.primary))),
-            ]),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 2),
+              child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+                Center(child: Container(
+                  height: 25, width: 25, alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    color: selected ? Palette.primary
+                      : today ? Palette.sage : Colors.transparent,
+                    borderRadius: BorderRadius.circular(13),
+                  ),
+                  child: Text('$n', style: TextStyle(fontSize: 12,
+                    fontWeight: FontWeight.w800,
+                    color: selected ? Colors.white : Palette.deep)),
+                )),
+                const SizedBox(height: 2),
+                for (final item in dayItems.take(maxVisible))
+                  Padding(padding: const EdgeInsets.only(bottom: 2),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: item.completed ? const Color(0xFFE5EAEE)
+                          : const Color(0xFFC7D9EC),
+                        borderRadius: BorderRadius.circular(3),
+                      ),
+                      child: Text(item.title, maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(fontSize: 9,
+                          color: item.completed ? Palette.muted : Palette.deep,
+                          fontWeight: FontWeight.w700,
+                          decoration: item.completed ? TextDecoration.lineThrough : null)),
+                    )),
+                if (hidden > 0)
+                  Text('+$hidden', textAlign: TextAlign.center,
+                    style: const TextStyle(color: Palette.primary,
+                      fontSize: 10, fontWeight: FontWeight.w900)),
+              ]),
+            ),
           ),
         );
       },
@@ -304,7 +336,7 @@ class _DailyTodosCalendarState extends State<DailyTodosCalendar> {
       final flexible = (height - 2 - headerHeight - monthHeight -
           weekdaysHeight - gapHeight - separatorHeight - dayTitleHeight)
           .clamp(0.0, double.infinity).toDouble();
-      final dayListHeight = (flexible * (compact ? 0.35 : 0.30))
+      final dayListHeight = (flexible * (compact ? 0.35 : 0.20))
           .clamp(0.0, compact ? 56.0 : 94.0).toDouble();
 
       return Container(
@@ -396,7 +428,7 @@ class _DailyTodosCalendarState extends State<DailyTodosCalendar> {
               child: Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 5),
                 child: Row(children: [
-                  for (final day in ['一', '二', '三', '四', '五', '六', '日'])
+                  for (final day in ['周一', '周二', '周三', '周四', '周五', '周六', '周日'])
                     Expanded(child: Center(child: Text(day,
                       style: const TextStyle(color: Palette.muted,
                         fontWeight: FontWeight.w600, fontSize: 11)))),
