@@ -5,10 +5,23 @@ import { Empty, Modal, Skeleton } from '../components/ui';
 import { Icon } from '../components/Icon';
 
 const TYPES: Record<string, string> = { LOG: '工作日志', TASK: '派发任务' };
+const ACTIONS: Record<string, readonly string[]> = {
+  LOG: ['新增日志', '修改日志', '提交日志', '日志点评', '回复点评'],
+  TASK: [
+    '提交派发申请',
+    '编辑待审派发申请',
+    '撤回派发申请',
+    '提交修改申请',
+    '提交删除申请',
+    '更新进度',
+    '申请完成检查',
+    '通过检查',
+    '退回检查',
+  ],
+};
 const FIELDS: Record<string, string> = { status: '状态', executionStatus: '执行状态', reviewStatus: '检查状态', name: '任务名称', content: '日志正文', details: '任务描述', startDate: '开始时间', deadline: '截止时间', urgency: '紧急程度', assigneeCount: '接收人数', assignmentId: '接收记录编号', commentId: '点评编号' };
 const VALUES: Record<string, string> = { DRAFT: '草稿', SUBMITTED: '已提交', NOT_STARTED: '未开始', IN_PROGRESS: '进行中', COMPLETED: '已完成', NONE: '未邀约', PENDING: '待检查', APPROVED: '已通过', RETURNED: '已退回', URGENT: '紧急', NOT_URGENT: '普通' };
-const EMPTY = { actor: '', action: '', from: '', to: '', objectType: 'LOG', result: '' };
-const QUICK_TYPES = [['LOG', '工作日志'], ['TASK', '派发任务']] as const;
+const EMPTY = { actor: '', action: '', from: '', to: '', objectType: 'LOG' };
 const SOURCES: Record<string, string> = { SYSTEM: '系统自动处理', USER: '用户操作', LOCAL: '本地维护', LEGACY: '历史记录' };
 const formatTime = (value: string) => { const date = new Date(value); return Number.isNaN(date.getTime()) ? value : date.toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', hour12: false }); };
 const resultLabel = (value: string) => value === 'SUCCESS' || value === '成功' ? '成功' : value === 'FAILED' || value === '失败' ? '失败' : value;
@@ -32,12 +45,20 @@ export function Audits() {
     <div className="pd-hero"><div><span className="pd-eyebrow">日志与任务</span><h2>日志与任务操作记录</h2><p>查看日志和任务的操作人、时间、处理结果及变更详情。</p></div><span className="pd-readonly"><Icon name="audit" />只读记录</span></div>
     <section className="pd-card">
       <div className="pd-card-head"><div><h3 className="pd-sub">查询日志与任务记录</h3><p className="pd-hint">记录手机端各角色对日志和任务的操作；日志不可删除。</p></div></div>
-      <div className="pd-audit-quick-types" role="group" aria-label="按业务类型快速筛选">{QUICK_TYPES.map(([value, label]) => <button key={value} className={'pd-btn' + (filter.objectType === value ? ' primary' : '')} type="button" aria-pressed={filter.objectType === value} onClick={() => search({ ...draft, objectType: value })}>{label}</button>)}</div>
+      <div className="pd-audit-quick-types" role="group" aria-label="记录类型">
+        {Object.entries(TYPES).map(([value, label]) => (
+          <button
+            key={value}
+            className={'pd-btn' + (filter.objectType === value ? ' primary' : '')}
+            type="button"
+            aria-pressed={filter.objectType === value}
+            onClick={() => search({ ...draft, objectType: value, action: draft.objectType === value ? draft.action : '' })}
+          >{label}</button>
+        ))}
+      </div>
       <form className="pd-audit-filters" onSubmit={event => { event.preventDefault(); search(); }}>
         <label>操作者<input className="pd-input" aria-label="操作者" placeholder="姓名或账号" {...field('actor')} /></label>
-        <label>记录类型<select className="pd-select" aria-label="记录类型" {...field('objectType')}>{Object.entries(TYPES).map(([key, value]) => <option key={key} value={key}>{value}</option>)}</select></label>
-        <label>动作<input className="pd-input" aria-label="动作" placeholder="如：修改、提交、删除" {...field('action')} /></label>
-        <label>操作结果<select className="pd-select" aria-label="操作结果" {...field('result')}><option value="">全部结果</option><option value="SUCCESS">成功</option><option value="FAILED">失败</option></select></label>
+        <label>动作<select className="pd-select" aria-label="动作" {...field('action')}><option value="">全部动作</option>{ACTIONS[draft.objectType].map(action => <option key={action} value={action}>{action}</option>)}</select></label>
         <label>开始日期<input className="pd-input" aria-label="开始日期" type="date" {...field('from')} /></label>
         <label>结束日期<input className="pd-input" aria-label="结束日期" type="date" {...field('to')} /></label>
         <div className="pd-actions"><button className="pd-btn primary" type="submit"><Icon name="search" />查询记录</button><button className="pd-btn" type="button" onClick={() => { setDraft(EMPTY); setFilter({ ...EMPTY }); setPage(1); setError(''); }}>重置筛选</button></div>
