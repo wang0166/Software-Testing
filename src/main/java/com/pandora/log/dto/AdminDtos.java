@@ -79,12 +79,6 @@ public final class AdminDtos {
 
     public record PasswordResetRequest(String password) { }
 
-    public record OrgUnitDto(Long id, String name, Long parentId) { }
-
-    public record DepartmentCreateRequest(String name, Long companyId) { }
-
-    public record TeamCreateRequest(String name, Long departmentId) { }
-
     public record RoleDto(String code, String name, List<String> permissions) { }
 
     public record PermissionDto(String code, String name, String module) { }
@@ -94,6 +88,4 @@ public final class AdminDtos {
     public record ConfigItemDto(String key, String value) { }
 
     public record ConfigUpdateRequest(String value) { }
-
-    public record CompanyMatterRequest(String title, String content, Integer sortOrder) { }
 }
