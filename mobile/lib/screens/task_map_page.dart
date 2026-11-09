@@ -7,7 +7,7 @@ import '../widgets/business.dart';
 import '../widgets/insight_charts.dart';
 import '../core/insight_metrics.dart';
 
-/// AI 地图当前只呈现真实任务执行数据，不伪造 AI 推理。
+/// AI 地图呈现真实任务执行数据，并由服务端汇总授权数据后调用 DeepSeek 生成分析。
 /// 员工看收到的任务，具有派发权限的管理者还能看自己派发任务的执行概况。
 class TaskMapPage extends StatefulWidget {
   final AppState app;
@@ -27,6 +27,7 @@ class _TaskMapData {
 
 class _TaskMapPageState extends State<TaskMapPage> {
   late Future<_TaskMapData> _future;
+  Future<AiAnalysis>? _aiFuture;
   int section = 1; // 默认任务展示，与原任务地图习惯保持一致
 
   bool get _canDispatch => const ['TEAM_LEADER', 'DEPT_MANAGER', 'FOUNDER']
@@ -71,8 +72,24 @@ class _TaskMapPageState extends State<TaskMapPage> {
     return _TaskMapData(received, dispatched, authorizedLogs);
   }
 
+  void _selectSection(int index) {
+    if (index == 2 && _aiFuture == null) {
+      setState(() {
+        section = index;
+        _aiFuture = widget.app.repo.aiMapAnalysis();
+      });
+    } else {
+      setState(() => section = index);
+    }
+  }
+
+  void _loadAi({bool refresh = false}) {
+    setState(() => _aiFuture = widget.app.repo.aiMapAnalysis(refresh: refresh));
+  }
+
   Future<void> _refresh() async {
     setState(_reload);
+    if (section == 2) _loadAi(refresh: true);
     await _future;
   }
 
@@ -83,13 +100,13 @@ class _TaskMapPageState extends State<TaskMapPage> {
       physics: const AlwaysScrollableScrollPhysics(),
       padding: const EdgeInsets.fromLTRB(20, 24, 20, 35),
       children: [
-        const BusinessHeading(title: 'AI地图', subtitle: '数据收集 · 任务展示 · AI数据分析（预留）'),
+        const BusinessHeading(title: 'AI地图', subtitle: '数据收集 · 任务展示 · AI分析（DeepSeek）'),
         const SizedBox(height: 13),
         Row(children: [
           for(var i = 0; i < 3; i++) Expanded(child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 3), child: InkWell(
               key: ValueKey('ai_map_section_$i'),
-              onTap: () => setState(() => section = i),
+              onTap: () => _selectSection(i),
               borderRadius: BorderRadius.circular(8),
               child: Container(alignment: Alignment.center, padding: const EdgeInsets.symmetric(vertical: 12),
                 decoration: BoxDecoration(
@@ -104,7 +121,7 @@ class _TaskMapPageState extends State<TaskMapPage> {
           )),
         ]),
         const SizedBox(height: 17),
-        if (section == 2) _aiPlaceholder() else FutureBuilder<_TaskMapData>(future: _future, builder: (context, snap) {
+        if (section == 2) _aiAnalysis() else FutureBuilder<_TaskMapData>(future: _future, builder: (context, snap) {
           if (snap.connectionState != ConnectionState.done) {
             return const Padding(padding: EdgeInsets.all(50),
                 child: Center(child: CircularProgressIndicator()));
@@ -187,7 +204,7 @@ class _TaskMapPageState extends State<TaskMapPage> {
                     style: const TextStyle(color: Palette.muted, fontSize: 12))),
             ],
             const SizedBox(height: 10),
-            const Text('说明：以上为可复核的任务统计；AI 推理服务尚未接入。',
+            const Text('说明：以上为可复核的任务统计；AI 分析由服务端调用 DeepSeek 生成，仅使用本人授权数据。',
                 style: TextStyle(color: Palette.muted, fontSize: 11, height: 1.5)),
           ]);
         }),
@@ -267,39 +284,124 @@ class _TaskMapPageState extends State<TaskMapPage> {
     ]),
   );
 
-  Widget _aiPlaceholder() => Container(
+  Widget _aiAnalysis() {
+    final future = _aiFuture;
+    if (future == null) return _aiIntro();
+    return FutureBuilder<AiAnalysis>(future: future, builder: (context, snap) {
+      if (snap.connectionState != ConnectionState.done) return _aiLoading();
+      if (snap.hasError) return Column(children: [
+        _aiShell(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          _aiTitle(),
+          const SizedBox(height: 10),
+          const Text('服务端尚未完成分析。若提示未配置，请联系管理员在后端设置 DEEPSEEK_API_KEY 后重试。',
+            style: TextStyle(color: Palette.muted, height: 1.5, fontSize: 12)),
+        ])),
+        const SizedBox(height: 10),
+        ErrorPanel(error: snap.error!, onRetry: () => _loadAi(refresh: true)),
+      ]);
+      return _aiResult(snap.data!);
+    });
+  }
+
+  Widget _aiIntro() => _aiShell(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+    _aiTitle(),
+    const SizedBox(height: 10),
+    const Text('服务端只会汇总你权限范围内可见的日志与任务，再把必要摘要发送给 DeepSeek 生成分析；'
+        '不会上传其他同事的数据，也不会伪造结论。',
+      style: TextStyle(color: Palette.muted, height: 1.5, fontSize: 12)),
+    const SizedBox(height: 14),
+    SizedBox(width: double.infinity, child: FilledButton.icon(
+      onPressed: () => _loadAi(),
+      icon: const Icon(Icons.auto_awesome, size: 18),
+      label: const Text('生成 AI 分析'))),
+  ]));
+
+  Widget _aiLoading() => _aiShell(child: Column(children: [
+    _aiTitle(),
+    const SizedBox(height: 20),
+    const CircularProgressIndicator(),
+    const SizedBox(height: 14),
+    const Text('正在调用 DeepSeek 分析你授权范围内的数据…',
+      textAlign: TextAlign.center,
+      style: TextStyle(color: Palette.muted, height: 1.5, fontSize: 12)),
+  ]));
+
+  Widget _aiResult(AiAnalysis a) => Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+    _aiShell(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      _aiTitle(),
+      const SizedBox(height: 12),
+      Text(a.summary, style: const TextStyle(
+        color: Palette.deep, fontSize: 14, height: 1.6, fontWeight: FontWeight.w600)),
+    ])),
+    const SizedBox(height: 10),
+    _aiBlock('工作亮点', Icons.trending_up_rounded, Palette.primary, a.highlights,
+      '未发现可复核的亮点'),
+    const SizedBox(height: 10),
+    _aiBlock('风险提示', Icons.report_gmailerrorred_rounded, Palette.coral, a.risks,
+      '暂未发现明确风险'),
+    const SizedBox(height: 10),
+    _aiBlock('行动建议', Icons.check_circle_outline_rounded, Palette.deep, a.suggestions,
+      '暂无建议'),
+    const SizedBox(height: 12),
+    Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(color: Palette.sage.withValues(alpha: .45),
+        borderRadius: BorderRadius.circular(9)),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Text('基于 ${a.logCount} 条日志 · ${a.taskCount} 项任务 · ${a.dispatchedTaskCount} 项派发任务（${a.range}）',
+          style: const TextStyle(color: Palette.deep, fontSize: 11.5,
+            fontWeight: FontWeight.w700, height: 1.5)),
+        const SizedBox(height: 4),
+        Text('${a.model} · 生成于 ${a.generatedAt} · 仅使用本人授权数据，结果仅供工作参考',
+          style: const TextStyle(color: Palette.muted, fontSize: 11, height: 1.5)),
+      ])),
+    const SizedBox(height: 4),
+    Align(alignment: Alignment.centerRight, child: TextButton.icon(
+      onPressed: () => _loadAi(refresh: true),
+      icon: const Icon(Icons.refresh, size: 16),
+      label: const Text('重新分析'))),
+  ]);
+
+  Widget _aiShell({required Widget child}) => Container(
     padding: const EdgeInsets.all(18),
     decoration: BoxDecoration(
       color: Colors.white, border: Border.all(color: Palette.divider),
       borderRadius: BorderRadius.circular(9)),
-    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      const Row(children: [
-        Icon(Icons.auto_awesome_outlined, color: Palette.primary, size: 22),
-        SizedBox(width: 8),
-        Expanded(child: Text('AI 数据分析 · 接口预留',
-          style: TextStyle(color: Palette.deep, fontSize: 17, fontWeight: FontWeight.w900))),
-      ]),
-      const SizedBox(height: 10),
-      const Text('分析服务尚未接入，不会生成虚假的结论、MBTI 推断或职业发展建议。',
-        style: TextStyle(color: Palette.muted, height: 1.5, fontSize: 12)),
-      const Divider(height: 25),
-      for(final item in [
-        '结合关键词进行更深入的语义与风险分析',
-        '任务趋势与执行风险分析',
-        '基于用户授权资料的个性化工作建议',
-      ]) Padding(padding: const EdgeInsets.symmetric(vertical: 8),
-        child: Row(children: [
-          const Icon(Icons.lock_clock_outlined, color: Palette.muted, size: 17),
-          const SizedBox(width: 8),
-          Expanded(child: Text(item, style: const TextStyle(
-            color: Palette.deep, fontWeight: FontWeight.w600, fontSize: 12))),
-          const Text('待接入', style: TextStyle(color: Palette.muted, fontSize: 11)),
-        ])),
-      const SizedBox(height: 12),
-      const Text('后续应由服务端控制权限、脱敏、用户同意、模型调用与结果审计。',
-        style: TextStyle(color: Palette.muted, fontSize: 11)),
-    ]),
-  );
+    child: child);
+
+  Widget _aiTitle() => const Row(children: [
+    Icon(Icons.auto_awesome_outlined, color: Palette.primary, size: 22),
+    SizedBox(width: 8),
+    Expanded(child: Text('AI 数据分析 · DeepSeek',
+      style: TextStyle(color: Palette.deep, fontSize: 17, fontWeight: FontWeight.w900))),
+  ]);
+
+  Widget _aiBlock(String title, IconData icon, Color color, List<String> items, String emptyText) =>
+    Container(
+      padding: const EdgeInsets.fromLTRB(16, 14, 16, 12),
+      decoration: BoxDecoration(color: Colors.white,
+        border: Border.all(color: Palette.divider), borderRadius: BorderRadius.circular(9)),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Row(children: [
+          Icon(icon, color: color, size: 18),
+          const SizedBox(width: 7),
+          Text(title, style: const TextStyle(
+            color: Palette.deep, fontWeight: FontWeight.w900, fontSize: 14)),
+        ]),
+        const SizedBox(height: 8),
+        if (items.isEmpty)
+          Text(emptyText, style: const TextStyle(color: Palette.muted, fontSize: 12))
+        else
+          for(final text in items) Padding(
+            padding: const EdgeInsets.only(bottom: 6),
+            child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Container(margin: const EdgeInsets.only(top: 5), width: 5, height: 5,
+                decoration: BoxDecoration(color: color, shape: BoxShape.circle)),
+              const SizedBox(width: 8),
+              Expanded(child: Text(text, style: const TextStyle(
+                color: Palette.deep, fontSize: 12.5, height: 1.55))),
+            ])),
+      ]));
 
   Widget _header(_TaskMapData data) => Container(
     padding: const EdgeInsets.all(18),

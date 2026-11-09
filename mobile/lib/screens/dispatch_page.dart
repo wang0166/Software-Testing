@@ -77,9 +77,13 @@ class _DispatchPageState extends State<DispatchPage> {
             urgency: urgency, taskType: type, assigneeIds: selected.toList(),
           );
       if (!mounted) return;
-      toast(context, state == 'PENDING' ? (editing == null ? '派发申请已提交，等待审核' : '修改已提交，等待审核') : '请求状态：$state');
+      toast(context, state == 'PENDING'
+          ? (editing == null ? '派发申请已提交，等待审核' : '修改已提交，等待审核')
+          : state == 'APPROVED'
+              ? (editing == null ? '派发给下级或同级，已直接生成任务' : '修改已生效')
+              : '请求状态：$state');
       Navigator.pop(context, true);
-    } catch (e) { if (mounted) toast(context, '申请未成功：$e'); }
+    } catch (e) { if (mounted) toast(context, '提交未成功：$e'); }
     finally { if (mounted) setState(() => busy = false); }
   }
   @override Widget build(BuildContext context) => Scaffold(
@@ -155,12 +159,12 @@ class _DispatchPageState extends State<DispatchPage> {
               ),
           ])),
         const SizedBox(height: 12),
-        const Text('审核说明：员工可向上级申请派发任务。后端须校验派发对象及审批状态，审核通过前不生成接收任务。',
+        const Text('审核说明：派发给下级或同级时直接生成任务，无需审核；派发给上级（团队长、部门负责人、创始人）需要审核，通过后才生成接收任务。',
           style: TextStyle(color: Palette.muted, fontSize: 11, height: 1.6)),
       ],
     )),
     bottomNavigationBar: SafeArea(top: false, child: Padding(padding: const EdgeInsets.fromLTRB(16, 9, 16, 10), child: FilledButton(
-      onPressed: busy ? null : _submit, child: Text(busy ? '正在提交申请…' : widget.editing == null ? '提交派发申请（待审核）' : '提交修改申请（待审核）'),
+      onPressed: busy ? null : _submit, child: Text(busy ? '正在提交…' : widget.editing == null ? '提交派发' : '提交修改申请（待审核）'),
     ))),
   );
   Widget _dateLine(String caption, DateTime value, VoidCallback tap) => Material(
