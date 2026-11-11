@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:http/http.dart' as http;
 import '../core/models.dart';
+import '../core/holiday_calendar.dart';
 import 'repository.dart';
 
 /// 与 documents/后端接口文档.md 的统一响应 {code,message,data} 对齐。
@@ -196,6 +197,15 @@ class ApiRepository implements PandoraRepository {
   @override Future<List<CalendarDay>> calendar(String from,String to) async {
     final data=_data(await _request('GET','/calendar',query:{'from':from,'to':to}));
     return listOf(mapOf(data)['days']).map(CalendarDay.fromJson).toList();
+  }
+  @override Future<HolidayYearData> holidayYear(int year) async {
+    final data = _data(await _request('GET', '/calendar/holidays',
+      query: {'year': '$year'}));
+    final parsed = HolidayYearData.fromJson(data);
+    if (parsed.year != year) {
+      throw const AppFailure('节假日年份与请求不匹配');
+    }
+    return parsed;
   }
   @override Future<List<TaskItem>> taskMap() async {
     final data=await _allPages('/task-map');

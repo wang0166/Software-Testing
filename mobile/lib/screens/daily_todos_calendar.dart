@@ -1,12 +1,17 @@
 import 'package:flutter/material.dart';
 import '../core/daily_todos.dart';
+import '../core/holiday_calendar.dart';
+import '../data/holiday_calendar_service.dart';
+import '../widgets/holiday_calendar_widgets.dart';
 import '../core/models.dart';
 import '../core/theme.dart';
 
 /// The user's private month-view todo calendar. No company-task or log APIs.
 class DailyTodosCalendar extends StatefulWidget {
   final int userId;
-  const DailyTodosCalendar({super.key, required this.userId});
+  final HolidayCalendarService? holidayService;
+  const DailyTodosCalendar({super.key, required this.userId,
+    this.holidayService});
   @override
   State<DailyTodosCalendar> createState() => _DailyTodosCalendarState();
 }
@@ -18,6 +23,32 @@ class _DailyTodosCalendarState extends State<DailyTodosCalendar> {
   bool _loading = true;
   bool _saving = false;
   String? _loadError;
+  HolidayCalendarView? _holidayView;
+  int _holidayRequestId = 0;
+
+  void _fetchHolidays({bool forceRefresh = false}) {
+    final service = widget.holidayService;
+    if (service == null) return;
+    final requestId = ++_holidayRequestId;
+    final first = DateTime(_month.year, _month.month, 1);
+    final last = DateTime(_month.year, _month.month + 1, 0);
+    _applyHolidayRequest(service.loadRange(first, last,
+      forceRefresh: forceRefresh), requestId);
+  }
+
+  Future<void> _applyHolidayRequest(
+      Future<HolidayCalendarView> future, int requestId) async {
+    try {
+      final result = await future;
+      if (!mounted || requestId != _holidayRequestId) return;
+      setState(() => _holidayView = result);
+    } catch (_) {
+      // Holiday failure cannot block or replace private todo information.
+      if (mounted && requestId == _holidayRequestId) {
+        setState(() => _holidayView = const HolidayCalendarView({}));
+      }
+    }
+  }
 
   DailyTodoStorage get _storage => DailyTodoStorage(widget.userId);
 
@@ -28,12 +59,14 @@ class _DailyTodosCalendarState extends State<DailyTodosCalendar> {
     _selected = DateTime(today.year, today.month, today.day);
     _month = DateTime(today.year, today.month);
     _reload();
+    _fetchHolidays();
   }
 
   @override
   void didUpdateWidget(covariant DailyTodosCalendar oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.userId != widget.userId) _reload();
+    if (oldWidget.holidayService != widget.holidayService) _fetchHolidays();
   }
 
   Future<void> _reload() async {
@@ -54,7 +87,9 @@ class _DailyTodosCalendarState extends State<DailyTodosCalendar> {
       _month = newMonth;
       final days = DateUtils.getDaysInMonth(newMonth.year, newMonth.month);
       _selected = DateTime(newMonth.year, newMonth.month, _selected.day.clamp(1, days).toInt());
+      _holidayView = null;
     });
+    _fetchHolidays();
   }
 
   Future<void> _chooseDate() async {
@@ -67,7 +102,9 @@ class _DailyTodosCalendarState extends State<DailyTodosCalendar> {
       setState(() {
         _selected = DateTime(date.year, date.month, date.day);
         _month = DateTime(date.year, date.month);
+        _holidayView = null;
       });
+      _fetchHolidays();
     }
   }
 
@@ -173,6 +210,8 @@ class _DailyTodosCalendarState extends State<DailyTodosCalendar> {
     final cells = rows * 7;
     final itemHeight = ((bounds.maxHeight - (rows - 1) * 2) / rows)
       .clamp(29.0, 85.0).toDouble();
+    final dateHeight = itemHeight < 35 ? 21.0 : 25.0;
+    final labelGap = itemHeight < 35 ? 0.0 : 2.0;
     return GridView.builder(
       key: const Key('daily_todo_month_grid'),
       physics: itemHeight * rows > bounds.maxHeight
@@ -190,13 +229,25 @@ class _DailyTodosCalendarState extends State<DailyTodosCalendar> {
         final date = DateTime(_month.year, _month.month, n);
         final day = dayString(date);
         final dayItems = _items.where((e) => e.date == day).toList();
+        final holiday = _holidayView?.on(date);
+        final showFestival = holiday != null &&
+            holiday.festivalLabel.isNotEmpty && itemHeight >= 57;
+        // Reserve room for the date, optional festival and the overflow count.
+        // A 5/6-row month never creates a scrolling miniature grid cell.
+        final remainingHeight = itemHeight - 4 - dateHeight - labelGap -
+            (showFestival ? 13 : 0);
+        var visible = dayItems.length < 2 ? dayItems.length : 2;
+        while (visible > 0 && visible * 16 +
+            (dayItems.length > visible ? 12 : 0) > remainingHeight) {
+          visible--;
+        }
+        final hidden = dayItems.length - visible;
+        final showMore = hidden > 0 &&
+            visible * 16 + 12 <= remainingHeight;
         final selected = date.year == _selected.year &&
           date.month == _selected.month && date.day == _selected.day;
         final today = DateUtils.isSameDay(date, chinaNow);
-        // The home calendar uses the same compact date/task-title layout,
-        // but its entries are strictly private DailyTodo records.
-        final maxVisible = itemHeight >= 68 ? 2 : 1;
-        final hidden = dayItems.length - maxVisible;
+        // Private todo items remain independent of the holiday feed.
         return Material(
           color: selected ? const Color(0xFFF0F7FA) : Colors.white,
           borderRadius: BorderRadius.circular(6),
@@ -207,22 +258,29 @@ class _DailyTodosCalendarState extends State<DailyTodosCalendar> {
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 2),
               child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-                Center(child: Container(
-                  height: 25, width: 25, alignment: Alignment.center,
-                  decoration: BoxDecoration(
-                    color: selected ? Palette.primary
-                      : today ? Palette.sage : Colors.transparent,
-                    borderRadius: BorderRadius.circular(13),
-                  ),
-                  child: Text('$n', style: TextStyle(fontSize: 12,
-                    fontWeight: FontWeight.w800,
-                    color: selected ? Colors.white : Palette.deep)),
-                )),
-                const SizedBox(height: 2),
-                for (final item in dayItems.take(maxVisible))
+                SizedBox(height: dateHeight, child: Stack(children: [
+                  Center(child: Container(
+                    height: dateHeight, width: dateHeight, alignment: Alignment.center,
+                    decoration: BoxDecoration(
+                      color: selected ? Palette.primary
+                        : today ? Palette.sage : Colors.transparent,
+                      borderRadius: BorderRadius.circular(13),
+                    ),
+                    child: Text('$n', style: TextStyle(fontSize: 12,
+                      fontWeight: FontWeight.w800,
+                      color: selected ? Colors.white : Palette.deep)),
+                  )),
+                  if (holiday?.dayTypeLabel.isNotEmpty == true)
+                    Positioned(right: 0, top: 0,
+                      child: HolidayDayBadge(day: holiday)),
+                ])),
+                if (showFestival)
+                  SizedBox(height: 13, child: HolidayFestivalLabel(day: holiday)),
+                SizedBox(height: labelGap),
+                for (final item in dayItems.take(visible))
                   Padding(padding: const EdgeInsets.only(bottom: 2),
                     child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 2),
+                      padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 1),
                       decoration: BoxDecoration(
                         color: item.completed ? const Color(0xFFE5EAEE)
                           : const Color(0xFFC7D9EC),
@@ -230,15 +288,16 @@ class _DailyTodosCalendarState extends State<DailyTodosCalendar> {
                       ),
                       child: Text(item.title, maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: TextStyle(fontSize: 9,
+                        style: TextStyle(fontSize: 9, height: 1.2,
                           color: item.completed ? Palette.muted : Palette.deep,
                           fontWeight: FontWeight.w700,
                           decoration: item.completed ? TextDecoration.lineThrough : null)),
                     )),
-                if (hidden > 0)
+                if (showMore)
                   Text('+$hidden', textAlign: TextAlign.center,
                     style: const TextStyle(color: Palette.primary,
-                      fontSize: 10, fontWeight: FontWeight.w900)),
+                      fontSize: 10, height: 1.15,
+                      fontWeight: FontWeight.w900)),
               ]),
             ),
           ),
@@ -259,7 +318,9 @@ class _DailyTodosCalendarState extends State<DailyTodosCalendar> {
       final headerHeight = compact ? 39.0 : 44.0;
       final monthHeight = compact ? 36.0 : 44.0;
       final weekdaysHeight = compact ? 16.0 : 20.0;
-      final dayTitleHeight = compact ? 32.0 : 38.0;
+      // Two lines (selected date + holiday details) can exceed 32 logical
+      // pixels even with default text scaling on Android. Reserve safe space.
+      final dayTitleHeight = compact ? 38.0 : 42.0;
       // Header + month navigation + weekday names + grid gap + separator +
       // day title. The grid and day list divide the rest of the height.
       const gapHeight = 5.0;
@@ -377,10 +438,33 @@ class _DailyTodosCalendarState extends State<DailyTodosCalendar> {
               child: Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 11),
                 child: Row(children: [
-                  Expanded(child: Text(
-                    '${_selected.month}月${_selected.day}日 · ${entries.length} 项',
-                    style: const TextStyle(color: Palette.deep,
-                      fontSize: 12, fontWeight: FontWeight.w800))),
+                  Expanded(child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Flexible(child: Align(
+                        alignment: Alignment.centerLeft,
+                        child: Text('${_selected.month}月${_selected.day}日 · ${entries.length} 项',
+                          maxLines: 1, overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(color: Palette.deep,
+                            fontSize: 12, fontWeight: FontWeight.w800)))),
+                      if (_holidayView?.on(_selected) != null)
+                        Flexible(child: Align(
+                          alignment: Alignment.centerLeft,
+                          child: SelectedHolidayInfo(day: _holidayView!.on(_selected))))
+                      else if (_holidayView?.notice.isNotEmpty == true)
+                        Flexible(child: InkWell(
+                          key: const Key('holiday_home_retry'),
+                          onTap: () => _fetchHolidays(forceRefresh: true),
+                          child: Align(
+                            alignment: Alignment.centerLeft,
+                            child: Text('${_holidayView!.notice} · 点击重试',
+                              maxLines: 1, overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(fontSize: 9,
+                                color: Palette.muted))),
+                        )),
+                    ],
+                  )),
                   TextButton(
                     key: const Key('daily_todo_add_day'),
                     onPressed: _saving ? null : () => _edit(),

@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../core/models.dart';
+import '../core/holiday_calendar.dart';
 import '../core/task_issue_utils.dart';
 import 'repository.dart';
 
@@ -423,6 +424,8 @@ class MockRepository implements PandoraRepository {
     final received=await tasks(personal:false);
     return [for(var i=0;i<=end.difference(start).inDays;i++) () {final day=dayString(start.add(Duration(days:i)));final lc=all.where((e)=>e.logDate==day).length;final tc=received.where((e)=>e.deadline!=null && (e.startDate==null?e.deadline!.substring(0,10)==day:(e.startDate!.substring(0,10).compareTo(day)<=0 && e.deadline!.substring(0,10).compareTo(day)>=0))).length;return CalendarDay(date:day,mark:tc>0?'GREEN':lc>0?'RED':'NONE',logCount:lc,taskCount:tc);}()];
   }
+  @override Future<HolidayYearData> holidayYear(int year) async =>
+    HolidayYearData(year: year, dataStatus: 'unavailable');
   @override Future<List<TaskItem>> taskMap() async =>
     await tasks(personal:false);
 

@@ -1,4 +1,5 @@
 import '../core/models.dart';
+import '../core/holiday_calendar.dart';
 
 class AppFailure implements Exception {
   final String message;
@@ -36,6 +37,8 @@ abstract class PandoraRepository {
   Future<List<CompanyItem>> companyMatters();
   Future<List<CompanyItem>> companyImportantTasks();
   Future<List<CalendarDay>> calendar(String from,String to);
+  /// China mainland holiday calendar; no user tasks or personal todos included.
+  Future<HolidayYearData> holidayYear(int year);
   Future<List<TaskItem>> taskMap();
   Future<List<UserProfile>> recipients();
   /// Company-wide candidate list for dispatch approval requests.
