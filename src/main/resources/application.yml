@@ -47,3 +47,10 @@ app:
     base-url: ${DEEPSEEK_BASE_URL:https://api.deepseek.com}
     model: ${DEEPSEEK_MODEL:deepseek-chat}
     timeout-seconds: ${DEEPSEEK_TIMEOUT_SECONDS:60}
+  holiday:
+    # 法定放假/补班与农历数据源，可由环境变量替换为内网代理
+    statutory-base-url: ${HOLIDAY_STATUTORY_BASE_URL:https://timor.tech/api/holiday/year}
+    lunar-base-url: ${HOLIDAY_LUNAR_BASE_URL:https://api.apihubs.cn/holiday/get}
+    timeout-seconds: ${HOLIDAY_TIMEOUT_SECONDS:10}
+    # 年度数据缓存时长；数据源不可用时优先使用缓存
+    cache-hours: ${HOLIDAY_CACHE_HOURS:24}
