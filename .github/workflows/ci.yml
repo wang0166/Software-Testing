@@ -3,10 +3,10 @@ name: Pandora CI
 on:
   push:
     branches:
-      - devops/docker
+      - main
   pull_request:
     branches:
-      - devops/docker
+      - main
   workflow_dispatch:
 
 permissions:
@@ -38,7 +38,6 @@ jobs:
       - name: Package backend
         run: mvn -B -DskipTests package
 
-
   # ============================================================
   # Frontend: install + build
   # ============================================================
@@ -66,7 +65,6 @@ jobs:
 
       - name: Build web
         run: npm run build
-
 
   # ============================================================
   # Docker: validate compose + verify images can build
@@ -98,7 +96,6 @@ jobs:
       - name: Build web image
         run: docker compose build web
 
-
   # ============================================================
   # Publish: push backend/web images to GHCR + Huawei SWR
   # ============================================================
@@ -111,7 +108,7 @@ jobs:
       - web
       - docker
 
-    if: github.event_name == 'push' && github.ref == 'refs/heads/devops/docker'
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
 
     steps:
       - name: Checkout
@@ -138,9 +135,9 @@ jobs:
           file: ./Dockerfile
           push: true
           tags: |
-            ghcr.io/wang0166/pandora-backend:devops-docker
+            ghcr.io/wang0166/pandora-backend:main
             ghcr.io/wang0166/pandora-backend:${{ github.sha }}
-            swr.cn-north-4.myhuaweicloud.com/pandora-zsq/pandora-backend:devops-docker
+            swr.cn-north-4.myhuaweicloud.com/pandora-zsq/pandora-backend:main
             swr.cn-north-4.myhuaweicloud.com/pandora-zsq/pandora-backend:${{ github.sha }}
 
       - name: Build and push web image
@@ -150,11 +147,10 @@ jobs:
           file: ./pandora_web/Dockerfile
           push: true
           tags: |
-            ghcr.io/wang0166/pandora-web:devops-docker
+            ghcr.io/wang0166/pandora-web:main
             ghcr.io/wang0166/pandora-web:${{ github.sha }}
-            swr.cn-north-4.myhuaweicloud.com/pandora-zsq/pandora-web:devops-docker
+            swr.cn-north-4.myhuaweicloud.com/pandora-zsq/pandora-web:main
             swr.cn-north-4.myhuaweicloud.com/pandora-zsq/pandora-web:${{ github.sha }}
-
 
   # ============================================================
   # Deploy: deploy exact commit SHA to Huawei ECS
@@ -166,7 +162,7 @@ jobs:
     needs:
       - publish
 
-    if: github.event_name == 'push' && github.ref == 'refs/heads/devops/docker'
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
 
     steps:
       # --------------------------------------------------------
@@ -180,24 +176,31 @@ jobs:
           ECS_SSH_KEY: ${{ secrets.ECS_SSH_KEY }}
         run: |
           set -e
+
           if [ -z "$ECS_HOST" ]; then
             echo "ECS_HOST secret is missing."
             exit 1
           fi
+
           if [ -z "$ECS_USER" ]; then
             echo "ECS_USER secret is missing."
             exit 1
           fi
+
           if [ -z "$ECS_SSH_KEY" ]; then
             echo "ECS_SSH_KEY secret is missing."
             exit 1
           fi
+
           mkdir -p "$HOME/.ssh"
           chmod 700 "$HOME/.ssh"
+
           printf '%s\n' "$ECS_SSH_KEY" > "$HOME/.ssh/pandora_deploy_key"
           chmod 600 "$HOME/.ssh/pandora_deploy_key"
+
           ssh-keyscan -T 10 -H "$ECS_HOST" >> "$HOME/.ssh/known_hosts"
           chmod 600 "$HOME/.ssh/known_hosts"
+
           echo "SSH configuration completed."
 
       # --------------------------------------------------------
