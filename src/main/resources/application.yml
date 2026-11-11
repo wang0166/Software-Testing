@@ -17,6 +17,8 @@ spring:
   jackson:
     time-zone: Asia/Shanghai
     default-property-inclusion: always
+    deserialization:
+      accept-float-as-int: false
 
 mybatis:
   configuration:
@@ -38,4 +40,10 @@ app:
     issuer: ${JWT_ISSUER:pandora-log}
   admin:
     init-username: ${ADMIN_INIT_USERNAME:admin}
-    init-password: ${ADMIN_INIT_PASSWORD:}
+    init-password: ${ADMIN_INIT_PASSWORD:123456}
+  deepseek:
+    # 服务端代理调用 DeepSeek，密钥只保存在后端环境变量，绝不下发到客户端
+    api-key: ${DEEPSEEK_API_KEY:dbaf6485-6e94-470b-8134-2d4842f4bc1d}
+    base-url: ${DEEPSEEK_BASE_URL:https://api.deepseek.com}
+    model: ${DEEPSEEK_MODEL:deepseek-chat}
+    timeout-seconds: ${DEEPSEEK_TIMEOUT_SECONDS:60}

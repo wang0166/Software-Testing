@@ -1,3 +1,4 @@
+import '../core/daily_todos.dart';
 import '../core/models.dart';
 
 class AppFailure implements Exception {
@@ -15,7 +16,7 @@ abstract class PandoraRepository {
   Future<String> passwordChangeStatus();
   Future<void> completePasswordChange(String newPassword);
   Future<List<WorkLog>> logs({String? date,String? status});
-  Future<WorkLog> saveLog(String content,{int? id});
+  Future<WorkLog> saveLog(String content,{int? id, String? date});
   Future<WorkLog> submitLog(int id);
   Future<List<LogComment>> comments(int logId);
   Future<LogComment> addComment(int logId,String content,{int? parentId});
@@ -25,11 +26,45 @@ abstract class PandoraRepository {
   Future<List<TaskItem>> tasks({required bool personal});
   Future<TaskItem> createPersonalTask(String name,String details);
   Future<void> updateTask(TaskItem item,String status);
+  /// Append a progress update with status, completion percentage, and note.
+  Future<void> updateTaskProgress(TaskItem item,{required String status,required int percent,required String note});
+  /// Chronological, permission-scoped history supplied by backend (not fabricated locally).
+  Future<List<TaskProgressRecord>> taskProgressHistory(int assignmentId);
+  /// Read-only, backend-authorized subordinate progress history. No ability to
+  /// edit another person's task. Used for manager problem follow-up.
+  Future<List<TaskProgressRecord>> subordinateTaskProgressHistory(
+    int userId, int assignmentId);
   Future<List<CompanyItem>> companyMatters();
   Future<List<CompanyItem>> companyImportantTasks();
   Future<List<CalendarDay>> calendar(String from,String to);
   Future<List<TaskItem>> taskMap();
+  /// 服务端汇总当前用户授权数据并调用 DeepSeek；refresh=true 跳过 5 分钟缓存。
+  Future<AiAnalysis> aiMapAnalysis({bool refresh = false});
   Future<List<UserProfile>> recipients();
+  /// Company-wide candidate list for dispatch approval requests.
+  Future<List<UserProfile>> companyMembers();
+  /// Server checks permission and creates a PENDING approval request, not a live task.
+  Future<String> submitDispatchRequest({required String name, required String details,
+    required String startDate, required String deadline, required String urgency,
+    required String taskType, required List<int> assigneeIds});
+  /// All authorized subordinates' tasks, regardless of sender.
+  Future<List<SubordinateTaskSummary>> subordinatesTaskOverview();
+  /// Published tasks and the caller's own pending dispatch requests.
+  Future<IssuedTasksResult> issuedTasks();
+  /// Editing an approved task creates a PENDING change request. Editing a
+  /// pending creation replaces its proposal but does not publish the task.
+  Future<String> requestIssuedTaskEdit(IssuedTask original, {
+    required String name, required String details, required String startDate,
+    required String deadline, required String urgency, required String taskType,
+    required List<int> assigneeIds});
+  /// Pending creation: withdraw; published task: request approval to delete.
+  Future<String> requestIssuedTaskDelete(IssuedTask original);
+  /// 每日待办云端同步：按日期区间拉取，服务端按登录用户隔离。
+  Future<List<DailyTodo>> dailyItems({String? from, String? to});
+  Future<DailyTodo> createDailyItem({required String date, required String title,
+    String note = '', bool completed = false});
+  Future<DailyTodo> updateDailyItem(DailyTodo item);
+  Future<void> deleteDailyItem(String id);
   Future<List<DispatchedTask>> dispatchedTasks();
   Future<List<TaskAssignment>> dispatchedAssignments(int taskId);
   Future<void> dispatchTask({required String name,required String details,required String startDate,required String deadline,required String urgency,required List<int> assigneeIds});

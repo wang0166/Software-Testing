@@ -2,132 +2,320 @@ import 'package:flutter/material.dart';
 import '../core/app_state.dart';
 import '../core/models.dart';
 import '../core/theme.dart';
+import '../data/repository.dart';
+import '../widgets/business.dart';
 import '../widgets/ui.dart';
 
-/// 只有创始人、部门老总、团队长拥有派发入口。
-/// 派发成功后，每个接收者的进度独立保存，检查只能由派发人处理。
+/// Everyone may submit a dispatch request. The backend approves before a task
+/// becomes active, including requests from employees to managers.
 class DispatchPage extends StatefulWidget {
   final AppState app;
-  const DispatchPage({super.key,required this.app});
-  @override State<DispatchPage> createState()=>_DispatchPageState();
+  /// When present, this form requests an edit to a task issued by the user.
+  final IssuedTask? editing;
+  const DispatchPage({super.key, required this.app, this.editing});
+  @override State<DispatchPage> createState() => _DispatchPageState();
 }
 class _DispatchPageState extends State<DispatchPage> {
-  late Future<List<DispatchedTask>> _items;
-  @override void initState(){super.initState();_reload();}
-  void _reload(){_items=widget.app.repo.dispatchedTasks();}
-  Future<void> _newDispatch() async {
-    String title = '', detail = '';
-    final now=chinaNow;
-    final start=DateTime(now.year,now.month,now.day,now.hour,now.minute);
-    DateTime from=start,to=start.add(const Duration(days:7));
-    String urgency='NOT_URGENT';
-    final ids=<int>{};
+  final title = TextEditingController();
+  final detail = TextEditingController();
+  final search = TextEditingController();
+  final selected = <int>{};
+  late Future<List<UserProfile>> members;
+  late DateTime start, deadline;
+  String urgency = 'NOT_URGENT';
+  String type = 'GENERAL';
+  bool busy = false;
+  final Set<String> _roles = {};
+  final Set<int> _departments = {};
+  final Set<int> _teams = {};
+  bool _selectedOnly = false;
+  static const taskTypes = [
+    'GENERAL', 'DEVELOPMENT', 'PRODUCT', 'TESTING',
+    'OPERATION', 'SALES', 'ADMINISTRATIVE',
+  ];
+  @override void initState() {
+    super.initState();
+    final now = chinaNow;
+    final previous=widget.editing;
+    start = DateTime(now.year, now.month, now.day, now.hour, now.minute);
+    deadline = start.add(const Duration(days: 7));
+    if(previous!=null) {
+      title.text=previous.name;
+      detail.text=previous.details;
+      urgency=previous.urgency;
+      type=previous.taskType;
+      start=DateTime.tryParse(previous.startDate) ?? start;
+      deadline=DateTime.tryParse(previous.deadline) ?? deadline;
+      selected.addAll(previous.assigneeIds);
+    }
+    members = _resolveMembers();
+  }
+
+  Future<List<UserProfile>> _resolveMembers() async {
+    final list=await widget.app.repo.companyMembers();
+    final issued=widget.editing;
+    if(issued!=null && !issued.isRequest && issued.assigneeIds.isEmpty) {
+      final assignments=await widget.app.repo.dispatchedAssignments(issued.id);
+      if (assignments.isEmpty) {
+        throw const AppFailure('无法查询任务原有接收人，已阻止可能覆盖接收人的编辑');
+      }
+      if(mounted) setState(() => selected.addAll(assignments.map((e)=>e.assigneeId)));
+    }
+    return list;
+  }
+  @override void dispose() { title.dispose(); detail.dispose(); search.dispose(); super.dispose(); }
+  Future<void> _submit() async {
+    if (busy) return;
+    if (title.text.trim().isEmpty || detail.text.trim().isEmpty || selected.isEmpty) {
+      toast(context, '请填写任务标题、内容并选择接收人'); return;
+    }
+    if (!deadline.isAfter(start)) { toast(context, '截止时间必须晚于开始时间'); return; }
+    setState(() => busy = true);
     try {
-      final people=await widget.app.repo.recipients();
-      if(!mounted)return;
-      final created=await showDialog<bool>(context:context,builder:(context)=>StatefulBuilder(builder:(ctx,rebuild)=>AlertDialog(
-        title:const Text('派发新任务'),
-        content:SizedBox(width:460,child:SingleChildScrollView(child:Column(mainAxisSize:MainAxisSize.min,crossAxisAlignment:CrossAxisAlignment.stretch,children:[
-          TextField(onChanged:(v)=>title=v,maxLength:200,decoration:const InputDecoration(labelText:'任务名称')),
-          const SizedBox(height:9),TextField(onChanged:(v)=>detail=v,maxLines:3,decoration:const InputDecoration(labelText:'任务详情')),
-          const SizedBox(height: 12),
-          const Text('开始时间', style: TextStyle(color: Palette.muted, fontSize: 14, fontWeight: FontWeight.w500)),
-          const SizedBox(height: 4),
-          Text(formatTaskDateTime(from), style: const TextStyle(color: Palette.deep, fontSize: 20, fontWeight: FontWeight.w800)),
-          const SizedBox(height: 7),
-          OutlinedButton.icon(onPressed: () async {
-            final selected = await pickTaskDateTime(ctx, from);
-            if (selected != null) rebuild(() {from = selected; if (!to.isAfter(from)) to = from.add(const Duration(hours: 1));});
-          }, icon: const Icon(Icons.access_time_rounded), label: const Text('选择开始日期和时间')),
-          const SizedBox(height: 8),
-          const Text('截止时间', style: TextStyle(color: Palette.muted, fontSize: 14, fontWeight: FontWeight.w500)),
-          const SizedBox(height: 4),
-          Text(formatTaskDateTime(to), style: const TextStyle(color: Palette.deep, fontSize: 20, fontWeight: FontWeight.w800)),
-          const SizedBox(height: 7),
-          OutlinedButton.icon(onPressed: () async {
-            final selected = await pickTaskDateTime(ctx, to);
-            if (selected != null) rebuild(() => to = selected);
-          }, icon: const Icon(Icons.event_available_rounded), label: const Text('选择截止日期和时间')),
-          const SizedBox(height:12),DropdownButtonFormField<String>(initialValue:urgency,items:const [DropdownMenuItem(value:'NOT_URGENT',child:Text('普通任务')),DropdownMenuItem(value:'URGENT',child:Text('紧急任务'))],onChanged:(v)=>rebuild(()=>urgency=v??urgency),decoration:const InputDecoration(labelText:'紧急程度')),
-          const SizedBox(height:15),const Text('选择直属下级（可多选）',style:TextStyle(fontWeight:FontWeight.w800)),
-          if(people.isEmpty)const Padding(padding:EdgeInsets.all(10),child:Text('暂无可派发的直属下级')),
-          for(final p in people)CheckboxListTile(dense:true,contentPadding:EdgeInsets.zero,value:ids.contains(p.id),title:Text(p.name),subtitle:Text(p.roleLabel),onChanged:(v)=>rebuild((){if(v==true){ids.add(p.id);}else{ids.remove(p.id);}})),
-        ]))),
-        actions:[TextButton(onPressed:()=>Navigator.pop(ctx,false),child:const Text('取消')),FilledButton(onPressed:()=>Navigator.pop(ctx,true),child:const Text('确认派发'))],
-      )));
-      if(created!=true||!mounted)return;
-      if(title.trim().isEmpty||detail.trim().isEmpty||ids.isEmpty){toast(context,'请填写名称、详情并选择接收人');return;}
-      if (!to.isAfter(from)) {toast(context, '截止时间必须晚于开始时间');return;}
-      await widget.app.repo.dispatchTask(name:title.trim(),details:detail.trim(),startDate:taskDateTimeIso(from),deadline:taskDateTimeIso(to),urgency:urgency,assigneeIds:ids.toList());
-      if(mounted){toast(context,'任务已派发');setState(_reload);}
-    } catch(e) {if(mounted)toast(context,'$e');}
+      final editing=widget.editing;
+      final state = editing == null
+        ? await widget.app.repo.submitDispatchRequest(
+            name: title.text.trim(), details: detail.text.trim(),
+            startDate: taskDateTimeIso(start), deadline: taskDateTimeIso(deadline),
+            urgency: urgency, taskType: type, assigneeIds: selected.toList(),
+          )
+        : await widget.app.repo.requestIssuedTaskEdit(editing,
+            name: title.text.trim(), details: detail.text.trim(),
+            startDate: taskDateTimeIso(start), deadline: taskDateTimeIso(deadline),
+            urgency: urgency, taskType: type, assigneeIds: selected.toList(),
+          );
+      if (!mounted) return;
+      toast(context, state == 'PENDING'
+          ? (editing == null ? '派发申请已提交，等待审核' : '修改已提交，等待审核')
+          : state == 'APPROVED'
+              ? (editing == null ? '派发给下级或同级，已直接生成任务' : '修改已生效')
+              : '请求状态：$state');
+      Navigator.pop(context, true);
+    } catch (e) { if (mounted) toast(context, '提交未成功：$e'); }
+    finally { if (mounted) setState(() => busy = false); }
   }
-  Future<void> _detail(DispatchedTask task) async {
-    await Navigator.push<void>(context,MaterialPageRoute(builder:(_)=>_DispatchDetail(app:widget.app,task:task)));
-    if(mounted)setState(_reload);
+  @override Widget build(BuildContext context) => Scaffold(
+    appBar: AppBar(title: Text(widget.editing == null ? '创建派发任务' : '编辑我发布的任务')),
+    body: FutureBuilder<List<UserProfile>>(future: members, builder: (context, snap) => ListView(
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 22), children: [
+        BusinessHeading(title: widget.editing == null ? '任务派发申请' : '修改任务申请',
+          subtitle: widget.editing?.isRequest == true ? '修改待审申请 · 不会直接派发' : '可编辑所有任务字段 · 审核前不改变已发布任务'),
+        const SizedBox(height: 14),
+        TextField(controller: title, maxLength: 200, decoration: const InputDecoration(labelText: '任务标题')),
+        const SizedBox(height: 9),
+        TextField(controller: detail, minLines: 3, maxLines: 5, decoration: const InputDecoration(labelText: '任务内容')),
+        const SizedBox(height: 14),
+        _dateLine('开始时间', start, () async {
+          final picked = await pickTaskDateTime(context, start);
+          if (picked != null) setState(() { start = picked; if (!deadline.isAfter(start)) deadline = start.add(const Duration(hours: 1)); });
+        }),
+        const SizedBox(height: 10),
+        _dateLine('截止时间', deadline, () async {
+          final picked = await pickTaskDateTime(context, deadline);
+          if (picked != null) setState(() => deadline = picked);
+        }),
+        const SizedBox(height: 13),
+        Row(children: [
+          Expanded(child: DropdownButtonFormField<String>(
+            key: ValueKey('dispatch_type_$type'),
+            initialValue: type, isExpanded: true,
+            decoration: InputDecoration(labelText: '任务类型', filled: true,
+              fillColor: taskTypeColor(type).withValues(alpha: .09),
+              enabledBorder: OutlineInputBorder(borderSide:
+                BorderSide(color: taskTypeColor(type).withValues(alpha: .6)))),
+            items: taskTypes.map((v) => DropdownMenuItem(value: v,
+              child: Row(mainAxisSize: MainAxisSize.min, children: [
+                Container(width: 9, height: 9, decoration: BoxDecoration(
+                  color: taskTypeColor(v), borderRadius: BorderRadius.circular(3))),
+                const SizedBox(width: 7),
+                Flexible(child: Text(taskTypeLabel(v), style: TextStyle(
+                  color: taskTypeColor(v), fontWeight: FontWeight.w800))),
+              ]))).toList(),
+            onChanged: (v) => setState(() => type = v ?? type),
+          )),
+          const SizedBox(width: 10),
+          Expanded(child: DropdownButtonFormField<String>(initialValue: urgency,
+            decoration: const InputDecoration(labelText: '优先级'), items: const [
+              DropdownMenuItem(value: 'NOT_URGENT', child: Text('普通')),
+              DropdownMenuItem(value: 'URGENT', child: Text('紧急')),
+            ], onChanged: (v) => setState(() => urgency = v ?? urgency))),
+        ]),
+        const SizedBox(height: 16),
+        Row(children: [
+          const Expanded(child: Text('选择接收人（全公司）', style: TextStyle(color: Palette.deep, fontWeight: FontWeight.w800, fontSize: 16))),
+          Text('已选 ${selected.length} 人', style: const TextStyle(color: Palette.primary, fontWeight: FontWeight.w700)),
+        ]),
+        const SizedBox(height: 8),
+        TextField(controller: search, onChanged: (_) => setState(() {}),
+          decoration: const InputDecoration(hintText: '搜索姓名或账号',
+            prefixIcon: Icon(Icons.search))),
+        const SizedBox(height: 8),
+        if (snap.connectionState == ConnectionState.done && !snap.hasError)
+          Row(children: [
+            Expanded(child: OutlinedButton.icon(
+              onPressed: () => _memberFilters(snap.data ?? []),
+              icon: const Icon(Icons.tune, size: 17),
+              label: Text('职务 / 部门 / 团队筛选 ${_roles.length + _departments.length + _teams.length > 0 ? '(${_roles.length + _departments.length + _teams.length})' : ''}',
+                maxLines: 1, overflow: TextOverflow.ellipsis),
+            )),
+            const SizedBox(width: 7),
+            FilterChip(label: const Text('仅已选'),
+              selected: _selectedOnly,
+              onSelected: (v) => setState(() => _selectedOnly = v)),
+          ]),
+        const SizedBox(height: 8),
+        if (snap.connectionState != ConnectionState.done)
+          const LinearProgressIndicator()
+        else if (snap.hasError)
+          BusinessPanel(title: '成员列表不可用', child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 15),
+            child: Text('需要后端提供全公司成员查询接口。\n${snap.error}',
+              style: const TextStyle(color: Palette.coral, fontSize: 12))))
+        else if ((snap.data ?? []).isEmpty)
+          const BusinessPanel(title: '成员列表', child: BusinessEmpty('暂无可选公司成员'))
+        else _membersList(snap.data!),
+        const SizedBox(height: 12),
+        const Text('审核说明：派发给下级或同级时直接生成任务，无需审核；派发给上级（团队长、部门负责人、创始人）需要审核，通过后才生成接收任务。',
+          style: TextStyle(color: Palette.muted, fontSize: 11, height: 1.6)),
+      ],
+    )),
+    bottomNavigationBar: SafeArea(top: false, child: Padding(padding: const EdgeInsets.fromLTRB(16, 9, 16, 10), child: FilledButton(
+      onPressed: busy ? null : _submit, child: Text(busy ? '正在提交…' : widget.editing == null ? '提交派发' : '提交修改申请（待审核）'),
+    ))),
+  );
+  List<UserProfile> _visibleMembers(List<UserProfile> all) {
+    final keyword = search.text.trim().toLowerCase();
+    return all.where((p) =>
+      p.id != widget.app.user?.id &&
+      (keyword.isEmpty || '${p.name} ${p.username}'.toLowerCase().contains(keyword)) &&
+      (_roles.isEmpty || _roles.contains(p.role)) &&
+      (_departments.isEmpty || _departments.contains(p.departmentId)) &&
+      (_teams.isEmpty || _teams.contains(p.teamId)) &&
+      (!_selectedOnly || selected.contains(p.id))
+    ).toList();
   }
-  @override Widget build(BuildContext context)=>Scaffold(
-    appBar:AppBar(title:const Text('我派发的任务')),
-    floatingActionButton:FloatingActionButton.extended(onPressed:_newDispatch,label:const Text('派发新任务'),icon:const Icon(Icons.add_rounded)),
-    body:RefreshIndicator(onRefresh:()async{setState(_reload);await _items;},child:ListView(padding:const EdgeInsets.fromLTRB(20,10,20,100),children:[
-      const PageHeading(overline:'TEAM COLLABORATION',title:'任务派发',description:'仅向直属下级派发，每名接收人的进度相互独立'),const SizedBox(height:19),
-      FutureBuilder<List<DispatchedTask>>(future:_items,builder:(context,s){
-        if(s.connectionState!=ConnectionState.done)return const Padding(padding:EdgeInsets.all(25),child:Center(child:CircularProgressIndicator()));
-        if(s.hasError)return ErrorPanel(error:s.error!,onRetry:()=>setState(_reload));
-        final items=s.data??[];
-        if(items.isEmpty)return const EmptyPanel(title:'还没有派发任务',subtitle:'点击右下角，为直属下级安排工作');
-        return Column(children:[for(final task in items)Padding(padding:const EdgeInsets.only(bottom:12),child:SoftCard(child:InkWell(onTap:()=>_detail(task),child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[
-          Row(children:[Expanded(child:Text(task.name,style:const TextStyle(fontWeight:FontWeight.w900,fontSize:16,color:Palette.deep))),if(task.urgency=='URGENT')const Pill(text:'紧急',color:Color(0xFFBE6446),background:Color(0xFFFDEDE7))]),
-          const SizedBox(height:9),Text('${task.startDate}  →  ${task.deadline}',style:const TextStyle(color:Palette.muted,fontSize:12)),
-          const SizedBox(height:12),Wrap(spacing:8,runSpacing:7,children:[Pill(text:'接收 ${task.assigneeCount} 人'),Pill(text:'完成 ${task.completedCount} 人'),Pill(text:'待检查 ${task.pendingReviewCount} 人',color:const Color(0xFFA67539),background:Palette.pastel)]),
-          const SizedBox(height:8),const Align(alignment:Alignment.centerRight,child:Icon(Icons.chevron_right_rounded,color:Palette.muted)),
-        ]))))]);
+
+  Widget _membersList(List<UserProfile> all) {
+    final visible = _visibleMembers(all);
+    return Material(
+      color: Colors.white,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8),
+        side: const BorderSide(color: Palette.divider)),
+      clipBehavior: Clip.antiAlias,
+      child: Column(children: [
+        Padding(padding: const EdgeInsets.fromLTRB(12, 5, 8, 5),
+          child: Row(children: [
+            Expanded(child: Text('筛选结果 ${visible.length} / ${all.length} 人',
+              style: const TextStyle(fontSize: 12, color: Palette.muted))),
+            TextButton(onPressed: visible.isEmpty ? null : () => setState(() =>
+              selected.addAll(visible.map((e) => e.id))), child: const Text('全选结果')),
+            TextButton(onPressed: visible.isEmpty ? null : () => setState(() =>
+              selected.removeAll(visible.map((e) => e.id))), child: const Text('取消结果')),
+          ])),
+        const Divider(height: 1),
+        SizedBox(height: 310, child: visible.isEmpty
+          ? const Center(child: Text('没有符合条件的成员'))
+          : ListView.builder(itemCount: visible.length,
+            itemBuilder: (context, index) {
+              final person = visible[index];
+              return CheckboxListTile(
+                key: Key('dispatch_member_${person.id}'),
+                title: Text(person.name, style: const TextStyle(fontSize: 13,
+                  fontWeight: FontWeight.w700)),
+                subtitle: Text('${person.roleLabel} · 部门 ${person.departmentId ?? '未分配'} · 团队 ${person.teamId ?? '未分配'}',
+                  style: const TextStyle(fontSize: 11)),
+                dense: true, visualDensity: const VisualDensity(vertical: -3),
+                value: selected.contains(person.id), activeColor: Palette.primary,
+                onChanged: (v) => setState(() => v == true
+                  ? selected.add(person.id) : selected.remove(person.id)),
+              );
+            })),
+      ]),
+    );
+  }
+
+  Future<void> _memberFilters(List<UserProfile> members) async {
+    final roles = members.map((e) => e.role).toSet().toList()..sort();
+    final departments = members.map((e) => e.departmentId)
+      .whereType<int>().toSet().toList()..sort();
+    final teams = members.map((e) => e.teamId)
+      .whereType<int>().toSet().toList()..sort();
+    await showModalBottomSheet<void>(context: context,
+      isScrollControlled: true, showDragHandle: true,
+      builder: (sheet) => StatefulBuilder(builder: (context, update) {
+        void change(void Function() action) {
+          setState(action);
+          update(() {});
+        }
+        return SafeArea(child: Padding(
+          padding: const EdgeInsets.fromLTRB(17, 0, 17, 18),
+          child: SingleChildScrollView(child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text('筛选任务接收人', style: TextStyle(
+                color: Palette.deep, fontWeight: FontWeight.w900, fontSize: 19)),
+              const Text('每组可多选；组内取并集，不同组取交集',
+                style: TextStyle(color: Palette.muted, fontSize: 12)),
+              const SizedBox(height: 16),
+              const Text('职务', style: TextStyle(fontWeight: FontWeight.w800)),
+              Wrap(spacing: 7, children: [for (final value in roles)
+                FilterChip(label: Text(members.firstWhere((m) => m.role == value).roleLabel),
+                  selected: _roles.contains(value), onSelected: (v) => change(() =>
+                    v ? _roles.add(value) : _roles.remove(value))),
+              ]),
+              const SizedBox(height: 10),
+              const Text('部门', style: TextStyle(fontWeight: FontWeight.w800)),
+              Wrap(spacing: 7, children: [for (final value in departments)
+                FilterChip(label: Text('部门 $value'),
+                  selected: _departments.contains(value), onSelected: (v) => change(() =>
+                    v ? _departments.add(value) : _departments.remove(value))),
+              ]),
+              const SizedBox(height: 10),
+              const Text('团队', style: TextStyle(fontWeight: FontWeight.w800)),
+              Wrap(spacing: 7, children: [for (final value in teams)
+                FilterChip(label: Text('团队 $value'),
+                  selected: _teams.contains(value), onSelected: (v) => change(() =>
+                    v ? _teams.add(value) : _teams.remove(value))),
+              ]),
+              const SizedBox(height: 14),
+              Row(children: [
+                TextButton(onPressed: () => change(() {
+                  _roles.clear(); _departments.clear(); _teams.clear();
+                }), child: const Text('清空筛选')),
+                const Spacer(),
+                FilledButton(onPressed: () => Navigator.pop(sheet),
+                  child: const Text('查看结果')),
+              ]),
+            ],
+          )),
+        ));
       }),
-    ])),
+    );
+  }
+
+  Widget _dateLine(String caption, DateTime value, VoidCallback tap) => Material(
+    color: Colors.white, borderRadius: BorderRadius.circular(8), child: InkWell(
+      onTap: tap, borderRadius: BorderRadius.circular(8), child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 13), decoration: BoxDecoration(border: Border.all(color: Palette.divider), borderRadius: BorderRadius.circular(8)),
+        child: Row(children: [
+          Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text(caption, style: const TextStyle(color: Palette.muted, fontSize: 11)),
+            const SizedBox(height: 4), Text(formatTaskDateTime(value), style: const TextStyle(color: Palette.deep, fontSize: 18, fontWeight: FontWeight.w800)),
+          ])),
+          const Icon(Icons.edit_calendar, size: 20, color: Palette.primary),
+        ]),
+      ),
+    ),
   );
 }
 
-class _DispatchDetail extends StatefulWidget {
-  final AppState app;final DispatchedTask task;
-  const _DispatchDetail({required this.app,required this.task});
-  @override State<_DispatchDetail> createState()=>_DispatchDetailState();
-}
-class _DispatchDetailState extends State<_DispatchDetail> {
-  late Future<List<TaskAssignment>> _future;
-  @override void initState(){super.initState();_refresh();}
-  void _refresh(){_future=widget.app.repo.dispatchedAssignments(widget.task.id);}
-  Future<void> _review(TaskAssignment a,String result) async {
-    String comment = '';
-    try {
-      final ok=await showDialog<bool>(context:context,builder:(ctx)=>AlertDialog(title:Text(result=='APPROVED'?'检查通过':'退回修改'),content:TextField(onChanged:(v)=>comment=v,maxLines:3,decoration:const InputDecoration(hintText:'填写检查意见（可选）')),actions:[TextButton(onPressed:()=>Navigator.pop(ctx,false),child:const Text('取消')),FilledButton(onPressed:()=>Navigator.pop(ctx,true),child:const Text('确定'))]));
-      if(ok!=true)return;
-      await widget.app.repo.reviewAssignment(a.id,result,comment.trim());
-      if(mounted){toast(context,'检查结果已保存');setState(_refresh);}
-    }catch(e){if(mounted)toast(context,'$e');}
-  }
-  @override Widget build(BuildContext context)=>Scaffold(appBar:AppBar(title:const Text('派发任务详情')),body:ListView(padding:const EdgeInsets.all(20),children:[
-    SoftCard(child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[Text(widget.task.name,style:Theme.of(context).textTheme.titleLarge),const SizedBox(height:8),Text(widget.task.details,style:const TextStyle(height:1.6,color:Palette.deep)),const SizedBox(height:12),Text('截止 ${widget.task.deadline}',style:const TextStyle(color:Palette.muted))])),
-    const SizedBox(height:20),const Headline(title:'接收人进度',subtitle:'分别检查各成员的完成情况'),const SizedBox(height:12),
-    FutureBuilder<List<TaskAssignment>>(future:_future,builder:(context,s){
-      if(s.connectionState!=ConnectionState.done)return const Center(child:CircularProgressIndicator());
-      if(s.hasError)return ErrorPanel(error:s.error!,onRetry:()=>setState(_refresh));
-      final items=s.data??[];
-      if(items.isEmpty)return const EmptyPanel(title:'暂无接收人',subtitle:'请稍后重试');
-      return Column(children:[for(final a in items)Padding(padding:const EdgeInsets.only(bottom:12),child:SoftCard(child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[
-        Text(a.assigneeName,style:const TextStyle(fontSize:16,fontWeight:FontWeight.w800,color:Palette.deep)),const SizedBox(height:8),Wrap(spacing:8,children:[StatusBadge(status:a.status),Pill(text:const {'NONE':'未检查','PENDING':'待检查','APPROVED':'检查通过','RETURNED':'已退回'}[a.reviewStatus]??a.reviewStatus)]),
-        if(a.reviewStatus=='PENDING')...[const SizedBox(height:14),Row(children:[Expanded(child:OutlinedButton(onPressed:()=>_review(a,'RETURNED'),child:const Text('退回修改'))),const SizedBox(width:10),Expanded(child:FilledButton(onPressed:()=>_review(a,'APPROVED'),child:const Text('检查通过')))])],
-      ])))]);
-    }),
-  ]));
-}
-
-/// 任务派发时间必须精确到分钟（选择日期后再选择时分）。
 String formatTaskDateTime(DateTime value) => '${dayString(value)} ${value.hour.toString().padLeft(2, '0')}:${value.minute.toString().padLeft(2, '0')}';
 String taskDateTimeIso(DateTime value) => '${dayString(value)}T${value.hour.toString().padLeft(2, '0')}:${value.minute.toString().padLeft(2, '0')}:00';
 Future<DateTime?> pickTaskDateTime(BuildContext context, DateTime initial) async {
   final date = await showDatePicker(context: context, initialDate: initial, firstDate: DateTime(2020), lastDate: DateTime(2100), helpText: '选择任务日期');
   if (date == null || !context.mounted) return null;
-  final time = await showTimePicker(context: context, initialTime: TimeOfDay.fromDateTime(initial), helpText: '选择小时与分钟', initialEntryMode: TimePickerEntryMode.input);
+  final time = await showTimePicker(context: context, initialTime: TimeOfDay.fromDateTime(initial), helpText: '精确到小时与分钟', initialEntryMode: TimePickerEntryMode.input);
   if (time == null) return null;
   return DateTime(date.year, date.month, date.day, time.hour, time.minute);
 }

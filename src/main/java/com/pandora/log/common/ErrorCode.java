@@ -9,10 +9,10 @@ public enum ErrorCode {
     INVALID_CREDENTIALS(40101, 401, "用户名或密码错误"),
     INVALID_TOKEN(40102, 401, "访问令牌无效或过期"),
     ACCOUNT_LOCKED(40103, 423, "账号已锁定，请稍后重试"),
-    ACCOUNT_DISABLED(40103, 401, "账号已停用"),
+    ACCOUNT_DISABLED(40104, 401, "账号已停用"),
     FORBIDDEN(40301, 403, "无权访问该资源"),
     NOT_DIRECT_SUPERIOR(40302, 403, "非直属上级，不能点评"),
-    CANNOT_DISPATCH(40310, 403, "非直接下级或当前角色无派发能力，不能派发任务"),
+    CANNOT_DISPATCH(40310, 403, "当前角色无派发能力或接收人不在同一公司，不能派发任务"),
     TASK_ACCESS_DENIED(40311, 403, "无权访问或操作该任务"),
     NOT_ASSIGNEE(40312, 403, "仅被派发人可更新本人进度或发起邀约"),
     NOT_SENDER(40313, 403, "仅派发人可检查"),
@@ -23,10 +23,23 @@ public enum ErrorCode {
     LOG_ALREADY_EXISTS(40901, 409, "当天已存在日志"),
     LOG_ALREADY_SUBMITTED(40902, 409, "已提交日志不可修改"),
     LOG_DEADLINE_PASSED(40903, 409, "已过截止时间"),
+    USERNAME_EXISTS(40906, 409, "账户名已存在"),
+    OWNER_EXISTS(40905, 409, "组织负责人已存在，请先调整原负责人的角色或归属"),
+    ORGANIZATION_IN_USE(40904, 409, "组织仍有成员或下级组织，请先迁移归属"),
+    ORGANIZATION_NAME_EXISTS(40907, 409, "同一上级组织中名称已存在"),
+    LAST_ADMIN(40908, 409, "至少保留一个启用的系统管理员"),
+    DATA_CONFLICT(40909, 409, "数据约束冲突，请刷新后重试"),
     TASK_STATUS_CONFLICT(40910, 409, "任务状态转换非法"),
     REVIEW_ALREADY_PENDING(40911, 409, "已存在待检查邀约"),
     REVIEW_ALREADY_HANDLED(40912, 409, "检查结果已处理或不可重复"),
-    INTERNAL_ERROR(50000, 500, "服务内部错误");
+    DISPATCH_REQUIRES_APPROVAL(40913, 409, "派发给上级需要审核，请提交派发申请"),
+    PASSWORD_REQUEST_CONFLICT(40920, 409, "密码申请已存在、过期或已处理"),
+    PASSWORD_APPROVAL_REQUIRED(40320, 403, "需要有效的密码修改批准"),
+    PASSWORD_RESET_INVALID(40020, 400, "恢复凭据无效或已过期"),
+    TOO_MANY_REQUESTS(42901, 429, "请求过于频繁，请稍后重试"),
+    INTERNAL_ERROR(50000, 500, "服务内部错误"),
+    AI_UPSTREAM_FAILED(50201, 502, "AI 分析服务调用失败，请稍后重试"),
+    AI_NOT_CONFIGURED(50301, 503, "AI 分析服务未配置，请联系管理员设置 DEEPSEEK_API_KEY");
 
     private final int code;
     private final int httpStatus;

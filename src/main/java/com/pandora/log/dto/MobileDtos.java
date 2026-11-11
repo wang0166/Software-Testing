@@ -1,6 +1,7 @@
 package com.pandora.log.dto;
 
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.time.OffsetDateTime;
 import java.util.List;
 
@@ -31,7 +32,8 @@ public final class MobileDtos {
             boolean isImportant,
             OffsetDateTime submittedAt,
             OffsetDateTime createdAt,
-            OffsetDateTime updatedAt) {
+            OffsetDateTime updatedAt,
+            String authorRole, Long departmentId, String departmentName, Long teamId, String teamName) {
     }
 
     public record LogCommentDto(
@@ -75,20 +77,83 @@ public final class MobileDtos {
             List<Long> assigneeIds) {
     }
 
+    public record DispatchRequestDto(
+            String name,
+            String details,
+            String startDate,
+            String deadline,
+            String urgency,
+            String taskType,
+            List<Long> assigneeIds) {
+    }
+
+    // 任务变更申请：UPDATE 携带完整任务字段，DELETE 只需 action。
+    public record ChangeRequestDto(
+            String action,
+            String name,
+            String details,
+            String startDate,
+            String deadline,
+            String urgency,
+            String taskType,
+            List<Long> assigneeIds) {
+    }
+
     public record DispatchResultDto(Long taskId, int assigneeCount) {
+    }
+
+    public record DispatchRequestResultDto(Long id, Long requestId, Long taskId, String status, int assigneeCount) {
+    }
+
+    public record SubordinateTaskItemDto(
+            Long assignmentId,
+            Long taskId,
+            String name,
+            String details,
+            LocalDateTime startDate,
+            LocalDateTime deadline,
+            String urgency,
+            String executionStatus,
+            String reviewStatus,
+            AssigneeDto sender,
+            AssigneeDto assignee,
+            OffsetDateTime updatedAt,
+            String taskType,
+            Integer progressPercent,
+            String progressNote,
+            OffsetDateTime progressUpdatedAt,
+            int openIssueCount) {
+    }
+
+    public record SubordinateSummaryDto(
+            Long userId,
+            String username,
+            String realName,
+            String role,
+            Long departmentId,
+            String departmentName,
+            Long teamId,
+            String teamName,
+            int total,
+            int inProgress,
+            int completed,
+            int openIssueCount,
+            List<SubordinateTaskItemDto> tasks) {
     }
 
     public record DispatchedTaskDto(
             Long id,
             String name,
             String details,
-            LocalDate startDate,
-            LocalDate deadline,
+            LocalDateTime startDate,
+            LocalDateTime deadline,
             String urgency,
             int assigneeCount,
             int completedCount,
             int pendingReviewCount,
-            OffsetDateTime createdAt) {
+            OffsetDateTime createdAt,
+            String taskType,
+            boolean changePending) {
     }
 
     public record AssigneeDto(Long id, String realName) {
@@ -99,7 +164,10 @@ public final class MobileDtos {
             AssigneeDto assignee,
             String executionStatus,
             String reviewStatus,
-            OffsetDateTime updatedAt) {
+            OffsetDateTime updatedAt,
+            Integer progressPercent,
+            String progressNote,
+            OffsetDateTime progressUpdatedAt) {
     }
 
     public record TaskDetailDto(
@@ -107,11 +175,12 @@ public final class MobileDtos {
             Long senderId,
             String name,
             String details,
-            LocalDate startDate,
-            LocalDate deadline,
+            LocalDateTime startDate,
+            LocalDateTime deadline,
             String urgency,
             OffsetDateTime createdAt,
             OffsetDateTime updatedAt,
+            String taskType,
             List<AssignmentDto> assignments) {
     }
 
@@ -120,13 +189,18 @@ public final class MobileDtos {
             Long taskId,
             String name,
             String details,
-            LocalDate startDate,
-            LocalDate deadline,
+            LocalDateTime startDate,
+            LocalDateTime deadline,
             String urgency,
             String executionStatus,
             String reviewStatus,
             AssigneeDto sender,
-            OffsetDateTime updatedAt) {
+            OffsetDateTime updatedAt,
+            String taskType,
+            Integer progressPercent,
+            String progressNote,
+            OffsetDateTime progressUpdatedAt,
+            int openIssueCount) {
     }
 
     public record AssignmentStateDto(
@@ -154,13 +228,83 @@ public final class MobileDtos {
             Long taskId,
             String name,
             String details,
-            LocalDate startDate,
-            LocalDate deadline,
+            LocalDateTime startDate,
+            LocalDateTime deadline,
             String urgency,
             String executionStatus,
             String reviewStatus,
             AssigneeDto sender,
-            List<ReviewHistoryDto> reviews) {
+            List<ReviewHistoryDto> reviews,
+            String taskType,
+            Integer progressPercent,
+            String progressNote,
+            OffsetDateTime progressUpdatedAt,
+            int openIssueCount) {
+    }
+
+    public record TaskProgressRequest(String status, Integer progressPercent, String note) {
+    }
+
+    public record TaskProgressUpdateDto(
+            Long id,
+            Long assignmentId,
+            String status,
+            Integer progressPercent,
+            String note,
+            Long authorId,
+            String authorName,
+            OffsetDateTime createdAt) {
+    }
+
+    public record ApprovalRequest(String comment) {
+    }
+
+    public record DispatchRequestViewDto(
+            Long id,
+            Long requestId,
+            Long taskId,
+            String name,
+            String details,
+            LocalDateTime startDate,
+            LocalDateTime deadline,
+            String urgency,
+            String taskType,
+            List<Long> assigneeIds,
+            int assigneeCount,
+            String status,
+            Long requesterId,
+            String requesterName,
+            Long reviewerId,
+            String reviewerName,
+            String reviewComment,
+            OffsetDateTime reviewedAt,
+            OffsetDateTime createdAt,
+            OffsetDateTime updatedAt,
+            String changeRequestStatus,
+            boolean changePending) {
+    }
+
+    public record ChangeRequestViewDto(
+            Long id,
+            Long taskId,
+            String action,
+            String name,
+            String details,
+            LocalDateTime startDate,
+            LocalDateTime deadline,
+            String urgency,
+            String taskType,
+            List<Long> assigneeIds,
+            int assigneeCount,
+            String status,
+            Long requesterId,
+            String requesterName,
+            Long reviewerId,
+            String reviewerName,
+            String reviewComment,
+            OffsetDateTime reviewedAt,
+            OffsetDateTime createdAt,
+            OffsetDateTime updatedAt) {
     }
 
     public record PersonalTaskDto(
@@ -214,10 +358,32 @@ public final class MobileDtos {
             Long personalTaskId,
             String name,
             String details,
-            LocalDate deadline,
+            LocalDateTime startDate,
+            LocalDateTime deadline,
             String urgency,
             String executionStatus,
-            String reviewStatus) {
+            String reviewStatus,
+            String taskType,
+            Integer progressPercent,
+            String progressNote,
+            OffsetDateTime progressUpdatedAt,
+            int openIssueCount) {
+    }
+
+    public record DailyItemDto(
+            Long id,
+            LocalDate date,
+            String title,
+            String note,
+            boolean completed,
+            OffsetDateTime updatedAt) {
+    }
+
+    public record DailyItemRequest(
+            LocalDate date,
+            String title,
+            String note,
+            Boolean completed) {
     }
 
     public record TaskMapDto(long total, int page, int size, List<TaskMapItemDto> items) {
