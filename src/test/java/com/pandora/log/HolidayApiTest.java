@@ -92,24 +92,27 @@ class HolidayApiTest extends EmbeddedPostgresSupport {
         JsonNode data = ok(get("/api/calendar/holidays").param("year", "2026"));
 
         assertThat(data.path("year").asInt()).isEqualTo(2026);
-        assertThat(data.path("status").asText()).isEqualTo("PUBLISHED");
-        assertThat(data.path("published").asBoolean()).isTrue();
-        assertThat(data.path("fromCache").asBoolean()).isFalse();
+        assertThat(data.path("region").asText()).isEqualTo("CN");
+        assertThat(data.path("timezone").asText()).isEqualTo("Asia/Shanghai");
+        assertThat(data.path("dataStatus").asText()).isEqualTo("published");
+        assertThat(data.path("lastSyncedAt").asText()).isNotBlank();
         assertThat(data.path("sourceUrl").asText()).isNotBlank();
-        assertThat(data.path("syncedAt").asText()).isNotBlank();
+        assertThat(data.path("fromCache").asBoolean()).isFalse();
 
-        assertThat(day(data, "2026-01-01").path("type").asText()).isEqualTo("HOLIDAY");
-        assertThat(day(data, "2026-01-01").path("offDay").asBoolean()).isTrue();
-        assertThat(day(data, "2026-01-04").path("type").asText()).isEqualTo("WORKDAY");
-        assertThat(day(data, "2026-01-04").path("workday").asBoolean()).isTrue();
-        // 除夕与春节来自农历换算，落在法定放假日上时直接标注传统节日名称
-        assertThat(day(data, "2026-02-16").path("traditionalFestival").asText()).isEqualTo("除夕");
-        assertThat(day(data, "2026-02-17").path("traditionalFestival").asText()).isEqualTo("春节");
-        assertThat(day(data, "2026-09-25").path("traditionalFestival").asText()).isEqualTo("中秋节");
-        // 重阳节不放假，作为独立传统节日返回
-        assertThat(day(data, "2026-10-18").path("type").asText()).isEqualTo("TRADITIONAL_FESTIVAL");
-        assertThat(day(data, "2026-10-18").path("name").asText()).isEqualTo("重阳节");
-        assertThat(day(data, "2026-10-18").path("offDay").asBoolean()).isFalse();
+        JsonNode newYear = day(data, "2026-01-01");
+        assertThat(newYear.path("dayType").asText()).isEqualTo("holiday");
+        assertThat(newYear.path("holidayName").asText()).isEqualTo("元旦");
+        assertThat(newYear.path("festivals").size()).isZero();
+        assertThat(newYear.path("sourceUrl").asText()).isNotBlank();
+
+        assertThat(day(data, "2026-01-04").path("dayType").asText()).isEqualTo("makeup_workday");
+        // 除夕与春节来自农历换算，落在法定放假日上时写入 festivals
+        assertThat(day(data, "2026-02-16").path("festivals").get(0).asText()).isEqualTo("除夕");
+        assertThat(day(data, "2026-02-17").path("festivals").get(0).asText()).isEqualTo("春节");
+        assertThat(day(data, "2026-09-25").path("festivals").get(0).asText()).isEqualTo("中秋节");
+        // 重阳节不放假，以 normal 日期承载传统节日名称
+        assertThat(day(data, "2026-10-18").path("dayType").asText()).isEqualTo("normal");
+        assertThat(day(data, "2026-10-18").path("festivals").get(0).asText()).isEqualTo("重阳节");
 
         assertThat(jdbc.queryForObject("SELECT count(*) FROM holiday_year_cache", Long.class)).isEqualTo(1);
         assertThat(jdbc.queryForObject("SELECT source FROM holiday_year_cache WHERE year = 2026",
@@ -129,8 +132,7 @@ class HolidayApiTest extends EmbeddedPostgresSupport {
 
         JsonNode data = ok(get("/api/calendar/holidays").param("year", "2035"));
 
-        assertThat(data.path("status").asText()).isEqualTo("NOT_PUBLISHED");
-        assertThat(data.path("published").asBoolean()).isFalse();
+        assertThat(data.path("dataStatus").asText()).isEqualTo("not_published");
         assertThat(data.path("days").size()).isZero();
         assertThat(data.path("message").asText()).contains("尚未公布");
         verify(sourceClient, never()).fetchLunar(2035);
@@ -148,7 +150,7 @@ class HolidayApiTest extends EmbeddedPostgresSupport {
 
         JsonNode data = ok(get("/api/calendar/holidays").param("year", "2026"));
 
-        assertThat(data.path("status").asText()).isEqualTo("PUBLISHED");
+        assertThat(data.path("dataStatus").asText()).isEqualTo("published");
         assertThat(data.path("fromCache").asBoolean()).isTrue();
         assertThat(data.path("message").asText()).contains("缓存");
         assertThat(data.path("days").size()).isGreaterThan(0);
@@ -161,22 +163,21 @@ class HolidayApiTest extends EmbeddedPostgresSupport {
 
         JsonNode data = ok(get("/api/calendar/holidays").param("year", "2026"));
 
-        assertThat(data.path("status").asText()).isEqualTo("UNAVAILABLE");
-        assertThat(data.path("published").asBoolean()).isFalse();
+        assertThat(data.path("dataStatus").asText()).isEqualTo("unavailable");
         assertThat(data.path("days").size()).isZero();
         assertThat(data.path("message").asText()).contains("不可用");
     }
 
     @Test
-    void keepsStatutoryDataWhenLunarSourceFails() throws Exception {
+    void marksPartialWhenLunarSourceFails() throws Exception {
         when(sourceClient.fetchStatutory(2026)).thenReturn(statutory2026());
         when(sourceClient.fetchLunar(2026)).thenThrow(new HolidaySourceException("农历接口不可用"));
 
         JsonNode data = ok(get("/api/calendar/holidays").param("year", "2026"));
 
-        assertThat(data.path("status").asText()).isEqualTo("PUBLISHED");
+        assertThat(data.path("dataStatus").asText()).isEqualTo("partial");
         assertThat(data.path("message").asText()).contains("农历");
-        assertThat(day(data, "2026-01-01").path("type").asText()).isEqualTo("HOLIDAY");
+        assertThat(day(data, "2026-01-01").path("dayType").asText()).isEqualTo("holiday");
     }
 
     @Test
