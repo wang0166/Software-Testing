@@ -17,6 +17,9 @@ class _TaskProgressPageState extends State<TaskProgressPage> {
   late TaskItem current;
   late Future<List<TaskProgressRecord>> _history;
   bool _saving = false;
+  // Prevent a stale task-list response from re-enabling the completion action
+  // immediately after the server has accepted the completion record.
+  bool _completionSubmitted = false;
 
   @override void initState() {
     super.initState();
@@ -42,36 +45,64 @@ class _TaskProgressPageState extends State<TaskProgressPage> {
     }
   }
 
-  String get _status => current.status == 'COMPLETED' ? '已完成' : '进行中';
+  bool get _isCompleted => current.status == 'COMPLETED' || _completionSubmitted;
+  String get _status => _isCompleted ? '已完成' : '进行中';
 
-  Future<void> _change(String status) async {
-    if (_saving || current.status == 'COMPLETED') return;
-    if (status == 'COMPLETED') {
-      final confirmed = await showDialog<bool>(context: context,
-        builder: (ctx) => AlertDialog(
-          title: const Text('确认任务已完成？'),
-          content: const Text('完成后不能再直接改为进行中，后续检查由原审批流程处理。'),
-          actions: [
-            TextButton(onPressed: () => Navigator.pop(ctx, false),
-              child: const Text('取消')),
-            FilledButton(onPressed: () => Navigator.pop(ctx, true),
-              child: const Text('确认完成')),
-          ],
-        ));
-      if (confirmed != true || !mounted) return;
+  String _formatTimestamp(DateTime time) {
+    final local = time.toLocal();
+    String two(int value) => value.toString().padLeft(2, '0');
+    return '${local.year}-${two(local.month)}-${two(local.day)} '
+      '${two(local.hour)}:${two(local.minute)}';
+  }
+
+  String _completionTime(List<TaskProgressRecord>? records) {
+    DateTime? latest;
+    for (final record in records ?? const <TaskProgressRecord>[]) {
+      if (record.status != 'COMPLETED') continue;
+      final parsed = DateTime.tryParse(record.createdAt.replaceFirst(' ', 'T'));
+      if (parsed != null && (latest == null || parsed.isAfter(latest))) {
+        latest = parsed;
+      }
     }
-    // Compatibility with the existing progress API: it still requires a
-    // percentage, though the simplified mobile UI no longer requests one.
-    final percent = status == 'COMPLETED' ? 100
-      : (current.progressPercent ?? 0).clamp(0, 99).toInt();
+    // Older backend versions only expose the last progress update time.
+    if (latest == null && current.status == 'COMPLETED') {
+      final raw = current.progressUpdatedAt;
+      if (raw != null) {
+        latest = DateTime.tryParse(raw.replaceFirst(' ', 'T'));
+      }
+    }
+    return latest == null ? '等待后端同步' : _formatTimestamp(latest);
+  }
+
+  Future<void> _completeTask() async {
+    if (_saving || _isCompleted || current.source != 'RECEIVED') return;
+    final confirmed = await showDialog<bool>(context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('确认任务已完成？'),
+        content: const Text('标记完成后不能直接改回进行中。如需完成检查，仍须按原有审核流程操作。'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('取消')),
+          FilledButton(onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('确认完成')),
+        ],
+      ));
+    if (confirmed != true || !mounted) return;
     setState(() => _saving = true);
     try {
+      // Keep the existing backend API and its ownership / review checks.
+      // Only the mobile interaction is simplified; the API still needs 100%.
       await widget.app.repo.updateTaskProgress(current,
-        status: status, percent: percent, note: '');
+        status: 'COMPLETED', percent: 100, note: '');
+      if (!mounted) return;
+      setState(() {
+        _completionSubmitted = true;
+        _history = widget.app.repo.taskProgressHistory(current.id);
+      });
       await _refresh();
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(status == 'COMPLETED' ? '已标记完成' : '已设为进行中')));
+          const SnackBar(content: Text('已标记完成')));
       }
     } catch (e) {
       if (mounted) {
@@ -144,29 +175,54 @@ class _TaskProgressPageState extends State<TaskProgressPage> {
           BusinessPanel(title: '执行状态', child: Padding(
             padding: const EdgeInsets.symmetric(vertical: 14),
             child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-              const Text('只需选择“进行中”或“已完成”，无需填写完成率和进度备注。',
-                style: TextStyle(color: Palette.muted, fontSize: 12)),
-              const SizedBox(height: 13),
               Row(children: [
-                Expanded(child: OutlinedButton.icon(
-                  key: const Key('task_status_in_progress'),
-                  onPressed: _saving || current.status == 'COMPLETED'
-                    ? null : () => _change('IN_PROGRESS'),
-                  icon: const Icon(Icons.play_circle_outline),
-                  label: const Text('进行中'))),
-                const SizedBox(width: 9),
-                Expanded(child: FilledButton.icon(
-                  key: const Key('task_status_completed'),
-                  onPressed: _saving || current.status == 'COMPLETED'
-                    ? null : () => _change('COMPLETED'),
-                  icon: const Icon(Icons.check_circle_outline),
-                  label: const Text('已完成'))),
+                const Text('当前状态', style: TextStyle(
+                  color: Palette.muted, fontSize: 13)),
+                const Spacer(),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: _isCompleted ? const Color(0xFFE2F3EF)
+                      : const Color(0xFFE9F0F8),
+                    borderRadius: BorderRadius.circular(6)),
+                  child: Text(_status, style: TextStyle(
+                    fontWeight: FontWeight.w800,
+                    color: _isCompleted ? const Color(0xFF137E71) : Palette.deep)),
+                ),
               ]),
-              if (current.status == 'COMPLETED' &&
-                  (current.reviewStatus == 'NONE' || current.reviewStatus == 'RETURNED')) ...[
-                const SizedBox(height: 10),
-                OutlinedButton(onPressed: _saving ? null : _inviteReview,
-                  child: const Text('申请完成检查')),
+              if (_isCompleted) ...[
+                const SizedBox(height: 8),
+                FutureBuilder<List<TaskProgressRecord>>(
+                  future: _history,
+                  builder: (context, snap) => _field('完成时间',
+                    snap.connectionState == ConnectionState.done
+                      ? _completionTime(snap.data) : '正在读取记录…'),
+                ),
+                if (current.reviewStatus == 'PENDING')
+                  const Padding(padding: EdgeInsets.only(top: 8),
+                    child: Text('已申请完成检查，等待审核',
+                      style: TextStyle(color: Palette.muted, fontSize: 12))),
+                if (current.reviewStatus == 'APPROVED')
+                  const Padding(padding: EdgeInsets.only(top: 8),
+                    child: Text('完成检查已通过',
+                      style: TextStyle(color: Palette.muted, fontSize: 12))),
+                if (current.source == 'RECEIVED' &&
+                    (current.reviewStatus == 'NONE' || current.reviewStatus == 'RETURNED')) ...[
+                  const SizedBox(height: 11),
+                  OutlinedButton(onPressed: _saving ? null : _inviteReview,
+                    child: const Text('申请完成检查')),
+                ],
+              ] else if (current.source == 'RECEIVED') ...[
+                const SizedBox(height: 13),
+                FilledButton.icon(
+                  key: const Key('task_mark_completed'),
+                  onPressed: _saving ? null : _completeTask,
+                  icon: _saving ? const SizedBox(width: 18, height: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2,
+                      color: Colors.white))
+                    : const Icon(Icons.check_circle_outline),
+                  label: const Text('标记为已完成'),
+                ),
               ],
             ]))),
           const SizedBox(height: 12),
