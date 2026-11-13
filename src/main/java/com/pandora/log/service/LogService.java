@@ -19,6 +19,7 @@ import com.pandora.log.common.CurrentUser;
 import com.pandora.log.common.ErrorCode;
 import com.pandora.log.common.PageQuery;
 import com.pandora.log.common.PageResult;
+import com.pandora.log.dto.AdminDtos.AuditChangeDto;
 import com.pandora.log.dto.MobileDtos.LogCommentDto;
 import com.pandora.log.dto.MobileDtos.WorkLogDto;
 import com.pandora.log.security.CurrentUserContext;
@@ -60,14 +61,16 @@ public class LogService {
     private final JdbcTemplate jdbcTemplate;
     private final CurrentUserContext currentUserContext;
     private final SystemConfigService systemConfigService;
+    private final AuditTrail auditTrail;
     private final Clock clock;
 
     public LogService(JdbcTemplate jdbcTemplate,
             CurrentUserContext currentUserContext,
-            SystemConfigService systemConfigService, Clock clock) {
+            SystemConfigService systemConfigService, AuditTrail auditTrail, Clock clock) {
         this.jdbcTemplate = jdbcTemplate;
         this.currentUserContext = currentUserContext;
         this.systemConfigService = systemConfigService;
+        this.auditTrail = auditTrail;
         this.clock = clock;
     }
 
@@ -117,18 +120,19 @@ public class LogService {
     }
 
     @Transactional
-    public WorkLogDto create(String content) {
+    public WorkLogDto create(String content, String logDate) {
         CurrentUser currentUser = currentUserContext.require();
         requireWritePermission(currentUser);
-        ensureBeforeDeadline();
+        LocalDate date = resolveWritableDate(parseOptionalDate(logDate));
         String text = requireContent(content);
 
-        LocalDate today = LocalDate.now(clock.withZone(ZONE));
         try {
             Long id = jdbcTemplate.queryForObject(
                     "INSERT INTO work_logs (author_id, log_date, content, status) "
                             + "VALUES (?, ?, ?, 'DRAFT') RETURNING id",
-                    Long.class, currentUser.id(), today, text);
+                    Long.class, currentUser.id(), date, text);
+            auditTrail.success("新增日志", "LOG", id, AuditTrail.USER,
+                    "新增 " + date + " 工作日志（草稿）", List.of());
             return findLog(id);
         } catch (DuplicateKeyException exception) {
             throw new BusinessException(ErrorCode.LOG_ALREADY_EXISTS);
@@ -143,8 +147,7 @@ public class LogService {
         if ("SUBMITTED".equals(existing.status())) {
             throw new BusinessException(ErrorCode.LOG_ALREADY_SUBMITTED);
         }
-        ensureBeforeDeadline();
-        requireToday(existing);
+        resolveWritableDate(existing.logDate());
         String text = requireContent(content);
 
         int updated = jdbcTemplate.update(
@@ -157,6 +160,9 @@ public class LogService {
             }
             throw new BusinessException(ErrorCode.RESOURCE_NOT_VISIBLE);
         }
+        auditTrail.success("修改日志", "LOG", id, AuditTrail.USER,
+                "修改 " + existing.logDate() + " 工作日志",
+                List.of(new AuditChangeDto("content", "原内容", "新内容")));
         return findLog(id);
     }
 
@@ -168,8 +174,7 @@ public class LogService {
         if ("SUBMITTED".equals(existing.status())) {
             return existing;
         }
-        ensureBeforeDeadline();
-        requireToday(existing);
+        resolveWritableDate(existing.logDate());
 
         int updated = jdbcTemplate.update(
                 "UPDATE work_logs SET status = 'SUBMITTED', submitted_at = now(), updated_at = now() "
@@ -182,6 +187,9 @@ public class LogService {
             }
             throw new BusinessException(ErrorCode.LOG_ALREADY_SUBMITTED);
         }
+        auditTrail.success("提交日志", "LOG", id, AuditTrail.USER,
+                "提交 " + existing.logDate() + " 工作日志",
+                List.of(new AuditChangeDto("status", "DRAFT", "SUBMITTED")));
         return findLog(id);
     }
 
@@ -228,6 +236,8 @@ public class LogService {
                 "INSERT INTO log_comments (log_id, commenter_id, parent_id, content) "
                         + "VALUES (?, ?, ?, ?) RETURNING id",
                 Long.class, logId, currentUser.id(), parentId, text);
+        auditTrail.success(own ? "回复点评" : "日志点评", "LOG", logId, AuditTrail.USER,
+                (own ? "回复 " : "点评 ") + log.logDate() + " 工作日志", List.of());
         return jdbcTemplate.queryForObject(
                 "SELECT c.id, c.log_id, c.commenter_id, u.real_name AS author_name, c.content, "
                         + "c.created_at, c.parent_id FROM log_comments c "
@@ -302,6 +312,24 @@ public class LogService {
         }
     }
 
+    /**
+     * 可选日志日期：仅允许北京时间今天及前两天；当天仍受截止时间限制，补写历史日期不受当日截止时间影响。
+     */
+    private LocalDate resolveWritableDate(LocalDate requested) {
+        LocalDate today = LocalDate.now(clock.withZone(ZONE));
+        LocalDate date = requested == null ? today : requested;
+        if (date.isAfter(today)) {
+            throw new BusinessException(ErrorCode.VALIDATION_FAILED, "不能填写未来日期的日志");
+        }
+        if (date.isBefore(today.minusDays(2))) {
+            throw new BusinessException(ErrorCode.LOG_DEADLINE_PASSED);
+        }
+        if (date.equals(today)) {
+            ensureBeforeDeadline();
+        }
+        return date;
+    }
+
     private void ensureBeforeDeadline() {
         LocalTime deadline = systemConfigService.logDeadline();
         LocalTime now = LocalTime.now(clock.withZone(ZONE));
@@ -310,9 +338,12 @@ public class LogService {
         }
     }
 
-    private void requireToday(WorkLogDto log) {
-        if (!log.logDate().equals(LocalDate.now(clock.withZone(ZONE)))) {
-            throw new BusinessException(ErrorCode.LOG_DEADLINE_PASSED);
+    private LocalDate parseOptionalDate(String value) {
+        if (value == null || value.isBlank()) return null;
+        try {
+            return LocalDate.parse(value.trim());
+        } catch (RuntimeException exception) {
+            throw new BusinessException(ErrorCode.VALIDATION_FAILED, "logDate 必须为 yyyy-MM-dd");
         }
     }
 

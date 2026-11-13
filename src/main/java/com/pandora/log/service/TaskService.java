@@ -10,6 +10,7 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.stream.Collectors;
 
@@ -23,6 +24,7 @@ import com.pandora.log.common.CurrentUser;
 import com.pandora.log.common.ErrorCode;
 import com.pandora.log.common.PageQuery;
 import com.pandora.log.common.PageResult;
+import com.pandora.log.dto.AdminDtos.AuditChangeDto;
 import com.pandora.log.dto.MobileDtos.ApprovalRequest;
 import com.pandora.log.dto.MobileDtos.AssigneeDto;
 import com.pandora.log.dto.MobileDtos.AssignmentDetailDto;
@@ -71,10 +73,12 @@ public class TaskService {
 
     private final JdbcTemplate jdbcTemplate;
     private final CurrentUserContext currentUserContext;
+    private final AuditTrail auditTrail;
 
-    public TaskService(JdbcTemplate jdbcTemplate, CurrentUserContext currentUserContext) {
+    public TaskService(JdbcTemplate jdbcTemplate, CurrentUserContext currentUserContext, AuditTrail auditTrail) {
         this.jdbcTemplate = jdbcTemplate;
         this.currentUserContext = currentUserContext;
+        this.auditTrail = auditTrail;
     }
 
     public List<RecipientDto> recipients() {
@@ -241,6 +245,8 @@ public class TaskService {
                     "INSERT INTO task_assignments (task_id, assignee_id) VALUES (?, ?)",
                     taskId, assigneeId);
         }
+        auditTrail.success("派发任务", "TASK", taskId, AuditTrail.USER,
+                "直接派发任务 #" + taskId + "，接收人 " + assigneeIds.size() + " 人", List.of());
         return new DispatchResultDto(taskId, assigneeIds.size());
     }
 
@@ -263,6 +269,8 @@ public class TaskService {
         // 派发给下级或同级不需要审核，直接生成任务；只有接收人包含上级时才进入审核流程。
         if (!requiresApproval(currentUser, values.assigneeIds())) {
             Long taskId = createTask(currentUser.id(), values, values.assigneeIds());
+            auditTrail.success("提交派发申请", "TASK", taskId, AuditTrail.USER,
+                    "无需审核，直接派发生效，任务 #" + taskId, List.of());
             return new DispatchRequestResultDto(null, null, taskId, "APPROVED",
                     values.assigneeIds().size());
         }
@@ -273,6 +281,8 @@ public class TaskService {
                 Long.class, currentUser.id(), values.name(), values.details(), values.startDate(),
                 values.deadline(), values.urgency(), values.taskType());
         insertDispatchAssignees(requestId, values.assigneeIds());
+        auditTrail.success("提交派发申请", "TASK", requestId, AuditTrail.USER,
+                "提交派发申请 #" + requestId + "，等待审核", List.of());
 
         return new DispatchRequestResultDto(requestId, requestId, null, "PENDING",
                 values.assigneeIds().size());
@@ -307,6 +317,10 @@ public class TaskService {
                 values.taskType(), requestId);
         jdbcTemplate.update("DELETE FROM task_dispatch_request_assignees WHERE request_id = ?", requestId);
         insertDispatchAssignees(requestId, values.assigneeIds());
+        auditTrail.success("编辑待审派发申请", "TASK", requestId, AuditTrail.USER,
+                "编辑待审派发申请 #" + requestId,
+                valueChanges(existing.name(), existing.details(), existing.startDate(), existing.deadline(),
+                        existing.urgency(), existing.taskType(), existing.assigneeIds(), values));
         return requireDispatchRequest(requestId);
     }
 
@@ -324,6 +338,9 @@ public class TaskService {
                 "UPDATE task_dispatch_requests SET status = 'WITHDRAWN', updated_at = now() "
                         + "WHERE id = ? AND status = 'PENDING'",
                 requestId);
+        auditTrail.success("撤回派发申请", "TASK", requestId, AuditTrail.USER,
+                "撤回派发申请 #" + requestId,
+                List.of(new AuditChangeDto("status", "PENDING", "WITHDRAWN")));
         return requireDispatchRequest(requestId);
     }
 
@@ -381,6 +398,9 @@ public class TaskService {
                         + "reviewed_at = now(), created_task_id = ?, updated_at = now() "
                         + "WHERE id = ? AND status = 'PENDING'",
                 currentUser.id(), trim(request == null ? null : request.comment()), taskId, requestId);
+        auditTrail.success("通过派发申请", "TASK", requestId, AuditTrail.USER,
+                "通过派发申请 #" + requestId + "，生成任务 #" + taskId,
+                List.of(new AuditChangeDto("status", "PENDING", "APPROVED")));
         return requireDispatchRequest(requestId);
     }
 
@@ -401,6 +421,9 @@ public class TaskService {
                         + "review_comment = ?, reviewed_at = now(), updated_at = now() "
                         + "WHERE id = ? AND status = 'PENDING'",
                 currentUser.id(), comment, requestId);
+        auditTrail.success("驳回派发申请", "TASK", requestId, AuditTrail.USER,
+                "驳回派发申请 #" + requestId,
+                List.of(new AuditChangeDto("status", "PENDING", "REJECTED")));
         return requireDispatchRequest(requestId);
     }
 
@@ -439,6 +462,7 @@ public class TaskService {
         }
 
         DispatchValues payload = values;
+        TaskValues taskValues = payload == null ? null : requireTaskValues(taskId);
         Long requestId = jdbcTemplate.queryForObject(
                 "INSERT INTO task_change_requests (task_id, requester_id, action, name, details, start_date, "
                         + "deadline, urgency, task_type) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id",
@@ -452,6 +476,13 @@ public class TaskService {
         if (payload != null) {
             insertChangeAssignees(requestId, payload.assigneeIds());
         }
+        List<AuditChangeDto> changes = payload == null ? List.of()
+                : valueChanges(taskValues.name(), taskValues.details(), taskValues.startDate(),
+                        taskValues.deadline(), taskValues.urgency(), taskValues.taskType(),
+                        taskValues.assigneeIds(), payload);
+        String submitAction = payload == null ? "提交删除申请" : "提交修改申请";
+        auditTrail.success(submitAction, "TASK", requestId, AuditTrail.USER,
+                submitAction + " #" + requestId + "，任务 #" + taskId, changes);
 
         // 创始人没有更高上级，直接生效并记录审核人，避免审批死锁。
         if ("FOUNDER".equals(currentUser.roleCode())) {
@@ -464,10 +495,16 @@ public class TaskService {
             ChangeRequestViewDto approved = requireChangeRequest(requestId);
             if ("DELETE".equals(created.action())) {
                 jdbcTemplate.update("DELETE FROM tasks WHERE id = ?", created.taskId());
+                auditTrail.success("删除任务", "TASK", created.taskId(), AuditTrail.SYSTEM,
+                        "创始人变更自动通过，删除任务 #" + created.taskId(), List.of());
             } else {
                 applyChangeRequest(approved);
+                auditTrail.success("修改任务", "TASK", created.taskId(), AuditTrail.SYSTEM,
+                        "创始人变更自动通过，修改任务 #" + created.taskId(), changes);
             }
-            return approved;
+            // 移动端（feat/pandora-task-workflow-v1.9）对已发布任务的变更只认 PENDING，
+            // 因此对外仍返回创建时的待审视图，实际生效结果由任务列表与审计体现。
+            return created;
         }
         return requireChangeRequest(requestId);
     }
@@ -509,13 +546,24 @@ public class TaskService {
                     currentUser.id(), trim(request == null ? null : request.comment()), requestId);
             ChangeRequestViewDto approved = requireChangeRequest(requestId);
             jdbcTemplate.update("DELETE FROM tasks WHERE id = ?", existing.taskId());
+            auditTrail.success("通过删除申请", "TASK", requestId, AuditTrail.USER,
+                    "通过删除申请 #" + requestId + "，任务 #" + existing.taskId(),
+                    List.of(new AuditChangeDto("status", "PENDING", "APPROVED")));
+            auditTrail.success("删除任务", "TASK", existing.taskId(), AuditTrail.USER,
+                    "审批通过，删除任务 #" + existing.taskId(), List.of());
             return approved;
         }
+        TaskValues before = requireTaskValues(existing.taskId());
+        List<AuditChangeDto> changes = valueChanges(before.name(), before.details(), before.startDate(),
+                before.deadline(), before.urgency(), before.taskType(), before.assigneeIds(), valuesOf(existing));
         applyChangeRequest(existing);
         jdbcTemplate.update(
                 "UPDATE task_change_requests SET status = 'APPROVED', reviewer_id = ?, review_comment = ?, "
                         + "reviewed_at = now(), updated_at = now() WHERE id = ? AND status = 'PENDING'",
                 currentUser.id(), trim(request == null ? null : request.comment()), requestId);
+        changes.add(new AuditChangeDto("status", "PENDING", "APPROVED"));
+        auditTrail.success("通过修改申请", "TASK", requestId, AuditTrail.USER,
+                "通过修改申请 #" + requestId + "，任务 #" + existing.taskId() + " 已生效", changes);
         return requireChangeRequest(requestId);
     }
 
@@ -535,6 +583,9 @@ public class TaskService {
                 "UPDATE task_change_requests SET status = 'REJECTED', reviewer_id = ?, review_comment = ?, "
                         + "reviewed_at = now(), updated_at = now() WHERE id = ? AND status = 'PENDING'",
                 currentUser.id(), comment, requestId);
+        auditTrail.success("DELETE".equals(existing.action()) ? "驳回删除申请" : "驳回修改申请", "TASK", requestId,
+                AuditTrail.USER, "驳回变更申请 #" + requestId + "，任务 #" + existing.taskId(),
+                List.of(new AuditChangeDto("status", "PENDING", "REJECTED")));
         return requireChangeRequest(requestId);
     }
 
@@ -583,6 +634,51 @@ public class TaskService {
             throw new BusinessException(ErrorCode.TASK_NOT_FOUND);
         }
         return rows.get(0);
+    }
+
+    private TaskValues requireTaskValues(Long taskId) {
+        List<Long> assigneeIds = jdbcTemplate.queryForList(
+                "SELECT assignee_id FROM task_assignments WHERE task_id = ? ORDER BY assignee_id",
+                Long.class, taskId);
+        return jdbcTemplate.queryForObject(
+                "SELECT name, details, start_date, deadline, urgency, task_type FROM tasks WHERE id = ?",
+                (rs, index) -> new TaskValues(rs.getString("name"), rs.getString("details"),
+                        rs.getObject("start_date", LocalDateTime.class),
+                        rs.getObject("deadline", LocalDateTime.class), rs.getString("urgency"),
+                        rs.getString("task_type"), assigneeIds),
+                taskId);
+    }
+
+    private static DispatchValues valuesOf(ChangeRequestViewDto request) {
+        return new DispatchValues(request.name(), request.details(), request.startDate(), request.deadline(),
+                request.urgency(), request.taskType(), request.assigneeIds());
+    }
+
+    private static List<AuditChangeDto> valueChanges(String name, String details, LocalDateTime startDate,
+            LocalDateTime deadline, String urgency, String taskType, List<Long> assigneeIds,
+            DispatchValues after) {
+        List<AuditChangeDto> changes = new ArrayList<>();
+        addChange(changes, "name", name, after.name());
+        if (!Objects.equals(details, after.details())) {
+            changes.add(new AuditChangeDto("details", "原内容", "新内容"));
+        }
+        addChange(changes, "startDate", startDate, after.startDate());
+        addChange(changes, "deadline", deadline, after.deadline());
+        addChange(changes, "urgency", urgency, after.urgency());
+        addChange(changes, "taskType", taskType, after.taskType());
+        if (!new HashSet<>(assigneeIds == null ? List.of() : assigneeIds)
+                .equals(new HashSet<>(after.assigneeIds()))) {
+            changes.add(new AuditChangeDto("assignees", String.valueOf(assigneeIds),
+                    String.valueOf(after.assigneeIds())));
+        }
+        return changes;
+    }
+
+    private static void addChange(List<AuditChangeDto> changes, String field, Object before, Object after) {
+        if (!Objects.equals(before, after)) {
+            changes.add(new AuditChangeDto(field, before == null ? null : String.valueOf(before),
+                    after == null ? null : String.valueOf(after)));
+        }
     }
 
     private void insertChangeAssignees(Long requestId, List<Long> assigneeIds) {
@@ -791,6 +887,9 @@ public class TaskService {
             }
             throw new BusinessException(ErrorCode.TASK_STATUS_CONFLICT);
         }
+        auditTrail.success("更新进度", "TASK", row.taskId(), AuditTrail.USER,
+                "更新任务 #" + row.taskId() + " 进度为 " + target,
+                List.of(new AuditChangeDto("executionStatus", row.executionStatus(), target)));
         return state(requireAssignment(assignmentId));
     }
 
@@ -856,6 +955,11 @@ public class TaskService {
         jdbcTemplate.update(
                 "UPDATE task_assignments SET execution_status = ?, updated_at = now() WHERE id = ?",
                 target, assignmentId);
+        auditTrail.success("更新进度", "TASK", row.taskId(), AuditTrail.USER,
+                "更新任务 #" + row.taskId() + " 进度为 " + target + "（" + percent + "%）",
+                List.of(new AuditChangeDto("executionStatus", row.executionStatus(), target),
+                        new AuditChangeDto("progressPercent", String.valueOf(currentPercent),
+                                String.valueOf(percent))));
         return requireProgressUpdate(id);
     }
 
@@ -961,6 +1065,9 @@ public class TaskService {
         jdbcTemplate.update(
                 "INSERT INTO task_reviews (assignment_id, action, actor_id, comment) VALUES (?, 'INVITED', ?, NULL)",
                 assignmentId, currentUser.id());
+        auditTrail.success("申请完成检查", "TASK", row.taskId(), AuditTrail.USER,
+                "申请检查任务 #" + row.taskId(),
+                List.of(new AuditChangeDto("reviewStatus", row.reviewStatus(), "PENDING")));
         return state(requireAssignment(assignmentId));
     }
 
@@ -995,6 +1102,12 @@ public class TaskService {
         jdbcTemplate.update(
                 "INSERT INTO task_reviews (assignment_id, action, actor_id, comment) VALUES (?, ?, ?, ?)",
                 assignmentId, action, currentUser.id(), trim(comment).isEmpty() ? null : comment.trim());
+        auditTrail.success("RETURNED".equals(action) ? "退回检查" : "通过检查", "TASK", row.taskId(),
+                AuditTrail.USER, ("RETURNED".equals(action) ? "退回" : "通过") + "检查任务 #" + row.taskId(),
+                "RETURNED".equals(action)
+                        ? List.of(new AuditChangeDto("reviewStatus", "PENDING", "RETURNED"),
+                                new AuditChangeDto("executionStatus", "COMPLETED", "IN_PROGRESS"))
+                        : List.of(new AuditChangeDto("reviewStatus", "PENDING", "APPROVED")));
         return state(requireAssignment(assignmentId));
     }
 
@@ -1418,6 +1531,10 @@ public class TaskService {
     }
 
     private record TaskRef(Long id, Long senderId) {
+    }
+
+    private record TaskValues(String name, String details, LocalDateTime startDate, LocalDateTime deadline,
+            String urgency, String taskType, List<Long> assigneeIds) {
     }
 
     private record ProgressSnapshot(String executionStatus, int progressPercent) {

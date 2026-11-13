@@ -24,5 +24,8 @@ pandora_web/dist/
 # Docker/local temp
 *.tar
 
+# 本地临时工作树（勿提交）
+.tmp-align-devops/
+
 # 本项目个人档案仅留本地
 /个人资料/
