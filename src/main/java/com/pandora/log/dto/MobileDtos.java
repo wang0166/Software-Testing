@@ -16,7 +16,7 @@ public final class MobileDtos {
     public record Items<T>(List<T> items) {
     }
 
-    public record LogRequest(String content) {
+    public record LogRequest(String content, String logDate) {
     }
 
     public record LogCommentRequest(String content, Long parentId) {

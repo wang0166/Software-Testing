@@ -135,12 +135,31 @@ class MobileBackendContractTest extends EmbeddedPostgresSupport {
         assertThat(ok(get("/api/stats/overview"),leader,null).path("submitted").asInt()).isEqualTo(1);
     }
     @Test void oldDraftCannotBeChangedAndRestartCatchesItUp() throws Exception {
-        long old=jdbc.queryForObject("INSERT INTO work_logs(author_id,log_date,content) VALUES (?,?,'历史草稿') RETURNING id",Long.class,employeeId,today.minusDays(1));
+        long old=jdbc.queryForObject("INSERT INTO work_logs(author_id,log_date,content) VALUES (?,?,'历史草稿') RETURNING id",Long.class,employeeId,today.minusDays(3));
         response(put("/api/logs/"+old),employee,Map.of("content","次日修改"),409);
         response(post("/api/logs/"+old+"/submit"),employee,Map.of(),409);
         long current=ok(post("/api/logs"),other,Map.of("content","今日草稿")).path("id").asLong();
         assertThat(deadlines.settle()).isEqualTo(1);
         assertThat(jdbc.queryForObject("SELECT status FROM work_logs WHERE id=?",String.class,current)).isEqualTo("DRAFT");
+    }
+    @Test void logDateWindowAndAuditTraceAreExposedToWebAdmin() throws Exception {
+        long yesterday=ok(post("/api/logs"),employee,Map.of("content","补写日志","logDate",today.minusDays(1).toString())).path("id").asLong();
+        assertThat(jdbc.queryForObject("SELECT log_date FROM work_logs WHERE id=?",LocalDate.class,yesterday)).isEqualTo(today.minusDays(1));
+        response(post("/api/logs"),employee,Map.of("content","超窗日志","logDate",today.minusDays(3).toString()),409);
+        ok(put("/api/logs/"+yesterday),employee,Map.of("content","补写日志已修改"));
+
+        JsonNode logs=ok(get("/api/audits").param("objectType","LOG"),admin,null);
+        assertThat(logs.path("total").asInt()).isEqualTo(2);
+        JsonNode update=ok(get("/api/audits").param("objectType","LOG").param("action","修改日志"),admin,null);
+        JsonNode item=update.path("items").get(0);
+        assertThat(item.path("objectType").asText()).isEqualTo("LOG");
+        assertThat(item.path("objectId").asText()).isEqualTo(String.valueOf(yesterday));
+        assertThat(item.path("source").asText()).isEqualTo("USER");
+        assertThat(item.path("summary").asText()).contains("工作日志");
+        JsonNode changes=ok(get("/api/audits/"+item.path("id").asLong()),admin,null).path("changes");
+        assertThat(changes.get(0).path("field").asText()).isEqualTo("content");
+        assertThat(changes.get(0).path("before").asText()).isEqualTo("原内容");
+        response(get("/api/audits").param("objectType","USER"),admin,null,400);
     }
     @Test void approvedChangeIsSingleUseAndRevokesAllSessions() throws Exception {
         String refresh=login("member",PASSWORD).path("refreshToken").asText();
@@ -287,6 +306,10 @@ class MobileBackendContractTest extends EmbeddedPostgresSupport {
         assertThat(approved.path("taskId").asLong()).isPositive();
         assertThat(ok(get("/api/tasks/dispatch-requests/mine"),leader,null)
                 .path("items").get(0).path("status").asText()).isEqualTo("APPROVED");
+        assertThat(ok(get("/api/audits").param("objectType","TASK").param("action","提交派发申请"),admin,null)
+                .path("total").asInt()).isEqualTo(2);
+        assertThat(ok(get("/api/audits").param("objectType","TASK").param("action","通过派发申请"),admin,null)
+                .path("total").asInt()).isEqualTo(1);
 
         JsonNode recipients=ok(get("/api/tasks/recipients/all"),leader,null);
         assertThat(recipients.path("items").size()).isEqualTo(3);
@@ -384,6 +407,25 @@ class MobileBackendContractTest extends EmbeddedPostgresSupport {
         assertThat(updated.path("completed").asBoolean()).isTrue();
         ok(delete("/api/daily-items/"+daily.path("id").asLong()),employee,null);
         assertThat(ok(get("/api/daily-items"),employee,null).path("items").size()).isZero();
+    }
+
+    @Test void founderChangeRequestKeepsPendingStatusForMobileClient() throws Exception {
+        long founderId=jdbc.queryForObject("INSERT INTO users(username,password_hash,real_name,role_code) VALUES ('boss',?,'创始人','FOUNDER') RETURNING id",
+                Long.class,passwords.encode(PASSWORD));
+        jdbc.update("UPDATE companies SET founder_id=? WHERE id=(SELECT company_id FROM departments WHERE id=?)",founderId,departmentId);
+        String founder=login("boss",PASSWORD).path("accessToken").asText();
+        long taskId=ok(post("/api/tasks"),founder,task("2026-10-30T09:30:00","2026-10-30T10:30:00",employeeId)).path("taskId").asLong();
+        JsonNode change=ok(post("/api/tasks/"+taskId+"/change-requests"),founder,Map.of(
+                "action","UPDATE","name","创始人改名","details","完整说明",
+                "startDate","2026-10-30T09:30:00","deadline","2026-10-30T11:30:00",
+                "urgency","NOT_URGENT","taskType","GENERAL","assigneeIds",List.of(employeeId)));
+        // 移动端只接受 PENDING，创始人自动生效后对外仍返回待审视图，实际结果由任务与审计体现
+        assertThat(change.path("status").asText()).isEqualTo("PENDING");
+        assertThat(jdbc.queryForObject("SELECT name FROM tasks WHERE id=?",String.class,taskId)).isEqualTo("创始人改名");
+        assertThat(jdbc.queryForObject("SELECT status FROM task_change_requests WHERE id=?",String.class,change.path("id").asLong()))
+                .isEqualTo("APPROVED");
+        assertThat(ok(get("/api/audits").param("objectType","TASK").param("action","修改任务"),admin,null)
+                .path("total").asInt()).isEqualTo(1);
     }
 
     private void at(LocalDateTime time) { instant=time.atZone(ZONE).toInstant(); }

@@ -27,7 +27,7 @@ public final class AdminDtos {
             @NotBlank @Size(max = 64) String realName,
             @NotBlank String role, Long departmentId, Long teamId,
             @Pattern(regexp = "|男|女") String gender,
-            @Pattern(regexp = "|[0-9]{17}[0-9Xx]") String idNumber) implements StrictRequest {
+            @NotBlank @Pattern(regexp = "\\s*[0-9]{17}[0-9Xx]\\s*") String idNumber) implements StrictRequest {
         @Override public String toString() { return "CreateUserRequest[redacted]"; }
     }
     public record UpdateUserRequest(@NotBlank @Size(max = 64) String realName,
@@ -51,7 +51,15 @@ public final class AdminDtos {
             @NotNull @JsonFormat(without = JsonFormat.Feature.ADJUST_DATES_TO_CONTEXT_TIME_ZONE) OffsetDateTime startDate,
             @NotNull @JsonFormat(without = JsonFormat.Feature.ADJUST_DATES_TO_CONTEXT_TIME_ZONE) OffsetDateTime deadline) implements StrictRequest { }
     public record AuditDto(Long id, String actor, String action, String target,
-            OffsetDateTime time, String result) { }
+            OffsetDateTime time, String result, String objectType, String objectId,
+            String source, String summary) { }
+
+    /** 字段变化；正文类字段只提供“原内容/新内容”标记，不复制正文。 */
+    public record AuditChangeDto(String field, String before, String after) { }
+
+    public record AuditDetailDto(Long id, String actor, String action, String target,
+            OffsetDateTime time, String result, String objectType, String objectId,
+            String source, String summary, List<AuditChangeDto> changes) { }
 
     // ---- 管理端（Web）使用的精简请求/响应模型 ----
 

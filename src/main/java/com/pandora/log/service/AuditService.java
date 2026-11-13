@@ -29,7 +29,11 @@ public class AuditService {
             rs.getString("action"),
             rs.getString("target"),
             rs.getObject("created_at", java.time.OffsetDateTime.class),
-            rs.getString("result"));
+            rs.getString("result"),
+            rs.getString("object_type"),
+            rs.getString("object_id"),
+            null,
+            null);
 
     private final JdbcTemplate jdbcTemplate;
     private final CurrentUserContext currentUserContext;
@@ -79,6 +83,7 @@ public class AuditService {
         pageArgs.add(pageQuery.offset());
         List<AuditDto> items = jdbcTemplate.query(
                 "SELECT a.id, COALESCE(u.username, 'system') AS actor, a.action, a.result, a.created_at, "
+                        + "a.object_type, a.object_id, "
                         + "COALESCE(a.object_type, '-') || COALESCE(' ' || a.object_id, '') AS target"
                         + from + where + " ORDER BY a.created_at DESC, a.id DESC LIMIT ? OFFSET ?",
                 MAPPER, pageArgs.toArray());
