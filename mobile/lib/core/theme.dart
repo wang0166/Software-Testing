@@ -6,13 +6,13 @@ class Palette {
   static const Color primary = Color(0xFF066C78);
   static const Color deep = Color(0xFF102C43);
   static const Color ink = Color(0xFF25364A);
-  static const Color sage = Color(0xFFE5F0F1);
-  static const Color paper = Color(0xFFF1F4F7);
+  static const Color sage = Color(0xFFE0F4E8);
+  static const Color paper = Color(0xFFFFFAFC);
   static const Color pastel = Color(0xFFFFF1DF);
   static const Color coral = Color(0xFFC65D50);
   static const Color muted = Color(0xFF637389);
   static const Color divider = Color(0xFFD5DDE4);
-  static const Color lavender = Color(0xFFEDF1F7);
+  static const Color lavender = Color(0xFFEFE7FF);
   static const Color gold = Color(0xFFD2A052);
   static const Color darkGreen = Color(0xFF09615E);
   static const Color surface = Colors.white;
@@ -24,7 +24,7 @@ ThemeData pandoraTheme() {
     seedColor: Palette.primary,
     brightness: Brightness.light,
   );
-  const corners = BorderRadius.all(Radius.circular(12));
+  const corners = BorderRadius.all(Radius.circular(16));
   return ThemeData(
     useMaterial3: true,
     colorScheme: colors.copyWith(
@@ -100,7 +100,7 @@ ThemeData pandoraTheme() {
     floatingActionButtonTheme: const FloatingActionButtonThemeData(
       backgroundColor: Palette.deep,
       foregroundColor: Colors.white,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.all(Radius.circular(14))),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.all(Radius.circular(18))),
     ),
     snackBarTheme: const SnackBarThemeData(
       behavior: SnackBarBehavior.floating,
@@ -110,7 +110,7 @@ ThemeData pandoraTheme() {
     ),
     dialogTheme: const DialogThemeData(
       backgroundColor: Palette.paper,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.all(Radius.circular(16))),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.all(Radius.circular(22))),
       titleTextStyle: TextStyle(fontSize: 19, fontWeight: FontWeight.w800, color: Palette.deep),
     ),
     bottomSheetTheme: const BottomSheetThemeData(backgroundColor: Palette.paper, showDragHandle: true),

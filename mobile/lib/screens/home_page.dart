@@ -93,24 +93,30 @@ class _HomePageState extends State<HomePage> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Text('首页', style: TextStyle(color: Palette.deep,
-                    fontSize: 22, fontWeight: FontWeight.w900)),
+                  Row(children: [
+                    Text('首页', style: TextStyle(color: Palette.deep,
+                      fontSize: 22, fontWeight: FontWeight.w900)),
+                    SizedBox(width: 7),
+                    Icon(Icons.auto_awesome_rounded,
+                      color: Color(0xFFD789A9), size: 20),
+                  ]),
                   Text('企业事件 · 我的接收任务 · 个人每日事项',
                     maxLines: 1, overflow: TextOverflow.ellipsis,
                     style: TextStyle(color: Palette.muted, fontSize: 10)),
                 ],
               )),
-              TextButton(
+              TextButton.icon(
                 key: const Key('home_refresh'),
+                icon: const Icon(Icons.refresh_rounded, size: 16),
                 onPressed: loading ? null : () => setState(_refresh),
                 style: TextButton.styleFrom(
                   minimumSize: Size.zero, padding: const EdgeInsets.symmetric(horizontal: 5),
                   tapTargetSize: MaterialTapTargetSize.shrinkWrap),
-                child: const Text('刷新', style: TextStyle(fontSize: 12)),
+                label: const Text('刷新', style: TextStyle(fontSize: 12)),
               ),
             ]),
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 12),
           SizedBox(height: 240, child: Row(children: [
             Expanded(child: _HomeTile(
               key: const Key('event_history_panel'),
@@ -124,7 +130,7 @@ class _HomePageState extends State<HomePage> {
               loading: loading, countSuffix: '项',
             )),
           ])),
-          const SizedBox(height: 10),
+          const SizedBox(height: 13),
           SizedBox(height: 675, child: DailyTodosCalendar(
             key: ValueKey('daily_todo_${widget.app.user?.id ?? 0}'),
             userId: widget.app.user?.id ?? 0,
@@ -166,33 +172,39 @@ class _HomeTileState extends State<_HomeTile> {
   @override
   Widget build(BuildContext context) {
     final records = widget.records;
+    final isEvent = widget.order == '01';
+    final headerColors = isEvent
+        ? const [Color(0xFFFFDCE9), Color(0xFFFFECDD)]
+        : const [Color(0xFFE0EBFF), Color(0xFFE9E0FF)];
     return Container(
       clipBehavior: Clip.antiAlias,
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(9),
-        border: Border.all(color: Palette.divider),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: const Color(0xFFECE1EB)),
+        boxShadow: const [BoxShadow(color: Color(0x0B9E8EB6),
+          blurRadius: 12, offset: Offset(0, 3))],
       ),
       child: Column(
         children: [
           Container(
             constraints: const BoxConstraints(minHeight: 57),
             padding: const EdgeInsets.fromLTRB(10, 9, 9, 9),
-            color: Palette.deep,
+            decoration: BoxDecoration(gradient: LinearGradient(colors: headerColors)),
             child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text(widget.order, style: const TextStyle(
-                color: Color(0xFF65D2C4), fontSize: 12, fontWeight: FontWeight.w800,
+              Text(isEvent ? '✿' : '✦', style: const TextStyle(
+                color: Color(0xFFBF6996), fontSize: 12, fontWeight: FontWeight.w800,
               )),
               const SizedBox(width: 5),
               Expanded(child: Text(widget.title, maxLines: 2,
                 overflow: TextOverflow.ellipsis, style: const TextStyle(
-                  color: Colors.white, fontWeight: FontWeight.w800,
+                  color: Palette.deep, fontWeight: FontWeight.w800,
                   fontSize: 12, height: 1.3,
                 ))),
               if (records != null) Padding(
                 padding: const EdgeInsets.only(left: 3),
                 child: Text('${records.length}${widget.countSuffix}', style: const TextStyle(
-                  color: Color(0xFF9ADCD4), fontSize: 10,
+                  color: Palette.muted, fontSize: 10,
                 )),
               ),
             ]),
@@ -219,7 +231,7 @@ class _HomeTileState extends State<_HomeTile> {
                           padding: const EdgeInsets.fromLTRB(9, 4, 8, 4),
                           itemCount: records.length,
                           separatorBuilder: (_, __) => const Divider(
-                            height: 1, color: Palette.divider,
+                            height: 1, color: Color(0xFFF0E7ED),
                           ),
                           itemBuilder: (context, index) {
                             final row = records[index];
@@ -232,7 +244,7 @@ class _HomeTileState extends State<_HomeTile> {
                                   child: Row(crossAxisAlignment: CrossAxisAlignment.start,
                                     children: [
                                       Text('${index + 1}'.padLeft(2, '0'),
-                                        style: const TextStyle(color: Palette.primary,
+                                        style: const TextStyle(color: Color(0xFFC77A9D),
                                           fontSize: 10, fontWeight: FontWeight.w900)),
                                       const SizedBox(width: 6),
                                       Expanded(child: Column(

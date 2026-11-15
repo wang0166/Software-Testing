@@ -77,6 +77,7 @@ void main() {
     await tester.enterText(find.byKey(const Key('daily_todo_title_input')), '阅读半小时');
     await tester.tap(find.byKey(const Key('daily_todo_save_button')));
     await tester.pumpAndSettle();
-    expect(find.text('阅读半小时'), findsOneWidget);
+    // 月历预览和当日列表都会展示同一个事项。
+    expect(find.text('阅读半小时'), findsWidgets);
   });
 }
