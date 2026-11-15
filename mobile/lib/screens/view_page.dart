@@ -66,7 +66,7 @@ class _ViewPageState extends State<ViewPage> {
             onPressed: openingCreate ? null : _createTask,
             backgroundColor: Palette.primary,
             foregroundColor: Colors.white,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(23)),
             icon: const Icon(Icons.add, size: 22),
             label: const Text('创建任务', style: TextStyle(fontWeight: FontWeight.w800)),
           )
@@ -92,12 +92,12 @@ class _ViewPageState extends State<ViewPage> {
                 label: Text(tabs[i]),
                 selected: selected == i,
                 showCheckmark: false,
-                selectedColor: Palette.deep, backgroundColor: Colors.white,
+                selectedColor: Palette.primary, backgroundColor: Colors.white,
                 labelStyle: TextStyle(
                   color: selected == i ? Colors.white : Palette.deep,
                   fontWeight: FontWeight.w700, fontSize: 12),
-                side: BorderSide(color: selected == i ? Palette.deep : Palette.divider),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(7)),
+                side: BorderSide(color: selected == i ? Palette.primary : Palette.divider),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
                 onSelected: (_) {
                   setState(() {
                     selected = i;

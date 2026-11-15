@@ -145,7 +145,7 @@ class _TaskProgressPageState extends State<TaskProgressPage> {
         children: [
           Container(padding: const EdgeInsets.all(18),
             decoration: BoxDecoration(color: Palette.deep,
-              borderRadius: BorderRadius.circular(12)),
+              borderRadius: BorderRadius.circular(22)),
             child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
               Text(current.name, style: const TextStyle(
                 color: Colors.white, fontSize: 22, fontWeight: FontWeight.w900)),

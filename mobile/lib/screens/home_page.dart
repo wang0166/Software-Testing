@@ -131,7 +131,9 @@ class _HomePageState extends State<HomePage> {
             )),
           ])),
           const SizedBox(height: 13),
-          SizedBox(height: 675, child: DailyTodosCalendar(
+          // 中等高度：为每周的两条可长按事项标签留出位置，
+          // 同时保持与工作视图一致的无日期方框、按周横线分隔布局。
+          SizedBox(height: 810, child: DailyTodosCalendar(
             key: ValueKey('daily_todo_${widget.app.user?.id ?? 0}'),
             userId: widget.app.user?.id ?? 0,
             holidayService: widget.app.holidays,
@@ -180,8 +182,8 @@ class _HomeTileState extends State<_HomeTile> {
       clipBehavior: Clip.antiAlias,
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: const Color(0xFFECE1EB)),
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(color: Palette.divider),
         boxShadow: const [BoxShadow(color: Color(0x0B9E8EB6),
           blurRadius: 12, offset: Offset(0, 3))],
       ),

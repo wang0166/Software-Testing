@@ -82,6 +82,20 @@ class DailyTodo {
   );
 }
 
+/// Moves one private todo across calendar dates. Keeps its ID, color, time,
+/// completion state, and the order of every other item exactly unchanged.
+/// Unknown IDs and invalid target dates are treated as no-ops.
+List<DailyTodo> moveDailyTodoToDate(
+    List<DailyTodo> items, String itemId, String targetDate) {
+  final parsed = DateTime.tryParse(targetDate);
+  if (parsed == null || dayString(parsed) != targetDate) return [...items];
+  return [for (final item in items)
+    if (item.id == itemId && item.date != targetDate)
+      item.copyWith(date: targetDate)
+    else
+      item];
+}
+
 /// Reorders only items on the selected date; records on other dates are intact.
 /// newIndex is already adjusted by ReorderableListView.onReorderItem.
 List<DailyTodo> reorderDailyTodosForDay(

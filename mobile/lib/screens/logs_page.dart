@@ -82,7 +82,12 @@ class _LogsPageState extends State<LogsPage> {
   @override Widget build(BuildContext context) => Scaffold(
     body: Column(children: [
       Padding(padding: const EdgeInsets.fromLTRB(20, 22, 20, 12), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        const Text('工作日志', style: TextStyle(color: Palette.deep, fontSize: 25, fontWeight: FontWeight.w800)),
+        const Row(children: [
+          Icon(Icons.auto_awesome_rounded, color: Palette.primary, size: 22),
+          SizedBox(width: 8),
+          Text('工作日志', style: TextStyle(color: Palette.deep,
+            fontSize: 25, fontWeight: FontWeight.w900)),
+        ]),
         const SizedBox(height: 4), const Text('部门、我的、下属日志独立筛选，仅显示授权数据', style: TextStyle(color: Palette.muted, fontSize: 12)),
         const SizedBox(height: 14), TextField(controller: _search, onChanged: (_) => setState(() {}), decoration: const InputDecoration(prefixIcon: Icon(Icons.search_rounded), hintText: '搜索姓名或日志内容')),
         const SizedBox(height: 12), Row(children: [for (final option in [
@@ -90,8 +95,10 @@ class _LogsPageState extends State<LogsPage> {
           if (const ['TEAM_LEADER', 'DEPT_MANAGER', 'FOUNDER'].contains(widget.app.user?.role))
             '我的下属',
         ]) Expanded(child: Padding(padding: const EdgeInsets.only(right: 8), child: InkWell(
-          onTap: () => _selectMode(option), borderRadius: BorderRadius.circular(9), child: Container(alignment: Alignment.center, padding: const EdgeInsets.symmetric(vertical: 12),
-          decoration: BoxDecoration(color: _filter == option ? Palette.deep : Colors.white, borderRadius: BorderRadius.circular(9)), child: Text(option, style: TextStyle(color: _filter == option ? Colors.white : Palette.muted, fontWeight: FontWeight.w800))),
+          onTap: () => _selectMode(option), borderRadius: BorderRadius.circular(19), child: Container(alignment: Alignment.center, padding: const EdgeInsets.symmetric(vertical: 12),
+          decoration: BoxDecoration(color: _filter == option ? Palette.primary : Colors.white,
+            border: Border.all(color: _filter == option ? Palette.primary : Palette.divider),
+            borderRadius: BorderRadius.circular(19)), child: Text(option, style: TextStyle(color: _filter == option ? Colors.white : Palette.muted, fontWeight: FontWeight.w800))),
         )))]),
       ])),
       Expanded(child: FutureBuilder<List<SubordinateTaskSummary>>(
@@ -224,10 +231,10 @@ class _LogsPageState extends State<LogsPage> {
     floatingActionButton: widget.app.user!.canWriteLog ? FloatingActionButton.extended(onPressed: _write, icon: const Icon(Icons.edit_note_rounded), label: const Text('写 / 编辑日志')) : null,
   );
   Widget _chip(String text, bool chosen, VoidCallback tap) => Padding(padding: const EdgeInsets.only(right: 7), child: ChoiceChip(
-    selected: chosen, label: Text(text), showCheckmark: false, onSelected: (_) => tap(), selectedColor: Palette.sage, backgroundColor: Colors.white,
+    selected: chosen, label: Text(text), showCheckmark: false, onSelected: (_) => tap(), selectedColor: Palette.rose, backgroundColor: Colors.white,
     labelStyle: TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: chosen ? Palette.deep : Palette.muted), side: const BorderSide(color: Palette.divider),
   ));
-  Widget _logTile(WorkLog l) => Padding(padding: const EdgeInsets.only(bottom: 9), child: Material(color: Colors.white, borderRadius: BorderRadius.circular(12), child: ListTile(
+  Widget _logTile(WorkLog l) => Padding(padding: const EdgeInsets.only(bottom: 9), child: Material(color: Colors.white, borderRadius: BorderRadius.circular(23), child: ListTile(
     onTap: () async {await Navigator.push(context, MaterialPageRoute<void>(builder: (_) => LogDetailPage(app: widget.app, log: l))); if (mounted) setState(_refresh);},
     contentPadding: const EdgeInsets.fromLTRB(14, 7, 13, 7),
     leading: CircleAvatar(backgroundColor: Palette.sage, child: Text(l.authorName.isEmpty ? '记' : l.authorName.substring(0, 1), style: const TextStyle(color: Palette.deep, fontWeight: FontWeight.w900))),

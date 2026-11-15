@@ -41,11 +41,21 @@ class _LoginPageState extends State<LoginPage> {
   }
   @override Widget build(BuildContext context) => Scaffold(body: SafeArea(child: Center(child: SingleChildScrollView(
     padding: const EdgeInsets.fromLTRB(23, 28, 23, 28), child: ConstrainedBox(constraints: const BoxConstraints(maxWidth: 430), child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-      Center(child: Container(width: 73, height: 73, decoration: BoxDecoration(color: Palette.primary, borderRadius: BorderRadius.circular(23)), child: const Icon(Icons.auto_stories_rounded, color: Colors.white, size: 38))),
+      Center(child: Container(width: 78, height: 78,
+        decoration: BoxDecoration(
+          gradient: const LinearGradient(colors: [Palette.primary, Color(0xFFAC8EDB)]),
+          borderRadius: BorderRadius.circular(29),
+          boxShadow: [BoxShadow(color: Palette.primary.withValues(alpha: .17),
+            blurRadius: 18, offset: const Offset(0, 8))]),
+        child: const Icon(Icons.auto_awesome_rounded, color: Colors.white, size: 41))),
       const SizedBox(height: 17), const Center(child: Text('智能掌上日志系统', style: TextStyle(color: Palette.deep, fontSize: 26, fontWeight: FontWeight.w900))),
       const SizedBox(height: 3), const Center(child: Text('PANDORA  ·  潘多拉', style: TextStyle(color: Palette.primary, fontSize: 12, fontWeight: FontWeight.w800, letterSpacing: 2))),
       const SizedBox(height: 26),
-      Container(padding: const EdgeInsets.all(23), decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(25)), child: Form(key: form, child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      Container(padding: const EdgeInsets.all(23), decoration: BoxDecoration(
+        color: Colors.white, borderRadius: BorderRadius.circular(29),
+        border: Border.all(color: Palette.divider),
+        boxShadow: [BoxShadow(color: Palette.primary.withValues(alpha: .06),
+          blurRadius: 22, offset: const Offset(0, 8))]), child: Form(key: form, child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         const Text('欢迎回来', style: TextStyle(color: Palette.deep, fontSize: 23, fontWeight: FontWeight.w900)),
         const SizedBox(height: 3), const Text('登录后进入你的工作空间', style: TextStyle(color: Palette.muted, fontSize: 12)),
         const SizedBox(height: 22), const Text('登录账号', style: TextStyle(color: Palette.deep, fontWeight: FontWeight.w800)), const SizedBox(height: 7),
@@ -59,7 +69,7 @@ class _LoginPageState extends State<LoginPage> {
         const SizedBox(height: 5), FilledButton(key: const Key('login_button'), onPressed: busy ? null : _login,
           child: busy ? const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white)) : const Text('登 录')),
       ]))),
-      if (pandoraDemo) ...[const SizedBox(height: 17), Material(color: Palette.pastel, borderRadius: BorderRadius.circular(18), child: ExpansionTile(
+      if (pandoraDemo) ...[const SizedBox(height: 17), Material(color: Palette.pastel, borderRadius: BorderRadius.circular(24), child: ExpansionTile(
         leading: const Icon(Icons.science_rounded, color: Palette.primary), title: const Text('演示账号', style: TextStyle(fontWeight: FontWeight.w800, color: Palette.deep)),
         subtitle: const Text('本机演示 · 无需后端', style: TextStyle(fontSize: 11)), childrenPadding: const EdgeInsets.fromLTRB(13, 0, 13, 12), children: [
           Wrap(spacing: 6, runSpacing: 5, children: [for (final u in MockRepository.users) ActionChip(label: Text('${u.name} · ${u.roleLabel}', style: const TextStyle(fontSize: 11)), onPressed: () {username.text = u.username; password.text = MockRepository.demoPassword; setState(() {});})]),

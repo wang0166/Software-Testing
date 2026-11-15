@@ -212,7 +212,7 @@ class _CalendarPageState extends State<CalendarPage> {
                   child: InkWell(
                     key: const Key('calendar_date_picker'),
                     onTap: _pickDate,
-                    borderRadius: BorderRadius.circular(9),
+                    borderRadius: BorderRadius.circular(18),
                     child: Padding(padding: const EdgeInsets.symmetric(vertical: 9), child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
                       Flexible(child: Text(_periodText, textAlign: TextAlign.center, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w900, color: Palette.deep))),
                       const SizedBox(width: 5), const Icon(Icons.arrow_drop_down_circle_outlined, size: 19, color: Palette.primary),
@@ -245,14 +245,14 @@ class _CalendarPageState extends State<CalendarPage> {
                       padding: const EdgeInsets.symmetric(horizontal: 2),
                       child: InkWell(
                         key: ValueKey('calendar_mode_$i'),
-                        borderRadius: BorderRadius.circular(9),
+                        borderRadius: BorderRadius.circular(18),
                         onTap: () => _changeMode(i),
                         child: Container(
                           alignment: Alignment.center,
                           padding: const EdgeInsets.symmetric(vertical: 11),
                           decoration: BoxDecoration(
                             color: _mode == i ? Palette.deep : Colors.white,
-                            borderRadius: BorderRadius.circular(9),
+                            borderRadius: BorderRadius.circular(18),
                           ),
                           child: Text(
                             const ['月', '周', '日', '甘特图'][i],
@@ -410,7 +410,7 @@ class _CalendarPageState extends State<CalendarPage> {
     final remaining = matches.length - visibleLimit;
     return InkWell(
       key: ValueKey('calendar_day_$key'),
-      borderRadius: BorderRadius.circular(8),
+      borderRadius: BorderRadius.circular(22),
       onTap: () => setState(() {
         final changedMonth = _month.year != date.year || _month.month != date.month;
         _selected = date;
@@ -426,7 +426,7 @@ class _CalendarPageState extends State<CalendarPage> {
         padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 3),
         decoration: BoxDecoration(
           color: selected ? const Color(0xFFF0F7FA) : Colors.transparent,
-          borderRadius: BorderRadius.circular(8),
+          borderRadius: BorderRadius.circular(22),
         ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -510,7 +510,7 @@ class _CalendarPageState extends State<CalendarPage> {
 
   Widget _dayTaskTile(TaskItem task) => Material(
     color: _barColor(task.status),
-    borderRadius: BorderRadius.circular(9),
+    borderRadius: BorderRadius.circular(18),
     clipBehavior: Clip.antiAlias,
     child: ListTile(
       dense: true,
@@ -660,7 +660,7 @@ class _CalendarPageState extends State<CalendarPage> {
             decoration: BoxDecoration(
               color: Colors.white,
               border: Border.all(color: Palette.divider),
-              borderRadius: BorderRadius.circular(9),
+              borderRadius: BorderRadius.circular(18),
             ),
             child: Row(children: [
               const Icon(Icons.task_alt_rounded, color: Palette.primary, size: 19),

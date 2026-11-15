@@ -90,12 +90,12 @@ class _TaskMapPageState extends State<TaskMapPage> {
             padding: const EdgeInsets.symmetric(horizontal: 3), child: InkWell(
               key: ValueKey('ai_map_section_$i'),
               onTap: () => setState(() => section = i),
-              borderRadius: BorderRadius.circular(8),
+              borderRadius: BorderRadius.circular(20),
               child: Container(alignment: Alignment.center, padding: const EdgeInsets.symmetric(vertical: 12),
                 decoration: BoxDecoration(
-                  color: section == i ? Palette.deep : Colors.white,
-                  border: Border.all(color: section == i ? Palette.deep : Palette.divider),
-                  borderRadius: BorderRadius.circular(8)),
+                  color: section == i ? Palette.primary : Colors.white,
+                  border: Border.all(color: section == i ? Palette.primary : Palette.divider),
+                  borderRadius: BorderRadius.circular(20)),
                 child: Text(const ['数据收集','任务展示','AI分析'][i],
                   style: TextStyle(color: section == i ? Colors.white : Palette.deep,
                     fontWeight: FontWeight.w800, fontSize: 12)),
@@ -159,7 +159,7 @@ class _TaskMapPageState extends State<TaskMapPage> {
                             left: BorderSide(color: Palette.sage, width: 3))),
                           child: Padding(padding: const EdgeInsets.only(left: 13),
                             child: Material(color: Colors.white,
-                              borderRadius: BorderRadius.circular(11),
+                              borderRadius: BorderRadius.circular(21),
                               child: ListTile(
                                 title: Text(t.name, style: const TextStyle(
                                   color: Palette.deep, fontWeight: FontWeight.w800)),
@@ -254,7 +254,7 @@ class _TaskMapPageState extends State<TaskMapPage> {
   Widget _sourceCard(String name, String count, String note) => Container(
     padding: const EdgeInsets.all(15),
     decoration: BoxDecoration(color: Colors.white,
-      border: Border.all(color: Palette.divider), borderRadius: BorderRadius.circular(9)),
+      border: Border.all(color: Palette.divider), borderRadius: BorderRadius.circular(23)),
     child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
       Row(children: [
         Expanded(child: Text(name, style: const TextStyle(color: Palette.deep,
@@ -271,7 +271,7 @@ class _TaskMapPageState extends State<TaskMapPage> {
     padding: const EdgeInsets.all(18),
     decoration: BoxDecoration(
       color: Colors.white, border: Border.all(color: Palette.divider),
-      borderRadius: BorderRadius.circular(9)),
+      borderRadius: BorderRadius.circular(23)),
     child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
       const Row(children: [
         Icon(Icons.auto_awesome_outlined, color: Palette.primary, size: 22),
@@ -303,7 +303,7 @@ class _TaskMapPageState extends State<TaskMapPage> {
 
   Widget _header(_TaskMapData data) => Container(
     padding: const EdgeInsets.all(18),
-    decoration: BoxDecoration(color: Palette.deep, borderRadius: BorderRadius.circular(12)),
+    decoration: BoxDecoration(color: Palette.deep, borderRadius: BorderRadius.circular(23)),
     child: Row(children: [
       
       Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start,
@@ -312,7 +312,7 @@ class _TaskMapPageState extends State<TaskMapPage> {
             style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w900)),
           const SizedBox(height: 5),
           Text('收到 ${data.received.length} 项 · 派发 ${data.dispatched.length} 项',
-            style: const TextStyle(color: Color(0xFFC5D4E1), fontSize: 12)),
+            style: const TextStyle(color: Color(0xFFF9DAE9), fontSize: 12)),
         ],
       )),
     ]),
@@ -324,7 +324,7 @@ class _TaskMapPageState extends State<TaskMapPage> {
         : (task.completedCount / task.assigneeCount).clamp(0.0, 1.0).toDouble();
     return Padding(
       padding: const EdgeInsets.only(bottom: 10),
-      child: Material(color: Colors.white, borderRadius: BorderRadius.circular(12),
+      child: Material(color: Colors.white, borderRadius: BorderRadius.circular(23),
         child: Padding(padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 13),
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
             Text(task.name, style: const TextStyle(

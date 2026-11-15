@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import '../core/daily_todos.dart';
 import '../core/holiday_calendar.dart';
@@ -25,6 +26,14 @@ class _DailyTodosCalendarState extends State<DailyTodosCalendar> {
   String? _loadError;
   HolidayCalendarView? _holidayView;
   int _holidayRequestId = 0;
+  Timer? _monthDragHoverTimer;
+  int? _hoveringMonthArrow;
+
+  @override
+  void dispose() {
+    _monthDragHoverTimer?.cancel();
+    super.dispose();
+  }
 
   void _fetchHolidays({bool forceRefresh = false}) {
     final service = widget.holidayService;
@@ -92,6 +101,73 @@ class _DailyTodosCalendarState extends State<DailyTodosCalendar> {
     _fetchHolidays();
   }
 
+  /// Dragging may keep the selected day in the previous month so the
+  /// originating draggable stays mounted while the grid navigates.
+  void _changeMonthWhileDragging(int delta) {
+    if (!mounted) return;
+    setState(() {
+      _month = DateTime(_month.year, _month.month + delta);
+      _holidayView = null;
+    });
+    _fetchHolidays();
+  }
+
+  void _cancelMonthHover() {
+    _monthDragHoverTimer?.cancel();
+    _monthDragHoverTimer = null;
+    _hoveringMonthArrow = null;
+  }
+
+  void _scheduleMonthHover(int delta) {
+    if (_hoveringMonthArrow == delta || _saving) return;
+    _cancelMonthHover();
+    _hoveringMonthArrow = delta;
+    _monthDragHoverTimer = Timer(const Duration(milliseconds: 750), () {
+      if (mounted && _hoveringMonthArrow == delta) {
+        _changeMonthWhileDragging(delta);
+      }
+    });
+  }
+
+  /// Long-press a task, hover a month arrow to navigate, then drop on a date.
+  Widget _monthDragArrow(int delta) => DragTarget<String>(
+    key: Key(delta < 0 ? 'daily_todo_drag_prev_month'
+      : 'daily_todo_drag_next_month'),
+    onWillAcceptWithDetails: (details) => !_saving &&
+      _items.any((item) => item.id == details.data),
+    onMove: (_) => _scheduleMonthHover(delta),
+    onLeave: (_) => _cancelMonthHover(),
+    onAcceptWithDetails: (_) => _cancelMonthHover(),
+    builder: (context, candidates, rejected) => Container(
+      decoration: BoxDecoration(
+        color: candidates.isNotEmpty ? Palette.rose : Colors.transparent,
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: IconButton(
+        onPressed: () => _moveMonth(delta),
+        tooltip: delta < 0 ? '上个月 · 拖动时悬停可切换月份' : '下个月 · 拖动时悬停可切换月份',
+        padding: EdgeInsets.zero,
+        constraints: const BoxConstraints.tightFor(width: 34, height: 34),
+        style: IconButton.styleFrom(
+          tapTargetSize: MaterialTapTargetSize.shrinkWrap),
+        icon: Icon(delta < 0 ? Icons.chevron_left_rounded
+          : Icons.chevron_right_rounded),
+      ),
+    ),
+  );
+
+  void _selectCalendarDate(DateTime date) {
+    final differentMonth = date.month != _month.month || date.year != _month.year;
+    setState(() {
+      _selected = DateUtils.dateOnly(date);
+      if (differentMonth) {
+        _month = DateTime(date.year, date.month);
+        _holidayView = null;
+      }
+    });
+    if (differentMonth) _fetchHolidays();
+  }
+
   Future<void> _chooseDate() async {
     final date = await showDatePicker(
       context: context, initialDate: _selected,
@@ -137,6 +213,7 @@ class _DailyTodosCalendarState extends State<DailyTodosCalendar> {
     var draftTitle = item?.title ?? '';
     var draftNote = item?.note ?? '';
     var draftColor = item?.colorValue ?? DailyTodoColors.defaultColor;
+    var draftDate = item?.date ?? dayString(_selected);
     TimeOfDay? start = _parseTime(item?.startTime);
     TimeOfDay? end = _parseTime(item?.endTime);
     String? errorText;
@@ -145,6 +222,18 @@ class _DailyTodosCalendarState extends State<DailyTodosCalendar> {
       context: context,
       builder: (dialogContext) => StatefulBuilder(
         builder: (ctx, setDialogState) {
+          Future<void> pickDate() async {
+            final picked = await showDatePicker(
+              context: ctx,
+              initialDate: DateTime.tryParse(draftDate) ?? _selected,
+              firstDate: DateTime(2000), lastDate: DateTime(2100),
+              helpText: '选择事项的目标日期',
+            );
+            if (picked != null && dialogContext.mounted) {
+              setDialogState(() => draftDate = dayString(picked));
+            }
+          }
+
           Future<void> pickTime(bool isStart) async {
             final picked = await showTimePicker(
               context: ctx,
@@ -178,8 +267,17 @@ class _DailyTodosCalendarState extends State<DailyTodosCalendar> {
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text('日期：${item?.date ?? dayString(_selected)}',
-                    style: const TextStyle(color: Palette.muted)),
+                  OutlinedButton.icon(
+                    key: const Key('daily_todo_edit_date'),
+                    onPressed: pickDate,
+                    icon: const Icon(Icons.calendar_month_rounded, size: 18),
+                    label: Text('日期：$draftDate'),
+                    style: OutlinedButton.styleFrom(
+                      minimumSize: const Size(0, 42)),
+                  ),
+                  const SizedBox(height: 6),
+                  const Text('也可以长按事项，拖到月历中的目标日期',
+                    style: TextStyle(color: Palette.muted, fontSize: 11)),
                   const SizedBox(height: 12),
                   TextFormField(
                     key: const Key('daily_todo_title_input'),
@@ -291,7 +389,7 @@ class _DailyTodosCalendarState extends State<DailyTodosCalendar> {
                   final id = item?.id ??
                       DateTime.now().microsecondsSinceEpoch.toString();
                   Navigator.pop(dialogContext, DailyTodo(
-                    id: id, date: item?.date ?? dayString(_selected),
+                    id: id, date: draftDate,
                     title: draftTitle.trim(), note: draftNote.trim(),
                     completed: item?.completed ?? false,
                     colorValue: draftColor, startTime: startText, endTime: endText,
@@ -308,7 +406,11 @@ class _DailyTodosCalendarState extends State<DailyTodosCalendar> {
     final updated = [..._items];
     final index = updated.indexWhere((e) => e.id == result.id);
     if (index >= 0) { updated[index] = result; } else { updated.add(result); }
-    await _save(updated);
+    final saved = await _save(updated);
+    if (saved && mounted && result.date != dayString(_selected)) {
+      final target = DateTime.tryParse(result.date);
+      if (target != null) _selectCalendarDate(target);
+    }
   }
 
   static TimeOfDay? _parseTime(String? value) {
@@ -331,12 +433,11 @@ class _DailyTodosCalendarState extends State<DailyTodosCalendar> {
     if (_saving) return;
     final index = _items.indexWhere((item) => item.id == itemId);
     if (index < 0 || _items[index].date == targetDate) return;
-    final updated = [..._items];
-    updated[index] = updated[index].copyWith(date: targetDate);
+    final updated = moveDailyTodoToDate(_items, itemId, targetDate);
     final saved = await _save(updated);
     if (saved && mounted) {
       final parsed = DateTime.tryParse(targetDate);
-      if (parsed != null) setState(() => _selected = parsed);
+      if (parsed != null) _selectCalendarDate(parsed);
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('已移动到 $targetDate')),
       );
@@ -385,149 +486,202 @@ class _DailyTodosCalendarState extends State<DailyTodosCalendar> {
     ),
   );
 
+  // 与「工作 → 视图 → 日历」保持相同的月视图布局：
+  // 每周是一整行、周之间用横线分隔，日期不绘制独立的圆角方框。
+  // 仅复用日历呈现方式；个人每日事项与工作任务的数据仍完全隔离。
   Widget _calendar() => LayoutBuilder(builder: (context, bounds) {
     final first = DateTime(_month.year, _month.month, 1);
-    final offset = first.weekday - 1; // Monday-first
-    final days = DateUtils.getDaysInMonth(_month.year, _month.month);
-    final rows = ((offset + days + 6) / 7).floor();
-    final cells = rows * 7;
-    final itemHeight = ((bounds.maxHeight - (rows - 1) * 2) / rows)
-      .clamp(29.0, 85.0).toDouble();
-    final dateHeight = itemHeight < 35 ? 21.0 : 25.0;
-    final labelGap = itemHeight < 35 ? 0.0 : 2.0;
-    return GridView.builder(
+    final weekStart = first.subtract(Duration(days: first.weekday - 1));
+    final last = DateTime(_month.year, _month.month + 1, 0);
+    // 同时保留相邻月份日期格，方便直接把事项拖到下个月。
+    final rowCount = ((first.weekday - 1 + last.day + 7) ~/ 7)
+        .clamp(5, 6).toInt();
+    final weekHeight = bounds.maxHeight / rowCount;
+
+    return Column(
       key: const Key('daily_todo_month_grid'),
-      physics: itemHeight * rows > bounds.maxHeight
-        ? const ClampingScrollPhysics()
-        : const NeverScrollableScrollPhysics(),
-      padding: EdgeInsets.zero,
-      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: 7, mainAxisExtent: itemHeight,
-        mainAxisSpacing: 2, crossAxisSpacing: 2,
-      ),
-      itemCount: cells,
-      itemBuilder: (ctx, index) {
-        final n = index - offset + 1;
-        if (n <= 0 || n > days) return const SizedBox.shrink();
-        final date = DateTime(_month.year, _month.month, n);
-        final day = dayString(date);
-        final dayItems = _items.where((e) => e.date == day).toList();
-        final holiday = _holidayView?.on(date);
-        final showFestival = holiday != null &&
-            holiday.festivalLabel.isNotEmpty && itemHeight >= 57;
-        // Reserve space for date, festivals and the '+N' overflow marker.
-        final remainingHeight = itemHeight - 4 - dateHeight - labelGap -
-            (showFestival ? 13 : 0);
-        var visible = dayItems.length < 2 ? dayItems.length : 2;
-        while (visible > 0 && visible * 16 +
-            (dayItems.length > visible ? 12 : 0) > remainingHeight) {
-          visible--;
-        }
-        final hidden = dayItems.length - visible;
-        final showMore = hidden > 0 && visible * 16 + 12 <= remainingHeight;
-        final selected = DateUtils.isSameDay(date, _selected);
-        final today = DateUtils.isSameDay(date, chinaNow);
-        return DragTarget<String>(
-          key: Key('daily_todo_drop_$day'),
-          onWillAcceptWithDetails: (details) => !_saving && _items.any(
-            (item) => item.id == details.data && item.date != day),
-          onAcceptWithDetails: (details) => _moveToDate(details.data, day),
-          builder: (ctx, candidates, rejected) {
-            final hovering = candidates.isNotEmpty;
-            return Material(
-              color: hovering ? const Color(0xFFFFE4EE)
-                  : selected ? const Color(0xFFFFF1F7)
-                  : Colors.white,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(10),
-                side: BorderSide(
-                  color: hovering ? const Color(0xFFD9749A)
-                      : selected ? const Color(0xFFEAB0C9)
-                      : const Color(0xFFF5EAF0),
-                  width: hovering ? 1.7 : 0.7,
-                ),
+      children: [
+        for (var week = 0; week < rowCount; week++)
+          Expanded(
+            child: Container(
+              key: Key('daily_todo_week_$week'),
+              decoration: const BoxDecoration(
+                border: Border(bottom: BorderSide(color: Palette.divider)),
               ),
-              clipBehavior: Clip.antiAlias,
-              child: InkWell(
-                key: Key('daily_todo_day_$day'),
-                onTap: () => setState(() => _selected = date),
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 2, vertical: 2),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      SizedBox(height: dateHeight, child: Stack(children: [
-                        Center(child: Container(
-                          height: dateHeight, width: dateHeight,
-                          alignment: Alignment.center,
-                          decoration: BoxDecoration(
-                            color: selected ? const Color(0xFFE991B1)
-                              : today ? const Color(0xFFFFE4D3)
-                              : Colors.transparent,
-                            borderRadius: BorderRadius.circular(13),
-                          ),
-                          child: Text('$n', style: TextStyle(
-                            fontSize: 12, fontWeight: FontWeight.w800,
-                            color: selected ? Colors.white : Palette.deep,
-                          )),
-                        )),
-                        if (holiday?.dayTypeLabel.isNotEmpty == true)
-                          Positioned(right: 0, top: 0,
-                            child: HolidayDayBadge(day: holiday)),
-                      ])),
-                      if (showFestival)
-                        SizedBox(height: 13,
-                          child: HolidayFestivalLabel(day: holiday)),
-                      SizedBox(height: labelGap),
-                      for (final item in dayItems.take(visible))
-                        Padding(
-                          padding: const EdgeInsets.only(bottom: 2),
-                          child: LongPressDraggable<String>(
-                            key: Key('daily_todo_drag_calendar_${item.id}'),
-                            data: item.id,
-                            maxSimultaneousDrags: _saving ? 0 : 1,
-                            feedback: _dragFeedback(item),
-                            childWhenDragging: const SizedBox(height: 14),
-                            child: Container(
-                              height: 14,
-                              padding: const EdgeInsets.symmetric(horizontal: 2),
-                              decoration: BoxDecoration(
-                                color: item.completed
-                                  ? const Color(0xFFE7E7EC)
-                                  : Color(item.colorValue),
-                                borderRadius: BorderRadius.circular(4),
-                              ),
-                              alignment: Alignment.centerLeft,
-                              child: Text(item.title,
-                                maxLines: 1, overflow: TextOverflow.ellipsis,
-                                style: TextStyle(
-                                  fontSize: 9, height: 1.15,
-                                  color: item.completed
-                                    ? Palette.muted : Palette.deep,
-                                  fontWeight: FontWeight.w700,
-                                  decoration: item.completed
-                                    ? TextDecoration.lineThrough : null,
-                                ),
-                              ),
-                            ),
+              padding: const EdgeInsets.symmetric(vertical: 2),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  for (var weekday = 0; weekday < 7; weekday++)
+                    Expanded(
+                      child: _calendarDateCell(
+                        weekStart.add(Duration(days: week * 7 + weekday)),
+                        (weekHeight - 4).clamp(0.0, double.infinity).toDouble(),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ),
+      ],
+    );
+  });
+
+  Widget _calendarDateCell(DateTime date, double height) {
+    final day = dayString(date);
+    final outsideMonth = date.month != _month.month ||
+        date.year != _month.year;
+    final dayItems = _items.where((item) => item.date == day).toList();
+    final holiday = _holidayView?.on(date);
+    final selected = DateUtils.isSameDay(date, _selected);
+    final today = DateUtils.isSameDay(date, chinaNow);
+    // 日期和事项共享周行高度，但绝不为了显示 +N 而隐藏最后一个
+    // 可长按的事项标签。较窄手机仍然优先保留拖动入口。
+    final dateHeight = height < 28 ? height.clamp(0.0, 20.0).toDouble()
+        : height < 45 ? 21.0 : height < 85 ? 23.0 : 26.0;
+    final showLabels = height >= 43;
+    const chipHeight = 15.0;
+    const chipGap = 2.0;
+    const chipStride = chipHeight + chipGap;
+    const moreHeight = 12.0;
+    const labelTopGap = 3.0;
+    // 节日名称在空间够用时仍然显示，空间紧张时优先显示事项。
+    final plannedChips = (dayItems.length < 2 ? dayItems.length : 2);
+    final plannedHeight = plannedChips * chipStride +
+        (dayItems.length > 2 ? moreHeight : 0);
+    final showFestival = !outsideMonth &&
+        holiday?.festivalLabel.isNotEmpty == true && height >= 85 &&
+        (!showLabels || dayItems.isEmpty ||
+          height - 7 - dateHeight - labelTopGap - 13 >= plannedHeight);
+    // 留出额外 1px 安全余量，避免不同平台字体的小数像素溢出。
+    final labelSpace = height - 7 - dateHeight -
+        (showLabels ? labelTopGap : 0) - (showFestival ? 13 : 0);
+    var visible = showLabels ? (dayItems.length < 2 ? dayItems.length : 2) : 0;
+    while (visible > 0 && visible * chipStride > labelSpace) {
+      visible--;
+    }
+    final hidden = dayItems.length - visible;
+    final showMore = showLabels && hidden > 0 &&
+        visible * chipStride + moreHeight <= labelSpace;
+
+    return DragTarget<String>(
+      key: Key('daily_todo_drop_$day'),
+      onWillAcceptWithDetails: (details) => !_saving && _items.any(
+        (item) => item.id == details.data && item.date != day,
+      ),
+      onAcceptWithDetails: (details) => _moveToDate(details.data, day),
+      builder: (context, candidates, rejected) {
+        final hovering = candidates.isNotEmpty;
+        return InkWell(
+          key: Key('daily_todo_day_$day'),
+          borderRadius: BorderRadius.circular(22),
+          onTap: () => _selectCalendarDate(date),
+          child: Container(
+            key: Key('daily_todo_cell_$day'),
+            height: height,
+            padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 3),
+            decoration: BoxDecoration(
+              color: hovering ? Palette.rose
+                  : selected ? const Color(0xFFF0F7FA)
+                  : Colors.transparent,
+              borderRadius: BorderRadius.circular(22),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                SizedBox(
+                  height: dateHeight,
+                  child: Stack(children: [
+                    Center(child: Container(
+                      width: dateHeight,
+                      height: dateHeight,
+                      alignment: Alignment.center,
+                      decoration: BoxDecoration(
+                        color: selected ? Palette.primary
+                            : today ? Palette.sage : Colors.transparent,
+                        borderRadius: BorderRadius.circular(13),
+                      ),
+                      child: Text('${date.day}', style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w800,
+                        color: selected ? Colors.white
+                            : outsideMonth ? Palette.muted : Palette.deep,
+                      )),
+                    )),
+                    if (!outsideMonth &&
+                        holiday?.dayTypeLabel.isNotEmpty == true)
+                      Positioned(
+                        right: 0,
+                        top: 0,
+                        child: HolidayDayBadge(day: holiday),
+                      ),
+                  ]),
+                ),
+                if (showFestival)
+                  SizedBox(
+                    height: 13,
+                    child: HolidayFestivalLabel(day: holiday),
+                  ),
+                if (showLabels) const SizedBox(height: labelTopGap),
+                for (final item in dayItems.take(visible))
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: chipGap),
+                    child: LongPressDraggable<String>(
+                      key: Key('daily_todo_drag_calendar_${item.id}'),
+                      data: item.id,
+                      maxSimultaneousDrags: _saving ? 0 : 1,
+                      feedback: _dragFeedback(item),
+                      childWhenDragging: const SizedBox(height: chipHeight),
+                      child: Container(
+                        height: chipHeight,
+                        padding: const EdgeInsets.symmetric(horizontal: 3),
+                        alignment: Alignment.centerLeft,
+                        decoration: BoxDecoration(
+                          color: item.completed
+                              ? const Color(0xFFE7E7EC)
+                              : Color(item.colorValue),
+                          borderRadius: BorderRadius.circular(3),
+                        ),
+                        child: Text(item.title,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontSize: 9,
+                            fontWeight: FontWeight.w700,
+                            color: item.completed ? Palette.muted : Palette.deep,
+                            decoration: item.completed
+                                ? TextDecoration.lineThrough : null,
                           ),
                         ),
-                      if (showMore)
-                        Text('+$hidden', textAlign: TextAlign.center,
-                          style: const TextStyle(
-                            color: Color(0xFFD577A2), fontSize: 10,
-                            height: 1.15, fontWeight: FontWeight.w900)),
-                    ],
+                      ),
+                    ),
                   ),
-                ),
-              ),
-            );
-          },
+                if (showMore)
+                  SizedBox(
+                    key: Key('daily_todo_more_$day'),
+                    height: moreHeight,
+                    child: Center(
+                      child: Text('+$hidden',
+                        maxLines: 1,
+                        overflow: TextOverflow.clip,
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(
+                          color: Palette.primary,
+                          fontWeight: FontWeight.w900,
+                          fontSize: 11,
+                          height: 1.0,
+                        ),
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ),
         );
       },
     );
-  });
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -551,8 +705,10 @@ class _DailyTodosCalendarState extends State<DailyTodosCalendar> {
       final flexible = (height - 2 - headerHeight - monthHeight -
           weekdaysHeight - gapHeight - separatorHeight - dayTitleHeight)
           .clamp(0.0, double.infinity).toDouble();
-      final dayListHeight = (flexible * (compact ? 0.35 : 0.34))
-          .clamp(0.0, compact ? 56.0 : 188.0).toDouble();
+      // 列表显示两条完整卡片，其余内容在列表内滚动；节省下来的
+      // 高度交给月历，确保最多两条事项标签及 +N 能直接拖放/查看。
+      final dayListHeight = (flexible * (compact ? 0.35 : 0.27))
+          .clamp(0.0, compact ? 56.0 : 140.0).toDouble();
 
       return Container(
         key: const Key('daily_todo_panel'),
@@ -560,7 +716,7 @@ class _DailyTodosCalendarState extends State<DailyTodosCalendar> {
         decoration: BoxDecoration(
           color: const Color(0xFFFFFBFD),
           border: Border.all(color: const Color(0xFFF1D8E4)),
-          borderRadius: BorderRadius.circular(20),
+          borderRadius: BorderRadius.circular(25),
         ),
         child: Column(children: [
           SizedBox(
@@ -609,15 +765,7 @@ class _DailyTodosCalendarState extends State<DailyTodosCalendar> {
               height: monthHeight,
               child: Row(mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  IconButton(
-                    onPressed: () => _moveMonth(-1), tooltip: '上个月',
-                    padding: EdgeInsets.zero,
-                    constraints: const BoxConstraints.tightFor(
-                      width: 34, height: 34),
-                    style: IconButton.styleFrom(
-                      tapTargetSize: MaterialTapTargetSize.shrinkWrap),
-                    icon: const Icon(Icons.chevron_left),
-                  ),
+                  _monthDragArrow(-1),
                   TextButton(
                     key: const Key('daily_todo_choose_date'),
                     onPressed: _chooseDate,
@@ -633,15 +781,7 @@ class _DailyTodosCalendarState extends State<DailyTodosCalendar> {
                         color: Palette.primary),
                     ]),
                   ),
-                  IconButton(
-                    onPressed: () => _moveMonth(1), tooltip: '下个月',
-                    padding: EdgeInsets.zero,
-                    constraints: const BoxConstraints.tightFor(
-                      width: 34, height: 34),
-                    style: IconButton.styleFrom(
-                      tapTargetSize: MaterialTapTargetSize.shrinkWrap),
-                    icon: const Icon(Icons.chevron_right),
-                  ),
+                  _monthDragArrow(1),
                 ],
               ),
             ),
@@ -653,9 +793,8 @@ class _DailyTodosCalendarState extends State<DailyTodosCalendar> {
                   for (final day in ['周一', '周二', '周三', '周四', '周五', '周六', '周日'])
                     Expanded(child: Center(child: Text(day,
                       style: TextStyle(
-                        color: day == '周六' || day == '周日'
-                          ? const Color(0xFFD17C9E) : Palette.muted,
-                        fontWeight: FontWeight.w700, fontSize: 11)))),
+                        color: Palette.deep,
+                        fontWeight: FontWeight.w700, fontSize: 10)))),
                 ]),
               ),
             ),
@@ -698,7 +837,7 @@ class _DailyTodosCalendarState extends State<DailyTodosCalendar> {
                         )),
                       if (_holidayView?.on(_selected) == null &&
                           _holidayView?.notice.isNotEmpty != true && entries.isNotEmpty)
-                        const Flexible(child: Text('长按事项可拖到其他日期，拖动右侧手柄可排序',
+                        const Flexible(child: Text('长按拖到日期格可改日期 · 悬停月份箭头可跨月',
                           maxLines: 1, overflow: TextOverflow.ellipsis,
                           style: TextStyle(fontSize: 9, color: Palette.muted))),
                     ],
