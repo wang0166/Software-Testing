@@ -2,12 +2,13 @@ import { test, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { build } from 'esbuild';
 import { resolve } from 'node:path';
+import { createDebugBackend } from './debug-fixture.mjs';
 
 // 将浏览器模块打包为独立测试入口，不依赖新增测试框架。
 const outfile = resolve('dist/tests/api-bundle.mjs');
-await build({ stdin: { contents: "export * from './src/api/client'; export * from './src/api/http'; export * from './src/api/capabilities'; export * from './src/utils/matterTime'; export * from './src/utils/identity';", resolveDir: process.cwd() },
+await build({ stdin: { contents: "export * from './src/api/client'; export * from './src/api/http'; export * from './src/api/capabilities'; export * from './src/api/debug'; export * from './src/api/debugAutomation'; export * from './src/utils/matterTime'; export * from './src/utils/identity';", resolveDir: process.cwd() },
   bundle: true, platform: 'node', format: 'esm', outfile, define: { 'import.meta.env': '{"DEV":true,"VITE_API_BASE":"/api","VITE_USE_MOCK":"false"}' } });
-const { api, request, requestPage, setTokens, getToken, setMockMode, supports, BACKEND_CAPABILITIES, mockTeams, mockUsers, formatMatterTime, splitMatterTime } = await import(new URL('../dist/tests/api-bundle.mjs', import.meta.url));
+const { api, request, requestPage, setTokens, getToken, setMockMode, supports, BACKEND_CAPABILITIES, mockTeams, mockUsers, formatMatterTime, splitMatterTime, DEBUG_ENDPOINTS, redactDebugData, runAutomaticDebug } = await import(new URL('../dist/tests/api-bundle.mjs', import.meta.url));
 const memory = new Map();
 globalThis.localStorage = { getItem: key => memory.get(key) ?? null, setItem: (key, value) => memory.set(key, String(value)), removeItem: key => memory.delete(key) };
 globalThis.window = new EventTarget();
@@ -329,10 +330,15 @@ test('身份证必填、出生日期与校验位检查保持一致', async () =>
 
 test('审计筛选和详情使用真实接口，失败不会回退演示', async () => {
   const calls = [];
-  globalThis.fetch = async url => { calls.push(url); return url.includes('?') ? response({ items: [], total: 0, page: 1, size: 10 }) : response({ id: 12, changes: [] }); };
-  await api.listAudits({ actor: '测试', objectType: 'LOG', result: 'FAILED', from: '2026-10-01', to: '2026-10-31', page: 1, size: 10 });
+  globalThis.fetch = async url => {
+    calls.push(url);
+    return new URL(url, 'http://test').pathname === '/api/audits'
+      ? response({ items: [], total: 0, page: 1, size: 10 })
+      : response({ id: 12, objectType: 'LOG', changes: [] });
+  };
+  await api.listAudits({ actor: '测试', objectType: 'LOG', action: '回复点评', from: '2026-10-01', to: '2026-10-31', page: 1, size: 10 });
   const query = new URL(calls[0], 'http://localhost').searchParams;
-  for (const [key,value] of Object.entries({ objectType: 'LOG', result: 'FAILED', from: '2026-10-01', to: '2026-10-31' })) assert.equal(query.get(key), value);
+  assert.deepEqual(Object.fromEntries(query), { page: '1', size: '10', objectType: 'LOG', actor: '测试', action: '回复点评', from: '2026-10-01', to: '2026-10-31' });
   assert.equal((await api.getAudit('12')).id, 12);
   assert.equal(calls[1], '/api/audits/12');
   globalThis.fetch = async () => response(null, 500, 50000);
@@ -356,6 +362,17 @@ test('操作记录默认限定日志，拒绝查询其他管理业务', async ()
   }
 });
 
+test('现有审计接口不需要额外范围字段，列表和详情均可读取', async () => {
+  const row = { id: 'task-1', objectType: 'TASK', action: '更新进度', source: 'USER' };
+  globalThis.fetch = async url => {
+    assert.equal(new URL(url, 'http://test').searchParams.has('scope'), false);
+    return new URL(url, 'http://test').pathname === '/api/audits'
+      ? response({ items: [row], page: 1, size: 10, total: 1 }) : response({ ...row, changes: [] });
+  };
+  assert.equal((await api.listAudits({ objectType: 'TASK' })).items[0].id, row.id);
+  assert.equal((await api.getAudit(row.id)).id, row.id);
+});
+
 test('后端未执行审计类型筛选时明确报错，不过滤单页伪造结果', async () => {
   for (const objectType of ['TASK', undefined]) {
     globalThis.fetch = async () => response({ items: [{ id: 'unfiltered-1', objectType }], page: 1, size: 10, total: 99 });
@@ -365,8 +382,8 @@ test('后端未执行审计类型筛选时明确报错，不过滤单页伪造�
   assert.equal((await api.listAudits({ objectType: 'LOG' })).total, 0);
 });
 
-test('旧审计详情缺少字段变化时正常显示，异常变化数据明确报错', async () => {
-  const record = { id: 'legacy-1', actor: '测试操作者', action: '新增日志', target: '工作日志 #1', time: '2026-11-02T09:00:00+08:00', result: 'SUCCESS' };
+test('审计详情缺少字段变化时正常显示，异常变化数据明确报错', async () => {
+  const record = { objectType: 'LOG', id: 'log-1', actor: '测试操作者', action: '新增日志', target: '工作日志 #1', time: '2026-11-02T09:00:00+08:00', result: 'SUCCESS' };
   for (const changes of [undefined, null, []]) {
     globalThis.fetch = async () => response({ ...record, changes });
     assert.deepEqual((await api.getAudit(record.id)).changes, []);
@@ -379,18 +396,21 @@ test('旧审计详情缺少字段变化时正常显示，异常变化数据明�
   await assert.rejects(api.getAudit(record.id), /详情格式不正确/);
 });
 
-test('任务删除记录保留服务端信息，管理员只发查询请求', async () => {
-  const record = { id: 'deletion-1', actor: '测试派发人', action: '删除任务', target: '任务 #42', objectType: 'TASK', objectId: '42', time: '2026-11-02T10:00:00+08:00', result: 'SUCCESS', summary: '任务已删除', source: 'USER', changes: [{ field: 'status', before: 'NOT_STARTED', after: 'DELETED' }] };
+test('删除申请可以展示生效结果，管理员只发查询请求', async () => {
+  const record = { id: 'deletion-1', actor: '测试派发人', action: '提交删除申请', target: '任务 #42', objectType: 'TASK', objectId: '42', time: '2026-11-02T10:00:00+08:00', result: 'SUCCESS', summary: '删除申请已通过，任务已删除', source: 'USER', changes: [{ field: 'status', before: 'NOT_STARTED', after: 'DELETED' }] };
   const calls = [];
   globalThis.fetch = async (url, options) => {
     calls.push({ url, method: options?.method ?? 'GET' });
-    return url.includes('?') ? response({ items: [record], page: 1, size: 10, total: 1 }) : response(record);
+    return new URL(url, 'http://test').pathname === '/api/audits'
+      ? response({ items: [record], page: 1, size: 10, total: 1 })
+      : response(record);
   };
-  const list = await api.listAudits({ objectType: 'TASK', action: '删除', page: 1, size: 10 });
-  assert.equal(list.items[0].action, '删除任务');
+  const list = await api.listAudits({ objectType: 'TASK', page: 1, size: 10 });
+  assert.equal(list.items[0].action, '提交删除申请');
+  assert.equal(list.items[0].summary, '删除申请已通过，任务已删除');
   assert.deepEqual(await api.getAudit(record.id), record);
   const query = new URL(calls[0].url, 'http://test').searchParams;
-  assert.equal(query.get('objectType'), 'TASK'); assert.equal(query.get('action'), '删除');
+  assert.equal(query.get('objectType'), 'TASK'); assert.equal(query.has('action'), false);
   assert.deepEqual(calls.map(call => call.method), ['GET', 'GET']);
 });
 
@@ -406,4 +426,109 @@ test('正式构建忽略演示缓存与环境开关，仍要求服务端认证',
   globalThis.fetch = async () => response(null, 401, 40101);
   await assert.rejects(production.api.login('admin', 'incorrect'), /测试错误/);
   assert.equal(production.isMock(), false);
+});
+
+test('联调清单覆盖管理员页面实际使用的全部方法与路径', async () => {
+  const calls = [];
+  globalThis.fetch = async (url, init = {}) => {
+    const method = init.method ?? 'GET', path = new URL(url, 'http://test').pathname;
+    calls.push({ method, path: path.replace(/\/\d+(?=\/|$)/g, '/{id}') });
+    if (path === '/api/auth/login') return response({ accessToken: 'fixture-access', refreshToken: 'fixture-refresh', user: { id: 7, username: 'fixture', role: 'ADMIN', permissions: [] } });
+    if (path === '/api/auth/me') return response({ id: 7, username: 'fixture', role: 'ADMIN', permissions: [] });
+    if (method === 'GET') {
+      if (path === '/api/audits/7') return response({ id: 7, objectType: 'LOG', changes: [] });
+      if (path === '/api/users/7') return response({ id: 7, username: 'fixture', realName: '测试用户', role: 'EMPLOYEE', status: 1 });
+      if (['/api/companies', '/api/departments', '/api/teams'].includes(path)) return response([]);
+      return response({ items: [], page: 1, size: 10, total: 0 });
+    }
+    return response(method === 'POST' && path !== '/api/auth/logout' ? { id: 7 } : null);
+  };
+  await api.login('fixture', 'fixture-only'); await api.me();
+  await api.listUsers(); await api.listTeamMembers('7'); await api.getUser('7');
+  await api.createUser({ username: 'fixture', password: 'fixture-only', realName: '测试用户', role: 'EMPLOYEE', phone: '13800000000', idNumber: '11010519491231002X', departmentId: 7, teamId: 7 });
+  await api.updateUser('7', { realName: '测试用户', role: 'EMPLOYEE', departmentId: 7, teamId: 7 });
+  await api.setUserStatus('7', false); await api.resetPassword('7', 'fixture-only');
+  await api.listCompanies(); await api.listDepartments(); await api.listTeams();
+  await api.createDepartment('测试部门', 7, '测试'); await api.createTeam('测试团队', 7, '测试');
+  await api.deleteUnit('departments', '7'); await api.deleteUnit('teams', '7');
+  const matter = { title: '测试事件', content: '测试内容', sortOrder: 1, startDate: '2026-11-18T09:00:00+08:00', deadline: '2026-11-19T18:00:00+08:00' };
+  await api.listMatters(); await api.createMatter(matter); await api.updateMatter('7', matter);
+  await api.listAudits(); await api.getAudit('7'); await api.logout();
+  const unique = new Set(calls.map(call => call.method + ' ' + call.path));
+  assert.equal(unique.size, 21);
+  for (const call of calls) assert.ok(DEBUG_ENDPOINTS.some(endpoint => endpoint.method === call.method && '/api' + endpoint.path === call.path), call.method + ' ' + call.path);
+  for (const endpoint of DEBUG_ENDPOINTS) assert.ok(unique.has(endpoint.method + ' /api' + endpoint.path), endpoint.id);
+});
+
+test('自动联调报告隐藏嵌套个人字段、凭据和敏感字段变化', () => {
+  const hidden = redactDebugData({ accessToken: 'token-fixture', items: [{ phone: '13800000000', idNumber: '99000020000101008X', realName: '测试用户' }], changes: [{ field: 'idNumber', before: 'old-fixture', after: 'new-fixture' }] });
+  assert.equal(hidden.accessToken, '[已隐藏]');
+  assert.equal(hidden.items[0].phone, '[已隐藏]');
+  assert.equal(hidden.changes[0].after, '[已隐藏]');
+  assert.equal(redactDebugData('接口错误 fixture-password', ['fixture-password']), '接口错误 [已隐藏]');
+});
+
+test('一键联调自动覆盖全部接口并回查，测试结束保留当前会话和原业务数据', async () => {
+  const backend = createDebugBackend(); globalThis.fetch = backend.fetch;
+  setTokens('original-administrator', 'original-refresh');
+  const original = structuredClone({ admin: backend.state.users.get(1), employee: backend.state.users.get(2), department: backend.state.departments.get(10), team: backend.state.teams.get(20), matter: backend.state.matters.get(30) });
+  const report = await runAutomaticDebug();
+  assert.equal(report.phase, 'complete'); assert.equal(report.checks.length, 22);
+  assert.ok(report.checks.every(item => item.status === 'passed'), JSON.stringify(report.checks.filter(item => item.status !== 'passed')));
+  for (const endpoint of DEBUG_ENDPOINTS) assert.ok(backend.state.calls.some(call => call.method === endpoint.method && call.path.replace(/^\/api/, '').replace(/\/\d+(?=\/|$)/g, '/{id}') === endpoint.path), endpoint.id);
+  assert.deepEqual({ admin: backend.state.users.get(1), employee: backend.state.users.get(2), department: backend.state.departments.get(10), team: backend.state.teams.get(20), matter: backend.state.matters.get(30) }, original);
+  assert.equal(backend.state.departments.size, 1); assert.equal(backend.state.teams.size, 1);
+  const testUser = [...backend.state.users.values()].find(user => user.username.startsWith('it_'));
+  assert.equal(testUser.status, 'DISABLED'); assert.equal(testUser.departmentId, null); assert.equal(testUser.teamId, null);
+  assert.equal(backend.state.matters.size, 2); assert.equal(backend.state.sessions.size, 0);
+  assert.equal(getToken(), 'original-administrator');
+  assert.equal(report.retained.length, 2);
+  const serialized = JSON.stringify(report);
+  for (const call of backend.state.calls) {
+    if (call.body?.password) assert.ok(!serialized.includes(call.body.password));
+    assert.equal('scope' in call.query, false);
+  }
+});
+
+test('一键联调某个写接口失败后仍停用测试账号并删除临时组织', async () => {
+  const backend = createDebugBackend({ fail: call => call.method === 'PUT' && /^\/api\/users\/\d+$/.test(call.path) && call.body?.role === 'EMPLOYEE' });
+  globalThis.fetch = backend.fetch; setTokens('original-administrator', 'original-refresh');
+  const report = await runAutomaticDebug();
+  assert.equal(report.checks.find(item => item.id === 'users-update').status, 'failed');
+  assert.equal(report.checks.find(item => item.id === 'teams-delete').status, 'passed');
+  assert.equal(backend.state.departments.size, 1); assert.equal(backend.state.teams.size, 1);
+  assert.ok([...backend.state.users.values()].filter(row => row.username.startsWith('it_')).every(row => row.status === 'DISABLED'));
+  assert.equal(getToken(), 'original-administrator');
+});
+
+test('自动测试不把无审计数据或清理失败算成通过', async () => {
+  const backend = createDebugBackend({ noAudits: true, fail: call => call.method === 'DELETE' && call.path.startsWith('/api/teams/') });
+  globalThis.fetch = backend.fetch; setTokens('original-administrator', 'original-refresh');
+  const report = await runAutomaticDebug();
+  assert.equal(report.checks.find(item => item.id === 'audits-get').status, 'skipped');
+  assert.equal(report.checks.find(item => item.id === 'teams-delete').status, 'failed');
+  assert.ok(report.retained.some(row => row.kind === '测试团队' && row.state.includes('未成功清理')));
+  assert.ok(report.retained.some(row => row.kind === '测试部门' && row.state.includes('未成功清理')));
+  assert.ok(!backend.state.calls.some(call => call.path.startsWith('/api/audits/')));
+});
+
+test('新建接口回传现有用户编号时，自动测试不会修改或停用该用户', async () => {
+  const backend = createDebugBackend({ wrongUserId: true }); globalThis.fetch = backend.fetch;
+  setTokens('original-administrator', 'original-refresh');
+  const original = structuredClone(backend.state.users.get(1));
+  const report = await runAutomaticDebug();
+  assert.equal(report.checks.find(item => item.id === 'users-create').status, 'failed');
+  assert.deepEqual(backend.state.users.get(1), original);
+  assert.ok(!backend.state.calls.some(call => call.method !== 'GET' && /^\/api\/users\/(1|2)(?:\/|$)/.test(call.path)));
+  assert.ok([...backend.state.users.values()].filter(row => row.username.startsWith('it_')).every(row => row.status === 'DISABLED'));
+});
+
+test('停止自动测试后跳过后续业务请求，仍执行测试账号和组织收尾', async () => {
+  const backend = createDebugBackend(); globalThis.fetch = backend.fetch;
+  setTokens('original-administrator', 'original-refresh'); let stop = false;
+  const report = await runAutomaticDebug({ shouldStop: () => stop, onUpdate: next => { if (next.checks.find(row => row.id === 'users-create').status === 'passed') stop = true; } });
+  assert.equal(report.phase, 'complete'); assert.equal(report.checks.find(row => row.id === 'matters-create').status, 'skipped');
+  assert.equal(backend.state.departments.size, 1); assert.equal(backend.state.teams.size, 1);
+  assert.equal(backend.state.matters.size, 1);
+  assert.ok([...backend.state.users.values()].filter(row => row.username.startsWith('it_')).every(row => row.status === 'DISABLED'));
 });

@@ -290,7 +290,7 @@ input[type=checkbox] { accent-color: var(--brand); }
 .pd-audit-quick-types { display: flex; flex-wrap: wrap; gap: 10px; margin: 18px 0 6px; }
 .pd-audit-filters { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 18px 16px; margin: 20px 0 4px; }
 .pd-audit-filters > label { display: flex; flex-direction: column; gap: 8px; min-width: 0; font-size: 14px; color: #465d7c; }
-.pd-audit-filters > .pd-actions { grid-column: span 2; align-self: end; }
+.pd-audit-filters > .pd-actions { grid-column: 1 / -1; }
 .pd-audit-list .pd-table { min-width: 780px; }
 .pd-audit-list .pd-member-copy small { max-width: 420px; overflow-wrap: anywhere; line-height: 1.6; }
 .pd-result { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 6px; font-size: 14px; white-space: nowrap; }
@@ -317,7 +317,6 @@ input[type=checkbox] { accent-color: var(--brand); }
   .pd-mask { padding: 12px; }
   .pd-modal-head, .pd-modal-body, .pd-modal-foot { padding: 18px; }
   .pd-form-grid, .pd-audit-filters { grid-template-columns: minmax(0, 1fr); }
-  .pd-audit-filters > .pd-actions { grid-column: auto; }
   .pd-filter-row .pd-search-field { min-width: 0; width: 100%; flex-basis: 100%; max-width: none; }
   .pd-password-field { flex-wrap: wrap; }
   .pd-password-field input { flex-basis: 100%; }

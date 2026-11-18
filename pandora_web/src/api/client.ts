@@ -17,7 +17,7 @@ export interface CompanyMatter { id: string; title: string; content: string; sor
 export interface CompanyMatterInput { title: string; content: string; sortOrder: number; startDate: string; deadline: string }
 export interface AuditRow { id: string; actor: string; action: string; target: string; time: string; result: string; objectType?: string; objectId?: string; source?: string; summary?: string }
 export interface AuditDetail extends AuditRow { changes: { field: string; before: string | null; after: string | null }[] }
-export interface AuditFilter { actor?: string; action?: string; from?: string; to?: string; objectType?: string; result?: string; page?: number; size?: number }
+export interface AuditFilter { actor?: string; action?: string; from?: string; to?: string; objectType?: string; page?: number; size?: number }
 const AUDIT_TYPES = new Set(['LOG', 'TASK']);
 export interface RolePerm { roleCode: string; label: string; permissions: string[] }
 
@@ -75,11 +75,8 @@ export const mockMatters: CompanyMatter[] = [
   { id: 'm-3', title: '需求 V1.0 冻结', content: '五项待确认问题闭环后冻结', sortOrder: 3, deadline: '2026-12-10' },
 ];
 export const mockAudits: AuditRow[] = [
-  { id: 'a-1', actor: 'admin', action: '创建用户', target: 'zuyuan_m / 组员M', time: '2026-10-18 10:12:00', result: '成功' },
-  { id: 'a-2', actor: 'admin', action: '停用账号', target: 'zuyuan_c / 组员C', time: '2026-10-18 09:40:00', result: '成功' },
-  { id: 'a-3', actor: 'admin', action: '修改配置', target: 'log_deadline=21:30', time: '2026-10-17 18:05:00', result: '成功' },
-  { id: 'a-4', actor: 'admin', action: '删除团队', target: '临时组', time: '2026-10-17 15:22:00', result: '拒绝：40904 仍有成员' },
-  { id: 'a-5', actor: 'zuzhang_a', action: '登录', target: '-', time: '2026-10-17 09:01:00', result: '成功' },
+  { id: 'a-1', actor: '演示员工', action: '提交日志', target: '工作日志 #1', objectType: 'LOG', objectId: '1', time: '2026-11-13T17:00:00+08:00', result: 'SUCCESS', summary: '演示员工提交了工作日志' },
+  { id: 'a-2', actor: '演示接收人', action: '更新进度', target: '派发任务 #2', objectType: 'TASK', objectId: '2', time: '2026-11-13T16:30:00+08:00', result: 'SUCCESS', summary: '演示接收人将任务标记为已完成' },
 ];
 export const mockRolePerms: RolePerm[] = [
   { roleCode: 'EMPLOYEE', label: '组员', permissions: ['task:execute', 'task:self', 'content:read'] },
@@ -306,9 +303,9 @@ export const api = {
   async getAudit(id: string): Promise<AuditDetail> {
     requireCapability('audits');
     if (!useMock()) {
-      const row = await request<AuditDetail>('/audits/' + encodeURIComponent(id));
+      const row = await request<AuditDetail>(`/audits/${encodeURIComponent(id)}`);
       if (!row || row.id == null) throw new Error('操作记录详情格式不正确');
-      if (row.objectType && !AUDIT_TYPES.has(row.objectType)) throw new Error('此页面仅支持日志和任务操作记录');
+      if (!row.objectType || !AUDIT_TYPES.has(row.objectType)) throw new Error('此页面仅支持日志和任务操作记录');
       // 旧记录可不含字段变化；错误结构应明确报错，避免详情页崩溃或伪造内容。
       if (row.changes != null && (!Array.isArray(row.changes) || row.changes.some(change => !change || typeof change.field !== 'string'
         || ![change.before, change.after].every(value => value == null || typeof value === 'string')))) throw new Error('操作记录字段变化格式不正确');
@@ -328,14 +325,18 @@ export const api = {
       const q = new URLSearchParams({ page: String(page), size: String(size), objectType });
       if (params.actor) q.set('actor', params.actor);
       if (params.action) q.set('action', params.action);
-      for (const key of ['from', 'to', 'result'] as const) { if (params[key]) q.set(key, params[key]!); }
+      if (params.from) q.set('from', params.from);
+      if (params.to) q.set('to', params.to);
       const data = await requestPage<AuditRow>('/audits?' + q);
       if (data.items.some(row => row.objectType !== objectType)) throw new Error('操作记录响应与所选业务类型不一致，请核对后端筛选接口');
       return data;
     }
-    return pageOf(mockAudits.filter(a => (!params.actor || a.actor.includes(params.actor)) && (!params.action || a.action.includes(params.action))
-      && (!params.result || a.result === params.result || (params.result === 'SUCCESS' && a.result === '成功') || (params.result === 'FAILED' && (a.result === '失败' || a.result.startsWith('拒绝')))) && a.objectType === objectType
-      && (!params.from || a.time.slice(0, 10) >= params.from) && (!params.to || a.time.slice(0, 10) <= params.to)), page, size);
+    const matching = mockAudits.filter(row => row.objectType === objectType
+      && (!params.actor || row.actor.includes(params.actor))
+      && (!params.action || row.action === params.action)
+      && (!params.from || row.time.slice(0, 10) >= params.from)
+      && (!params.to || row.time.slice(0, 10) <= params.to));
+    return pageOf(matching, page, size);
   },
 };
 function toItems<T>(d: unknown): T[] {

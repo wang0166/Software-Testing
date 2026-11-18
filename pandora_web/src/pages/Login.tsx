@@ -43,7 +43,7 @@ const navigation = [
   { to: '/org', label: '组织管理', icon: 'org' },
   { to: '/matters', label: '事件纪', icon: 'matters' },
   { to: '/audits', label: '操作记录', icon: 'audit' },
-  ...(DEVELOPMENT_TOOLS ? [{ to: '/debug', label: '联调自检', icon: 'tools' } as const] : []),
+  ...(DEVELOPMENT_TOOLS ? [{ to: '/debug', label: '接口联调', icon: 'tools' } as const] : []),
 ] as const;
 
 export function Layout({ children }: { children: React.ReactNode }) {

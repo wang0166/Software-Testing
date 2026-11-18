@@ -25,6 +25,7 @@ const EMPTY = { actor: '', action: '', from: '', to: '', objectType: 'LOG' };
 const SOURCES: Record<string, string> = { SYSTEM: '系统自动处理', USER: '用户操作', LOCAL: '本地维护', LEGACY: '历史记录' };
 const formatTime = (value: string) => { const date = new Date(value); return Number.isNaN(date.getTime()) ? value : date.toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', hour12: false }); };
 const resultLabel = (value: string) => value === 'SUCCESS' || value === '成功' ? '成功' : value === 'FAILED' || value === '失败' ? '失败' : value;
+const actionLabel = (value: string) => value === '更新进度' ? '标记为已完成' : value;
 
 export function Audits() {
   const [draft, setDraft] = useState(EMPTY);
@@ -42,9 +43,9 @@ export function Audits() {
     setFilter({ ...next, actor: next.actor.trim(), action: next.action.trim() });
   };
   return <div>
-    <div className="pd-hero"><div><span className="pd-eyebrow">日志与任务</span><h2>日志与任务操作记录</h2><p>查看日志和任务的操作人、时间、处理结果及变更详情。</p></div><span className="pd-readonly"><Icon name="audit" />只读记录</span></div>
+    <div className="pd-hero"><div><span className="pd-eyebrow">日志与任务</span><h2>日志与任务操作记录</h2><p>查看用户在 App 中发起的工作日志和派发任务操作。</p></div><span className="pd-readonly"><Icon name="audit" />只读记录</span></div>
     <section className="pd-card">
-      <div className="pd-card-head"><div><h3 className="pd-sub">查询日志与任务记录</h3><p className="pd-hint">记录手机端各角色对日志和任务的操作；日志不可删除。</p></div></div>
+      <div className="pd-card-head"><h3 className="pd-sub">查询操作记录</h3></div>
       <div className="pd-audit-quick-types" role="group" aria-label="记录类型">
         {Object.entries(TYPES).map(([value, label]) => (
           <button
@@ -58,17 +59,22 @@ export function Audits() {
       </div>
       <form className="pd-audit-filters" onSubmit={event => { event.preventDefault(); search(); }}>
         <label>操作者<input className="pd-input" aria-label="操作者" placeholder="姓名或账号" {...field('actor')} /></label>
-        <label>动作<select className="pd-select" aria-label="动作" {...field('action')}><option value="">全部动作</option>{ACTIONS[draft.objectType].map(action => <option key={action} value={action}>{action}</option>)}</select></label>
+        <label>动作<select className="pd-select" aria-label="动作" {...field('action')}>
+          <option value="">全部动作</option>
+          {ACTIONS[draft.objectType].map(action => (
+            <option key={action} value={action}>{actionLabel(action)}</option>
+          ))}
+        </select></label>
         <label>开始日期<input className="pd-input" aria-label="开始日期" type="date" {...field('from')} /></label>
         <label>结束日期<input className="pd-input" aria-label="结束日期" type="date" {...field('to')} /></label>
         <div className="pd-actions"><button className="pd-btn primary" type="submit"><Icon name="search" />查询记录</button><button className="pd-btn" type="button" onClick={() => { setDraft(EMPTY); setFilter({ ...EMPTY }); setPage(1); setError(''); }}>重置筛选</button></div>
       </form>
       {error && <p className="pd-inline-error" role="alert">{error}</p>}
     </section>
-    <section className="pd-card pd-audit-list"><div className="pd-card-head"><h3 className="pd-sub">记录列表 <span className="pd-count">共 {list.data?.total ?? 0} 条</span></h3><button className="pd-btn" disabled={list.loading} onClick={list.reload}>刷新</button></div>
+    <section className="pd-card pd-audit-list"><div className="pd-card-head"><h3 className="pd-sub">记录列表 {list.data && !list.error && <span className="pd-count">共 {list.data.total} 条</span>}</h3><button className="pd-btn" disabled={list.loading} onClick={list.reload}>刷新</button></div>
       {list.loading ? <Skeleton rows={5} /> : list.error ? <div role="alert" className="pd-inline-error">{list.error}<button className="pd-btn" onClick={list.reload}>重试</button></div> : <>
         <div className="pd-scroll-x"><table className="pd-table"><thead><tr><th>操作者 / 时间</th><th>动作</th><th>业务对象</th><th>结果</th><th>操作</th></tr></thead><tbody>{list.data?.items.map(row => <tr key={row.id}>
-          <td><div className="pd-member-copy"><b>{row.actor}</b><small>{formatTime(row.time)}</small></div></td><td>{row.action}</td>
+          <td><div className="pd-member-copy"><b>{row.actor}</b><small>{formatTime(row.time)}</small></div></td><td>{actionLabel(row.action)}</td>
           <td><div className="pd-member-copy"><b>{TYPES[row.objectType ?? ''] ?? row.target}{row.objectId ? ' #' + row.objectId : ''}</b><small>{row.summary || '未提供操作摘要'}</small></div></td>
           <td><span className={'pd-result ' + (resultLabel(row.result) === '成功' ? 'ok' : 'failed')}>{resultLabel(row.result)}</span></td><td><button className="pd-btn text" onClick={() => setSelected(String(row.id))}>查看详情</button></td>
         </tr>)}</tbody></table></div>
@@ -85,7 +91,7 @@ function AuditDetails({ id }: { id: string }) {
   if (detail.loading) return <Skeleton rows={4} />;
   if (detail.error) return <div className="pd-inline-error" role="alert">{detail.error}<button className="pd-btn" onClick={detail.reload}>重试</button></div>;
   const row = detail.data!;
-  return <><dl className="pd-record-details">{[['记录编号', row.id], ['操作者', row.actor], ['业务类型', TYPES[row.objectType ?? ''] ?? row.objectType], ['业务编号', row.objectId], ['动作', row.action], ['操作对象', row.target], ['发生时间', formatTime(row.time)], ['结果', resultLabel(row.result)], ['来源', SOURCES[row.source ?? ''] ?? row.source], ['操作摘要', row.summary]].map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value || '未记录'}</dd></div>)}</dl>
+  return <><dl className="pd-record-details">{[['记录编号', row.id], ['操作者', row.actor], ['业务类型', TYPES[row.objectType ?? ''] ?? row.objectType], ['业务编号', row.objectId], ['动作', actionLabel(row.action)], ['操作对象', row.target], ['发生时间', formatTime(row.time)], ['结果', resultLabel(row.result)], ['来源', SOURCES[row.source ?? ''] ?? row.source], ['操作摘要', row.summary]].map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value || '未记录'}</dd></div>)}</dl>
     <h3 className="pd-sub pd-detail-heading">字段变化</h3>{row.changes.length ? <div className="pd-scroll-x"><table className="pd-table"><thead><tr><th>字段</th><th>变更前</th><th>变更后</th></tr></thead><tbody>{row.changes.map((change, index) => <tr key={index}><td>{FIELDS[change.field] ?? change.field}</td><td>{change.before == null ? '—' : VALUES[change.before] ?? change.before}</td><td>{change.after == null ? '—' : VALUES[change.after] ?? change.after}</td></tr>)}</tbody></table></div> : <p className="pd-hint">此记录没有字段变化详情。</p>}
     <p className="pd-field-hint">正文仅记录是否发生修改，本页记录不用于还原数据。</p>
   </>;
