@@ -20,6 +20,32 @@ class SubordinateDetailPage extends StatefulWidget {
 class _SubordinateDetailPageState extends State<SubordinateDetailPage> {
   late Future<List<WorkLog>> _logs;
   late SubordinateTaskSummary member;
+  final _taskSearch = TextEditingController();
+  final _logSearch = TextEditingController();
+  String _taskState = '全部任务';
+  String _logState = '全部日志';
+  bool _newestFirst = true;
+  DateTimeRange? _logDates;
+  int _shownTasks = 20;
+  int _shownLogs = 20;
+
+  @override void dispose() {
+    _taskSearch.dispose();
+    _logSearch.dispose();
+    super.dispose();
+  }
+
+  Future<void> _chooseLogDates() async {
+    final dates = await showDateRangePicker(context: context,
+      firstDate: DateTime(2020), lastDate: DateTime(2100),
+      initialDateRange: _logDates, helpText: '筛选下属日志日期');
+    if (dates != null && mounted) {
+      setState(() {
+        _logDates = dates;
+        _shownLogs = 20;
+      });
+    }
+  }
 
   @override
   void initState() {
@@ -49,6 +75,13 @@ class _SubordinateDetailPageState extends State<SubordinateDetailPage> {
 
   @override
   Widget build(BuildContext context) {
+    final taskKeyword = _taskSearch.text.trim().toLowerCase();
+    final visibleTasks = member.tasks.where((task) =>
+      (_taskState == '全部任务' ||
+        (_taskState == '已完成' ? task.status == 'COMPLETED'
+          : task.status != 'COMPLETED')) &&
+      (taskKeyword.isEmpty || '${task.name} ${task.details}'
+        .toLowerCase().contains(taskKeyword))).toList();
     return Scaffold(
       appBar: AppBar(title: const Text('下属个人信息')),
       body: ListView(
@@ -110,18 +143,35 @@ class _SubordinateDetailPageState extends State<SubordinateDetailPage> {
                     style:const TextStyle(color:Palette.coral,fontSize:12,fontWeight:FontWeight.w700)),
                   Text('逾期 ${member.tasks.where((t)=>t.isOverdue).length}',
                     style:const TextStyle(color:Palette.coral,fontSize:12,fontWeight:FontWeight.w700)),
-                  Text('完成率填报 ${member.tasks.where((t)=>t.progressPercent!=null).length}/${member.tasks.length}',
-                    style:const TextStyle(color:Palette.muted,fontSize:12)),
                 ]),
                 const SizedBox(height: 12),
-                if (member.tasks.isEmpty)
-                  const BusinessEmpty('当前没有可查看的任务')
+                TextField(controller: _taskSearch,
+                  onChanged: (_) => setState(() => _shownTasks = 20),
+                  decoration: const InputDecoration(
+                    prefixIcon: Icon(Icons.search, size: 19),
+                    hintText: '搜索任务名称、任务内容')),
+                const SizedBox(height: 7),
+                Wrap(spacing: 8, children: [
+                  for (final value in ['全部任务', '进行中', '已完成'])
+                    ChoiceChip(label: Text(value), selected: _taskState == value,
+                      showCheckmark: false, onSelected: (_) => setState(() {
+                        _taskState = value; _shownTasks = 20;
+                      })),
+                ]),
+                Text('筛选结果 ${visibleTasks.length} 条',
+                  style: const TextStyle(color: Palette.muted, fontSize: 11)),
+                if (visibleTasks.isEmpty)
+                  const BusinessEmpty('当前条件下没有任务')
                 else
-                  for (var i = 0; i < member.tasks.length; i++) ...[
+                  for (var i = 0; i < visibleTasks.length && i < _shownTasks; i++) ...[
                     if (i > 0) const Divider(height: 1, color: Palette.divider),
-                    SubordinateTaskRow(task:member.tasks[i],index:i+1,
-                      onTap:()=>_openTask(member.tasks[i])),
+                    SubordinateTaskRow(task: visibleTasks[i], index: i + 1,
+                      onTap: () => _openTask(visibleTasks[i])),
                   ],
+                if (visibleTasks.length > _shownTasks)
+                  TextButton.icon(onPressed: () => setState(() => _shownTasks += 20),
+                    icon: const Icon(Icons.expand_more),
+                    label: Text('加载更多（还剩 ${visibleTasks.length - _shownTasks} 条）')),
               ]),
             ),
           ),
@@ -142,19 +192,77 @@ class _SubordinateDetailPageState extends State<SubordinateDetailPage> {
                       style: const TextStyle(color: Palette.muted, fontSize: 12)),
                   );
                 }
-                final logs = snapshot.data ?? [];
-                if (logs.isEmpty) return const BusinessEmpty('暂无该成员授权范围内的日志');
-                return Column(children: [
-                  for (var i = 0; i < logs.length; i++) ...[
+                final keyword = _logSearch.text.trim().toLowerCase();
+                final logs = (snapshot.data ?? []).where((log) {
+                  if (_logState == '已提交' && !log.submitted) return false;
+                  if (_logState == '草稿' && log.submitted) return false;
+                  if (keyword.isNotEmpty &&
+                    !'${log.content} ${log.logDate}'.toLowerCase().contains(keyword)) {
+                    return false;
+                  }
+                  if (_logDates != null) {
+                    final date = DateTime.tryParse(log.logDate);
+                    if (date == null || date.isBefore(_logDates!.start) ||
+                      date.isAfter(_logDates!.end)) {
+                      return false;
+                    }
+                  }
+                  return true;
+                }).toList()..sort((a, b) => _newestFirst
+                  ? b.logDate.compareTo(a.logDate)
+                  : a.logDate.compareTo(b.logDate));
+                return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+                  const SizedBox(height: 10),
+                  TextField(controller: _logSearch, onChanged: (_) =>
+                    setState(() => _shownLogs = 20),
+                    decoration: const InputDecoration(
+                      prefixIcon: Icon(Icons.search, size: 19),
+                      hintText: '搜索日志关键词或日期')),
+                  const SizedBox(height: 7),
+                  Wrap(spacing: 7, runSpacing: 6, crossAxisAlignment:
+                    WrapCrossAlignment.center, children: [
+                    SizedBox(width: 104, child: DropdownButtonFormField<String>(
+                      key: ValueKey(_logState), initialValue: _logState,
+                      decoration: const InputDecoration(contentPadding:
+                        EdgeInsets.symmetric(horizontal: 7, vertical: 8)),
+                      items: ['全部日志', '已提交', '草稿'].map((v) =>
+                        DropdownMenuItem(value: v, child: Text(v,
+                          style: const TextStyle(fontSize: 11)))).toList(),
+                      onChanged: (v) {
+                        if (v != null) {
+                          setState(() {
+                            _logState = v;
+                            _shownLogs = 20;
+                          });
+                        }
+                      },
+                    )),
+                    ActionChip(label: Text(_newestFirst ? '最新在前' : '最早在前'),
+                      onPressed: () => setState(() => _newestFirst = !_newestFirst)),
+                    ActionChip(label: Text(_logDates == null ? '选择日期段'
+                      : '${_logDates!.start.month}/${_logDates!.start.day}—${_logDates!.end.month}/${_logDates!.end.day}'),
+                      onPressed: _chooseLogDates),
+                    if (_logDates != null)
+                      ActionChip(label: const Text('清除日期'),
+                        onPressed: () => setState(() => _logDates = null)),
+                  ]),
+                  Padding(padding: const EdgeInsets.symmetric(vertical: 8),
+                    child: Text('共 ${logs.length} 条匹配日志 · 每次展示 20 条',
+                      style: const TextStyle(color: Palette.muted, fontSize: 11))),
+                  if (logs.isEmpty) const BusinessEmpty('没有符合条件的授权日志')
+                  else for (var i = 0; i < logs.length && i < _shownLogs; i++) ...[
                     if (i > 0) const Divider(height: 1, color: Palette.divider),
                     BusinessRow(
                       title: logs[i].content.replaceAll('\n', ' '),
                       subtitle: '${logs[i].logDate} · ${logs[i].submitted ? '已提交' : '草稿'}',
                       onTap: () => Navigator.push(context, MaterialPageRoute<void>(
-                        builder: (_) => LogDetailPage(app: widget.app, log: logs[i]),
-                      )),
+                        builder: (_) => LogDetailPage(app: widget.app, log: logs[i]))),
                     ),
                   ],
+                  if (logs.length > _shownLogs)
+                    TextButton.icon(onPressed: () => setState(() => _shownLogs += 20),
+                      icon: const Icon(Icons.expand_more),
+                      label: Text('加载更多（还剩 ${logs.length - _shownLogs} 条）')),
                 ]);
               },
             ),

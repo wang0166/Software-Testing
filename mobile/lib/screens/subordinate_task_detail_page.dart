@@ -40,7 +40,7 @@ class _SubordinateTaskDetailPageState extends State<SubordinateTaskDetailPage> {
         padding:const EdgeInsets.fromLTRB(16,12,16,32),children:[
           Container(
             padding:const EdgeInsets.all(17),
-            decoration:BoxDecoration(color:Palette.deep,borderRadius:BorderRadius.circular(10)),
+            decoration:BoxDecoration(color:Palette.deep,borderRadius:BorderRadius.circular(18)),
             child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[
               const Text('TEAM TASK / 下属执行任务',
                 style:TextStyle(color:Color(0xFFB7C9D6),fontSize:11)),
@@ -63,7 +63,6 @@ class _SubordinateTaskDetailPageState extends State<SubordinateTaskDetailPage> {
                 _field('任务状态',_status(task.status)),
                 _field('起始',task.startDate?.replaceFirst('T',' ')??'未设置'),
                 _field('截止',task.deadline?.replaceFirst('T',' ')??'未设置'),
-                _field('完成率',task.progressPercent==null?'未填报':'${task.progressPercent}%'),
                 if(task.isOverdue) const Padding(padding:EdgeInsets.only(top:8),
                   child:Text('该任务已逾期',style:TextStyle(color:Palette.coral,fontWeight:FontWeight.w800))),
               ],
@@ -122,8 +121,6 @@ class _SubordinateTaskDetailPageState extends State<SubordinateTaskDetailPage> {
                               fontSize:12,fontWeight:FontWeight.w800,
                               color:record.status=='BLOCKED'?Palette.coral:Palette.primary)),
                           ]),
-                          if(record.percent!=null) Padding(padding:const EdgeInsets.only(top:5),
-                            child:Text('完成率 ${record.percent}%',style:const TextStyle(fontSize:12,color:Palette.deep))),
                           if(record.note.trim().isNotEmpty) Padding(padding:const EdgeInsets.only(top:5),
                             child:Text(record.note,style:const TextStyle(fontSize:13,color:Palette.deep,height:1.5))),
                         ]),

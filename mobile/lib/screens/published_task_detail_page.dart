@@ -76,7 +76,7 @@ class _PublishedTaskDetailPageState extends State<PublishedTaskDetailPage> {
       body:RefreshIndicator(onRefresh:_refresh,child:ListView(
         padding:const EdgeInsets.fromLTRB(16,10,16,30),children:[
           Container(padding:const EdgeInsets.all(18),decoration:BoxDecoration(
-            color:Palette.deep,borderRadius:BorderRadius.circular(12)),
+            color:Palette.deep,borderRadius:BorderRadius.circular(22)),
             child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[
               const Text('ISSUED TASK / 发布记录',style:TextStyle(color:Color(0xFFB8CAD5),fontSize:11,letterSpacing:1)),
               const SizedBox(height:8),
@@ -128,15 +128,9 @@ class _PublishedTaskDetailPageState extends State<PublishedTaskDetailPage> {
                       Row(children:[
                         Expanded(child:Text(item.assigneeName,
                           style:const TextStyle(fontWeight:FontWeight.w800,color:Palette.deep))),
-                        Text(_status(item.status),style:TextStyle(
-                          color:item.status=='BLOCKED'?Palette.coral:Palette.primary,fontSize:12)),
-                        const SizedBox(width:8),
-                        Text(item.progressPercent==null?'未填报':'${item.progressPercent}%',
-                          style:const TextStyle(color:Palette.muted,fontSize:12)),
+                        Text(item.status == 'COMPLETED' ? '已完成' : '进行中',
+                          style:const TextStyle(color:Palette.primary,fontSize:12)),
                       ]),
-                      if(item.progressNote.isNotEmpty) Padding(
-                        padding:const EdgeInsets.only(top:6),
-                        child:Text(item.progressNote,style:const TextStyle(color:Palette.muted,fontSize:12))),
                       if(item.reviewStatus=='PENDING') Padding(
                         padding:const EdgeInsets.only(top:6),child:Wrap(spacing:7,children:[
                           OutlinedButton(onPressed:busy?null:()=>_review(item,'RETURNED'),child:const Text('退回检查')),

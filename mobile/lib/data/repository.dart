@@ -1,5 +1,6 @@
 import '../core/daily_todos.dart';
 import '../core/models.dart';
+import '../core/holiday_calendar.dart';
 
 class AppFailure implements Exception {
   final String message;
@@ -37,6 +38,8 @@ abstract class PandoraRepository {
   Future<List<CompanyItem>> companyMatters();
   Future<List<CompanyItem>> companyImportantTasks();
   Future<List<CalendarDay>> calendar(String from,String to);
+  /// China mainland holiday calendar; no user tasks or personal todos included.
+  Future<HolidayYearData> holidayYear(int year);
   Future<List<TaskItem>> taskMap();
   /// 服务端汇总当前用户授权数据并调用 DeepSeek；refresh=true 跳过 5 分钟缓存。
   Future<AiAnalysis> aiMapAnalysis({bool refresh = false});
@@ -62,7 +65,9 @@ abstract class PandoraRepository {
   /// 每日待办云端同步：按日期区间拉取，服务端按登录用户隔离。
   Future<List<DailyTodo>> dailyItems({String? from, String? to});
   Future<DailyTodo> createDailyItem({required String date, required String title,
-    String note = '', bool completed = false});
+    String note = '', bool completed = false,
+    int colorValue = DailyTodoColors.defaultColor,
+    String? startTime, String? endTime, int sortOrder = 0});
   Future<DailyTodo> updateDailyItem(DailyTodo item);
   Future<void> deleteDailyItem(String id);
   Future<List<DispatchedTask>> dispatchedTasks();

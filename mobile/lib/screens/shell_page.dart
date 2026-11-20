@@ -35,12 +35,12 @@ class _ShellPageState extends State<ShellPage> with WidgetsBindingObserver {
 
   static const labels = ['首页', '公司', '日志', 'AI地图', '我的'];
   static const icons = [
-    Icons.account_tree_outlined, Icons.calendar_month_outlined, Icons.article_outlined,
-    Icons.schema_outlined, Icons.person_outline_rounded,
+    Icons.home_outlined, Icons.business_center_outlined, Icons.edit_note_outlined,
+    Icons.bubble_chart_outlined, Icons.face_outlined,
   ];
   static const selectedIcons = [
-    Icons.account_tree_rounded, Icons.calendar_month_rounded, Icons.article_rounded,
-    Icons.schema_rounded, Icons.person_rounded,
+    Icons.home_rounded, Icons.business_center_rounded, Icons.edit_note_rounded,
+    Icons.bubble_chart_rounded, Icons.face_rounded,
   ];
 
   @override
@@ -154,16 +154,20 @@ class _ShellPageState extends State<ShellPage> with WidgetsBindingObserver {
     return Scaffold(
       body: SafeArea(child: pages[_index]),
       bottomNavigationBar: Container(
-        decoration: const BoxDecoration(
+        decoration: BoxDecoration(
           color: Colors.white,
-          border: Border(top: BorderSide(color: Palette.divider)),
+          border: const Border(top: BorderSide(color: Palette.divider)),
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(23)),
+          boxShadow: [BoxShadow(color: Palette.primary.withValues(alpha: .07),
+            blurRadius: 20, offset: const Offset(0, -4))],
         ),
         child: SafeArea(top: false, child: Padding(
-          padding: const EdgeInsets.fromLTRB(8, 0, 8, 5),
+          padding: const EdgeInsets.fromLTRB(8, 6, 8, 6),
           child: Row(children: [
             for (var i = 0; i < labels.length; i++)
               Expanded(child: InkWell(
                 key: Key('nav_$i'),
+                borderRadius: BorderRadius.circular(19),
                 onTap: () {
                   setState(() => _index = i);
                   if (i == 1) _refreshAllBadges();
@@ -171,26 +175,29 @@ class _ShellPageState extends State<ShellPage> with WidgetsBindingObserver {
                 child: Semantics(
                   button: true, selected: _index == i,
                   label: labels[i],
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Container(height: 3, width: 34, color: _index == i ? Palette.primary : Colors.transparent),
-                      const SizedBox(height: 10),
-                      SizedBox(width: 28, height: 25, child: Center(
-                        child: Icon(
-                          _index == i ? selectedIcons[i] : icons[i],
-                          color: _index == i ? Palette.deep : Palette.muted, size: 22,
-                        ),
-                      )),
-                      const SizedBox(height: 5),
-                      Text(labels[i], maxLines: 1, style: TextStyle(
-                        color: _index == i ? Palette.deep : Palette.muted,
+                  child: Column(mainAxisSize: MainAxisSize.min, children: [
+                    AnimatedContainer(
+                      duration: const Duration(milliseconds: 200),
+                      width: 46, height: 34,
+                      decoration: BoxDecoration(
+                        color: _index == i ? Palette.rose : Colors.transparent,
+                        borderRadius: BorderRadius.circular(17)),
+                      child: Icon(
+                        _index == i ? selectedIcons[i] : icons[i],
+                        color: _index == i ? Palette.primary : Palette.muted,
+                        size: 22,
+                      ),
+                    ),
+                    const SizedBox(height: 3),
+                    Text(labels[i], maxLines: 1,
+                      style: TextStyle(
+                        color: _index == i ? Palette.primary : Palette.muted,
                         fontSize: 11,
-                        fontWeight: _index == i ? FontWeight.w800 : FontWeight.w500,
+                        fontWeight: _index == i
+                          ? FontWeight.w900 : FontWeight.w600,
                       )),
-                      const SizedBox(height: 5),
-                    ],
-                  ),
+                    const SizedBox(height: 2),
+                  ]),
                 ),
               )),
           ]),

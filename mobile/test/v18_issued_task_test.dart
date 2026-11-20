@@ -69,16 +69,16 @@ void main() {
     expect(pending.name,'发布记录待删除');
   });
 
-  testWidgets('任务清单保留收件台账，并允许切换我发布的任务', (tester) async {
-    final app=AppState();
-    await tester.runAsync(()=>app.login('demo001','demo123456'));
-    await tester.pumpWidget(MaterialApp(home:Scaffold(body:TasksPage(app:app))));
+  testWidgets('任务清单改为一张表，并以来源筛选接收/发布记录', (tester) async {
+    final app = AppState();
+    await tester.runAsync(() => app.login('demo001', 'demo123456'));
+    await tester.pumpWidget(MaterialApp(home: Scaffold(
+      body: TasksPage(app: app))));
     await tester.pumpAndSettle();
-    expect(find.byKey(const Key('received_tasks_tab')),findsOneWidget);
-    expect(find.byKey(const Key('issued_tasks_tab')),findsOneWidget);
-    expect(find.byKey(const Key('task_ledger_horizontal')),findsOneWidget);
-    await tester.tap(find.byKey(const Key('issued_tasks_tab')));
-    await tester.pumpAndSettle();
-    expect(find.text('我的发布记录'),findsOneWidget);
+    expect(find.byKey(const Key('received_tasks_tab')), findsNothing);
+    expect(find.byKey(const Key('issued_tasks_tab')), findsNothing);
+    expect(find.text('任务执行台账'), findsOneWidget);
+    expect(find.byKey(const Key('task_ledger_horizontal')), findsOneWidget);
+    expect(find.byKey(const Key('task_ledger_vertical')), findsOneWidget);
   });
 }

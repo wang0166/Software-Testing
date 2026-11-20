@@ -21,6 +21,22 @@ class _LogsPageState extends State<LogsPage> {
   final _search = TextEditingController();
   String _filter = '部门日志';
   String? _department;
+  String _logStatus = '全部状态';
+  DateTimeRange? _dateRange;
+  bool _newestFirst = true;
+  int _shown = 20;
+
+  Future<void> _selectDates() async {
+    final picked = await showDateRangePicker(context: context,
+      firstDate: DateTime(2020), lastDate: DateTime(2100),
+      initialDateRange: _dateRange, helpText: '按日期筛选日志');
+    if (picked != null && mounted) {
+      setState(() {
+        _dateRange = picked;
+        _shown = 20;
+      });
+    }
+  }
   @override void initState() {super.initState(); _refresh();}
   @override void dispose() {_search.dispose(); super.dispose();}
   void _refresh() {
@@ -34,6 +50,7 @@ class _LogsPageState extends State<LogsPage> {
       _filter = mode;
       _department = null;
       _selectedSubordinateId = null;
+      _shown = 20;
       if (mode == '我的下属') {
         // 每次进入该分区都重新请求，避免后端恢复后仍复用上一次失败的 Future。
         _subordinates = widget.app.repo.subordinatesTaskOverview();
@@ -66,7 +83,12 @@ class _LogsPageState extends State<LogsPage> {
   @override Widget build(BuildContext context) => Scaffold(
     body: Column(children: [
       Padding(padding: const EdgeInsets.fromLTRB(20, 22, 20, 12), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        const Text('工作日志', style: TextStyle(color: Palette.deep, fontSize: 25, fontWeight: FontWeight.w800)),
+        const Row(children: [
+          Icon(Icons.auto_awesome_rounded, color: Palette.primary, size: 22),
+          SizedBox(width: 8),
+          Text('工作日志', style: TextStyle(color: Palette.deep,
+            fontSize: 25, fontWeight: FontWeight.w900)),
+        ]),
         const SizedBox(height: 4), const Text('部门、我的、下属日志独立筛选，仅显示授权数据', style: TextStyle(color: Palette.muted, fontSize: 12)),
         const SizedBox(height: 14), TextField(controller: _search, onChanged: (_) => setState(() {}), decoration: const InputDecoration(prefixIcon: Icon(Icons.search_rounded), hintText: '搜索姓名或日志内容')),
         const SizedBox(height: 12), Row(children: [for (final option in [
@@ -74,8 +96,10 @@ class _LogsPageState extends State<LogsPage> {
           if (const ['TEAM_LEADER', 'DEPT_MANAGER', 'FOUNDER'].contains(widget.app.user?.role))
             '我的下属',
         ]) Expanded(child: Padding(padding: const EdgeInsets.only(right: 8), child: InkWell(
-          onTap: () => _selectMode(option), borderRadius: BorderRadius.circular(9), child: Container(alignment: Alignment.center, padding: const EdgeInsets.symmetric(vertical: 12),
-          decoration: BoxDecoration(color: _filter == option ? Palette.deep : Colors.white, borderRadius: BorderRadius.circular(9)), child: Text(option, style: TextStyle(color: _filter == option ? Colors.white : Palette.muted, fontWeight: FontWeight.w800))),
+          onTap: () => _selectMode(option), borderRadius: BorderRadius.circular(19), child: Container(alignment: Alignment.center, padding: const EdgeInsets.symmetric(vertical: 12),
+          decoration: BoxDecoration(color: _filter == option ? Palette.primary : Colors.white,
+            border: Border.all(color: _filter == option ? Palette.primary : Palette.divider),
+            borderRadius: BorderRadius.circular(19)), child: Text(option, style: TextStyle(color: _filter == option ? Colors.white : Palette.muted, fontWeight: FontWeight.w800))),
         )))]),
       ])),
       Expanded(child: FutureBuilder<List<SubordinateTaskSummary>>(
@@ -109,9 +133,56 @@ class _LogsPageState extends State<LogsPage> {
           selectedSubordinateId: _selectedSubordinateId,
           search: _search.text,
         );
+        final matching = visible.where((l) {
+          if (_logStatus == '已提交' && !l.submitted) return false;
+          if (_logStatus == '草稿' && l.submitted) return false;
+          if (_dateRange != null) {
+            final day = DateTime.tryParse(l.logDate);
+            if (day == null || day.isBefore(_dateRange!.start) ||
+                day.isAfter(_dateRange!.end)) {
+              return false;
+            }
+          }
+          return true;
+        }).toList()..sort((a, b) => _newestFirst
+          ? b.logDate.compareTo(a.logDate)
+          : a.logDate.compareTo(b.logDate));
         final groups = <String, Map<String, List<WorkLog>>>{};
-        for (final log in visible) {groups.putIfAbsent(_dept(log), () => {}).putIfAbsent(_team(log), () => []).add(log);}
-        return RefreshIndicator(onRefresh: () async {setState(_refresh); await _future;}, child: ListView(padding: const EdgeInsets.fromLTRB(20, 0, 20, 115), children: [
+        for (final log in matching.take(_shown)) {
+          groups.putIfAbsent(_dept(log), () => {})
+            .putIfAbsent(_team(log), () => []).add(log);
+        }
+        return RefreshIndicator(onRefresh: () async {setState(_refresh); await _future;},
+          child: ListView(padding: const EdgeInsets.fromLTRB(20, 0, 20, 115), children: [
+          Wrap(spacing: 8, runSpacing: 5, crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              SizedBox(width: 109, height: 40, child: DropdownButtonFormField<String>(
+                key: ValueKey(_logStatus), initialValue: _logStatus,
+                isExpanded: true, decoration: const InputDecoration(contentPadding:
+                  EdgeInsets.symmetric(horizontal: 8, vertical: 7)),
+                items: ['全部状态', '已提交', '草稿'].map((label) => DropdownMenuItem(
+                  value: label, child: Text(label, style: const TextStyle(fontSize: 11))))
+                  .toList(),
+                onChanged: (v) {
+                  if (v != null) {
+                    setState(() {
+                      _logStatus = v;
+                      _shown = 20;
+                    });
+                  }
+                },
+              )),
+              ActionChip(label: Text(_dateRange == null ? '日期范围'
+                : '${_dateRange!.start.month}/${_dateRange!.start.day}—${_dateRange!.end.month}/${_dateRange!.end.day}'),
+                onPressed: _selectDates),
+              ActionChip(label: Text(_newestFirst ? '最新优先' : '最早优先'),
+                onPressed: () => setState(() => _newestFirst = !_newestFirst)),
+              if (_dateRange != null) ActionChip(label: const Text('清除日期'),
+                onPressed: () => setState(() => _dateRange = null)),
+            ]),
+          Padding(padding: const EdgeInsets.only(top: 7, bottom: 9),
+            child: Text('匹配 ${matching.length} 条 · 当前展示 ${matching.length < _shown ? matching.length : _shown} 条',
+              style: const TextStyle(color: Palette.muted, fontSize: 11))),
           if (_filter == '部门日志') ...[
             const Text('部门筛选', style: TextStyle(color: Palette.deep, fontWeight: FontWeight.w800, fontSize: 12)),
             const SizedBox(height: 8),
@@ -149,6 +220,10 @@ class _LogsPageState extends State<LogsPage> {
               ...groups[dept]![team]!.map(_logTile),
             ], const SizedBox(height: 14),
           ],
+          if (matching.length > _shown)
+            TextButton.icon(onPressed: () => setState(() => _shown += 20),
+              icon: const Icon(Icons.expand_more),
+              label: Text('加载更多日志（剩余 ${matching.length - _shown} 条）')),
         ]));
           });
         },
@@ -157,10 +232,10 @@ class _LogsPageState extends State<LogsPage> {
     floatingActionButton: widget.app.user!.canWriteLog ? FloatingActionButton.extended(onPressed: _write, icon: const Icon(Icons.edit_note_rounded), label: const Text('写 / 编辑日志')) : null,
   );
   Widget _chip(String text, bool chosen, VoidCallback tap) => Padding(padding: const EdgeInsets.only(right: 7), child: ChoiceChip(
-    selected: chosen, label: Text(text), showCheckmark: false, onSelected: (_) => tap(), selectedColor: Palette.sage, backgroundColor: Colors.white,
+    selected: chosen, label: Text(text), showCheckmark: false, onSelected: (_) => tap(), selectedColor: Palette.rose, backgroundColor: Colors.white,
     labelStyle: TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: chosen ? Palette.deep : Palette.muted), side: const BorderSide(color: Palette.divider),
   ));
-  Widget _logTile(WorkLog l) => Padding(padding: const EdgeInsets.only(bottom: 9), child: Material(color: Colors.white, borderRadius: BorderRadius.circular(12), child: ListTile(
+  Widget _logTile(WorkLog l) => Padding(padding: const EdgeInsets.only(bottom: 9), child: Material(color: Colors.white, borderRadius: BorderRadius.circular(23), child: ListTile(
     onTap: () async {await Navigator.push(context, MaterialPageRoute<void>(builder: (_) => LogDetailPage(app: widget.app, log: l))); if (mounted) setState(_refresh);},
     contentPadding: const EdgeInsets.fromLTRB(14, 7, 13, 7),
     leading: CircleAvatar(backgroundColor: Palette.sage, child: Text(l.authorName.isEmpty ? '记' : l.authorName.substring(0, 1), style: const TextStyle(color: Palette.deep, fontWeight: FontWeight.w900))),

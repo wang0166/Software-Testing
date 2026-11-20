@@ -18,6 +18,12 @@ class SubordinatesPage extends StatefulWidget {
 
 class _SubordinatesPageState extends State<SubordinatesPage> {
   late Future<List<SubordinateTaskSummary>> _future;
+  final _search = TextEditingController();
+  String _department = '全部部门';
+  String _team = '全部团队';
+  String _role = '全部职务';
+  int _shown = 20;
+  @override void dispose() { _search.dispose(); super.dispose(); }
   @override void initState(){super.initState();_load();}
   void _load(){_future=widget.app.repo.subordinatesTaskOverview();}
   Future<void> _refresh() async {
@@ -48,10 +54,25 @@ class _SubordinatesPageState extends State<SubordinatesPage> {
         style:const TextStyle(color:Colors.white,fontSize:12,fontWeight:FontWeight.w900)),
     );
   }
-  @override Widget build(BuildContext context)=>FutureBuilder<List<SubordinateTaskSummary>>(
-    future:_future,builder:(context,snap)=>RefreshIndicator(
-      onRefresh:_refresh,
-      child:ListView(padding:const EdgeInsets.fromLTRB(16,10,16,110),children:[
+  @override Widget build(BuildContext context) =>
+    FutureBuilder<List<SubordinateTaskSummary>>(
+      future: _future, builder: (context, snap) {
+        final all = snap.data ?? <SubordinateTaskSummary>[];
+        final departments = all.map((m) => m.departmentName)
+          .where((s) => s.isNotEmpty).toSet().toList()..sort();
+        final teams = all.map((m) => m.teamName)
+          .where((s) => s.isNotEmpty).toSet().toList()..sort();
+        final roles = all.map((m) => m.role)
+          .where((s) => s.isNotEmpty).toSet().toList()..sort();
+        final keyword = _search.text.trim().toLowerCase();
+        final visible = all.where((m) =>
+          (_department == '全部部门' || m.departmentName == _department) &&
+          (_team == '全部团队' || m.teamName == _team) &&
+          (_role == '全部职务' || m.role == _role) &&
+          (keyword.isEmpty || '${m.name} ${m.username} ${m.departmentName} ${m.teamName}'
+            .toLowerCase().contains(keyword))).toList();
+        return RefreshIndicator(onRefresh: _refresh,
+          child: ListView(padding: const EdgeInsets.fromLTRB(16, 10, 16, 110), children: [
         const BusinessHeading(title:'下属工作动态',
           subtitle:'点开人员查看完整任务，红色数字表示待解决问题'),
         const SizedBox(height:15),
@@ -67,9 +88,28 @@ class _SubordinatesPageState extends State<SubordinatesPage> {
               Text('${snap.error}',style:const TextStyle(color:Palette.coral,fontSize:11)),
               TextButton(onPressed:_refresh,child:const Text('重试')),
             ])))
-        else if((snap.data??[]).isEmpty)
+        else if (all.isEmpty)
           const BusinessPanel(title:'下属任务',child:BusinessEmpty('暂无可查看的下属任务'))
-        else for(final member in snap.data!) Padding(
+        else ...[
+          TextField(controller: _search, onChanged: (_) => setState(() => _shown = 20),
+            decoration: const InputDecoration(prefixIcon: Icon(Icons.search),
+              hintText: '搜索姓名、账号、部门或团队')),
+          const SizedBox(height: 9),
+          Wrap(spacing: 8, runSpacing: 7, children: [
+            _filter('全部部门', _department, departments,
+              (v) => setState(() { _department = v; _shown = 20; })),
+            _filter('全部团队', _team, teams,
+              (v) => setState(() { _team = v; _shown = 20; })),
+            _filter('全部职务', _role, roles,
+              (v) => setState(() { _role = v; _shown = 20; }), role: true),
+          ]),
+          Padding(padding: const EdgeInsets.symmetric(vertical: 9),
+            child: Text('符合条件 ${visible.length} / ${all.length} 人',
+              style: const TextStyle(color: Palette.muted, fontSize: 12))),
+          if (visible.isEmpty) const BusinessEmpty('没有符合筛选条件的成员'),
+        ],
+        for (final member in visible.take(_shown)) Padding(
+
           padding:const EdgeInsets.only(bottom:11),
           child:BusinessPanel(
             title:member.name,kicker:member.departmentName,
@@ -115,7 +155,28 @@ class _SubordinatesPageState extends State<SubordinatesPage> {
             ]),
           ),
         ),
-      ]),
-    ),
-  );
+        if (visible.length > _shown)
+          TextButton.icon(onPressed: () => setState(() => _shown += 20),
+            icon: const Icon(Icons.expand_more),
+            label: Text('加载更多成员（还剩 ${visible.length - _shown} 人）')),
+      ]));
+      },
+    );
+
+  Widget _filter(String all, String value, List<String> options,
+    ValueChanged<String> changed, {bool role = false}) =>
+    SizedBox(width: 115, height: 42,
+      child: DropdownButtonFormField<String>(
+        key: ValueKey('${all}_$value'), initialValue: value, isExpanded: true,
+        decoration: const InputDecoration(contentPadding:
+          EdgeInsets.symmetric(horizontal: 7, vertical: 7)),
+        items: [all, ...options, if(value != all && !options.contains(value)) value]
+          .map((e) => DropdownMenuItem(
+          value: e, child: Text(role ? const {
+            'FOUNDER':'创始人', 'DEPT_MANAGER':'部门负责人',
+            'TEAM_LEADER':'团队长', 'EMPLOYEE':'员工',
+          }[e] ?? e : e, maxLines: 1, overflow: TextOverflow.ellipsis,
+            style: const TextStyle(fontSize: 11)))).toList(),
+        onChanged: (v) { if (v != null) changed(v); },
+      ));
 }

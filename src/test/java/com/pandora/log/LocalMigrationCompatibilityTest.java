@@ -41,7 +41,7 @@ class LocalMigrationCompatibilityTest extends EmbeddedPostgresSupport {
                         .load()
                         .migrate()
                         .migrationsExecuted)
-                .isEqualTo(13);
+                .isEqualTo(14);
     }
 
     @Test
@@ -70,7 +70,7 @@ class LocalMigrationCompatibilityTest extends EmbeddedPostgresSupport {
                         .load()
                         .migrate()
                         .migrationsExecuted)
-                .isEqualTo(7);
+                .isEqualTo(8);
 
         assertThat(
                 jdbc.queryForObject(
@@ -123,7 +123,7 @@ class LocalMigrationCompatibilityTest extends EmbeddedPostgresSupport {
 
         assertThat(
                 flyway.migrate().migrationsExecuted)
-                .isEqualTo(7);
+                .isEqualTo(8);
 
         assertThat(
                 jdbc.queryForMap(

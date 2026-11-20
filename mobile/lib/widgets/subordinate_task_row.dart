@@ -30,8 +30,7 @@ class SubordinateTaskRow extends StatelessWidget {
                 style: TextStyle(color:attention ? Palette.coral : Palette.deep,
                   fontSize:13,fontWeight:FontWeight.w800)),
               const SizedBox(height:3),
-              Text('${taskTypeLabel(task.taskType)} · ${task.statusLabel}'
-                '${task.progressPercent==null ? '' : ' · ${task.progressPercent}%'}'
+              Text('${taskTypeLabel(task.taskType)} · ${task.status == 'COMPLETED' ? '已完成' : '进行中'}'
                 ' · 截止 ${task.deadline ?? '未设置'}',
                 maxLines:1,overflow:TextOverflow.ellipsis,
                 style:const TextStyle(color:Palette.muted,fontSize:11)),
