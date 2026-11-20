@@ -25,12 +25,13 @@ class _LogDetailPageState extends State<LogDetailPage> {
     return switch (me.role) {
       'TEAM_LEADER' => _log.authorRole == 'EMPLOYEE' && me.teamId != null && me.teamId == _log.teamId,
       'DEPT_MANAGER' => _log.authorRole == 'TEAM_LEADER' && me.departmentId != null && me.departmentId == _log.departmentId,
-      'FOUNDER' => _log.authorRole == 'DEPT_MANAGER',
       _ => false,
     };
   }
+  // 创始人可点评全公司任何人的日志（自己的日志仍无人可点评）。
+  bool get _canComment => _directManager || (widget.app.user!.role == 'FOUNDER' && widget.app.user!.id != _log.authorId);
   void _reload(){
-    _comments = widget.app.user!.id == _log.authorId || _directManager
+    _comments = widget.app.user!.id == _log.authorId || _canComment
       ? widget.app.repo.comments(_log.id)
       : Future.value(<LogComment>[]);
   }
@@ -45,7 +46,7 @@ class _LogDetailPageState extends State<LogDetailPage> {
     final me=widget.app.user!;
     final own=_log.authorId==me.id;
     final canReply=own;
-    final canInitial=_directManager;
+    final canInitial=_canComment;
     final canEdit=own&&(() { final dt=DateTime.tryParse(_log.logDate); if(dt==null)return false; final now=chinaNow; final today=DateTime(now.year,now.month,now.day); final difference=today.difference(DateTime(dt.year,dt.month,dt.day)).inDays; return difference>=0 && difference<=2; })();
     return Scaffold(appBar:AppBar(title:const Text('日志详情'),actions:[if(canEdit)IconButton(tooltip:'编辑日志',onPressed:()async{
       final result=await Navigator.push<bool>(context,MaterialPageRoute(builder:(_)=>LogEditorPage(app:widget.app,draft:_log,date:_log.logDate)));
@@ -57,7 +58,7 @@ class _LogDetailPageState extends State<LogDetailPage> {
         const Divider(height:30),Text(_log.content,style:const TextStyle(height:1.9,fontSize:15,color:Palette.deep)),
         const SizedBox(height:17),const Text('每日一条 · 近三天可申请补写或修改（以服务端规则为准）',style:TextStyle(color:Palette.muted,fontSize:11)),
       ])),
-      const SizedBox(height:22),const Headline(title:'上级点评与回复',subtitle:'对话仅作者与直属上级可见'),const SizedBox(height:13),
+      const SizedBox(height:22),const Headline(title:'上级点评与回复',subtitle:'对话仅作者、直属上级与创始人可见'),const SizedBox(height:13),
       if (!own && !canInitial) const SoftCard(child: Text('你可以阅读这条日志，但无权查看或参与其直属上级点评对话。', style: TextStyle(color: Palette.muted))),
       if (own || canInitial)
       FutureBuilder<List<LogComment>>(future:_comments,builder:(context,s){
