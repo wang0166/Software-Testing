@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import '../data/api_repository.dart';
 import '../data/mock_repository.dart';
 import '../data/repository.dart';
+import '../data/holiday_calendar_service.dart';
 import 'models.dart';
 
 const bool pandoraDemo=bool.fromEnvironment('PANDORA_DEMO',defaultValue:true);
@@ -9,9 +10,13 @@ const String apiBaseUrl=String.fromEnvironment('API_BASE_URL',defaultValue:'http
 
 class AppState extends ChangeNotifier {
   late final PandoraRepository repo;
+  late final HolidayCalendarService holidays;
   UserProfile? user;
   bool initialized=false;
-  AppState(){repo=pandoraDemo?MockRepository():ApiRepository(baseUrl:apiBaseUrl);}
+  AppState(){
+    repo=pandoraDemo?MockRepository():ApiRepository(baseUrl:apiBaseUrl);
+    holidays=HolidayCalendarService(fetchYear: repo.holidayYear);
+  }
   Future<void> initialize() async {
     try {user=await repo.restore();}catch (_) {user=null;}
     initialized=true;notifyListeners();

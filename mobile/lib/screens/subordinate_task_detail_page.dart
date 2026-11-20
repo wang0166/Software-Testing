@@ -40,7 +40,7 @@ class _SubordinateTaskDetailPageState extends State<SubordinateTaskDetailPage> {
         padding:const EdgeInsets.fromLTRB(16,12,16,32),children:[
           Container(
             padding:const EdgeInsets.all(17),
-            decoration:BoxDecoration(color:Palette.deep,borderRadius:BorderRadius.circular(10)),
+            decoration:BoxDecoration(color:Palette.deep,borderRadius:BorderRadius.circular(18)),
             child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[
               const Text('TEAM TASK / 下属执行任务',
                 style:TextStyle(color:Color(0xFFB7C9D6),fontSize:11)),

@@ -1,19 +1,36 @@
 import 'package:flutter/material.dart';
 import '../core/theme.dart';
 
-/// High-contrast enterprise components; information first, decoration second.
+/// 全应用共用的软萌信息组件，业务信息保持清晰可读。
 class BusinessHeading extends StatelessWidget {
   final String title;
   final String? subtitle;
   final Widget? action;
   const BusinessHeading({super.key, required this.title, this.subtitle, this.action});
-  @override Widget build(BuildContext context) => Row(crossAxisAlignment: CrossAxisAlignment.center, children: [
-    Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      Text(title, style: const TextStyle(color: Palette.deep, fontSize: 26, fontWeight: FontWeight.w800, letterSpacing: -.6)),
-      if (subtitle != null) Padding(padding: const EdgeInsets.only(top: 4), child: Text(subtitle!, style: const TextStyle(color: Palette.muted, fontSize: 12))),
-    ])),
-    if (action != null) action!,
-  ]);
+  @override
+  Widget build(BuildContext context) => Row(
+    crossAxisAlignment: CrossAxisAlignment.center,
+    children: [
+      Container(
+        height: 38, width: 38,
+        margin: const EdgeInsets.only(right: 10),
+        decoration: BoxDecoration(color: Palette.rose,
+          borderRadius: BorderRadius.circular(15)),
+        child: const Icon(Icons.auto_awesome_rounded,
+          color: Palette.primary, size: 21),
+      ),
+      Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(title, style: const TextStyle(color: Palette.deep,
+            fontSize: 23, fontWeight: FontWeight.w900, letterSpacing: -.3)),
+          if (subtitle != null) Padding(
+            padding: const EdgeInsets.only(top: 4),
+            child: Text(subtitle!, style: const TextStyle(
+              color: Palette.muted, fontSize: 12))),
+        ])),
+      if (action != null) action!,
+    ],
+  );
 }
 
 class BusinessPanel extends StatelessWidget {
@@ -22,20 +39,40 @@ class BusinessPanel extends StatelessWidget {
   final int? count;
   final Widget child;
   final Widget? trailing;
-  const BusinessPanel({super.key, required this.title, required this.child, this.kicker, this.count, this.trailing});
-  @override Widget build(BuildContext context) => Container(
-    decoration: BoxDecoration(color: Colors.white, border: Border.all(color: Palette.divider), borderRadius: BorderRadius.circular(8)),
+  const BusinessPanel({super.key, required this.title, required this.child,
+    this.kicker, this.count, this.trailing});
+  @override
+  Widget build(BuildContext context) => Container(
+    clipBehavior: Clip.antiAlias,
+    decoration: BoxDecoration(
+      color: Colors.white,
+      border: Border.all(color: Palette.divider),
+      borderRadius: BorderRadius.circular(24),
+      boxShadow: [BoxShadow(color: Palette.primary.withValues(alpha: .045),
+        blurRadius: 17, offset: const Offset(0, 5))],
+    ),
     child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-      Container(padding: const EdgeInsets.fromLTRB(15, 13, 14, 13), decoration: const BoxDecoration(
-        color: Palette.deep, borderRadius: BorderRadius.vertical(top: Radius.circular(7)),
-      ), child: Row(children: [
-        Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          if (kicker != null) Text(kicker!, style: const TextStyle(color: Color(0xFF9BB8C6), fontSize: 10, letterSpacing: .8)),
-          Text(title, style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w800)),
-        ])),
-        if (count != null) Text('$count / 10', style: const TextStyle(color: Color(0xFF72D7C6), fontSize: 13, fontWeight: FontWeight.w700)),
-        if (trailing != null) trailing!,
-      ])),
+      Container(
+        padding: const EdgeInsets.fromLTRB(15, 13, 14, 13),
+        decoration: const BoxDecoration(gradient: LinearGradient(
+          colors: [Palette.rose, Palette.lavender],
+          begin: Alignment.centerLeft, end: Alignment.centerRight)),
+        child: Row(children: [
+          const Icon(Icons.auto_awesome_rounded,
+            color: Palette.primary, size: 19),
+          const SizedBox(width: 8),
+          Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              if (kicker != null) Text(kicker!, style: const TextStyle(
+                color: Palette.muted, fontSize: 10, letterSpacing: .7)),
+              Text(title, style: const TextStyle(color: Palette.deep,
+                fontSize: 16, fontWeight: FontWeight.w900)),
+            ])),
+          if (count != null) Text('$count / 10', style: const TextStyle(
+            color: Palette.primary, fontSize: 13, fontWeight: FontWeight.w800)),
+          if (trailing != null) trailing!,
+        ]),
+      ),
       Padding(padding: const EdgeInsets.symmetric(horizontal: 14), child: child),
     ]),
   );
@@ -50,7 +87,12 @@ class BusinessRow extends StatelessWidget {
   @override Widget build(BuildContext context) => Material(color: Colors.transparent, child: InkWell(
     onTap: onTap, child: Padding(padding: const EdgeInsets.symmetric(vertical: 11), child: Row(children: [
       if (index != null) ...[
-        SizedBox(width: 26, child: Text(index!.toString().padLeft(2, '0'), style: const TextStyle(color: Palette.primary, fontSize: 12, fontWeight: FontWeight.w800))),
+        Container(width: 27, height: 27, alignment: Alignment.center,
+          decoration: BoxDecoration(color: Palette.rose,
+            borderRadius: BorderRadius.circular(10)),
+          child: Text(index!.toString().padLeft(2, '0'),
+            style: const TextStyle(color: Palette.primary,
+              fontSize: 11, fontWeight: FontWeight.w900))),
         const SizedBox(width: 7),
       ],
       Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [

@@ -115,7 +115,7 @@ class _SettingsPageState extends State<SettingsPage> {
       const Text('账号与安全', style: TextStyle(fontSize: 24, fontWeight: FontWeight.w800, color: Palette.deep)),
       const SizedBox(height: 6), const Text('管理个人头像和登录安全信息', style: TextStyle(color: Palette.muted)),
       const SizedBox(height: 20),
-      Material(color: Colors.white, borderRadius: BorderRadius.circular(12), child: Column(children: [
+      Material(color: Colors.white, borderRadius: BorderRadius.circular(22), child: Column(children: [
         ListTile(leading: const Icon(Icons.add_a_photo_outlined, color: Palette.primary), title: const Text('更换头像'), subtitle: const Text('支持拍照 / 相册 · 暂存本机'), trailing: const Icon(Icons.chevron_right), onTap: _avatar),
         const Divider(height: 1, indent: 16, endIndent: 16),
         ListTile(leading: const Icon(Icons.badge_outlined, color: Palette.primary),
@@ -126,7 +126,7 @@ class _SettingsPageState extends State<SettingsPage> {
         ListTile(leading: const Icon(Icons.lock_reset_rounded, color: Palette.primary), title: const Text('修改密码'), subtitle: const Text('需要管理员审核后才能设置新密码'), trailing: const Icon(Icons.chevron_right), onTap: waiting || busy ? null : approved ? _change : _request),
       ])),
       const SizedBox(height: 17),
-      Container(padding: const EdgeInsets.all(17), decoration: BoxDecoration(color: Palette.mutedBlue, borderRadius: BorderRadius.circular(11), border: Border.all(color: Palette.divider)), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      Container(padding: const EdgeInsets.all(17), decoration: BoxDecoration(color: Palette.mutedBlue, borderRadius: BorderRadius.circular(19), border: Border.all(color: Palette.divider)), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         const Text('密码申请状态', style: TextStyle(color: Palette.deep, fontWeight: FontWeight.w900)),
         const SizedBox(height: 8),
         Text(switch(status) {'NONE' => '尚未申请', 'PENDING' => '待管理员审核', 'APPROVED' => '已批准，请点击上方修改密码', 'REJECTED' => '申请被驳回，可以重新申请', _ => status}, style: const TextStyle(color: Palette.deep)),

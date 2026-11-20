@@ -69,21 +69,22 @@ class _StatsPageState extends State<StatsPage> {
       }),
     ],
   ));
-  Widget _selector(int days) => InkWell(onTap: () => setState(() { _days = days; _refresh(); }), borderRadius: BorderRadius.circular(9), child: Container(
+  Widget _selector(int days) => InkWell(onTap: () => setState(() { _days = days; _refresh(); }), borderRadius: BorderRadius.circular(19), child: Container(
     padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 8),
-    decoration: BoxDecoration(color: _days == days ? Palette.deep : Colors.white, borderRadius: BorderRadius.circular(9)),
+    decoration: BoxDecoration(color: _days == days ? Palette.primary : Colors.white, borderRadius: BorderRadius.circular(19)),
     child: Text('$days天', style: TextStyle(color: _days == days ? Colors.white : Palette.muted, fontSize: 11, fontWeight: FontWeight.w800)),
   ));
   Widget _hero(Overview o) => Container(
     padding: const EdgeInsets.all(23),
-    decoration: BoxDecoration(gradient: const LinearGradient(colors: [Palette.deep, Color(0xFF1C465C)]), borderRadius: BorderRadius.circular(14)),
+    decoration: BoxDecoration(gradient: const LinearGradient(colors: [Palette.deep, Color(0xFF9872A5)]),
+      borderRadius: BorderRadius.circular(27)),
     child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
       const Text('今日团队效率', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 12)),
       const SizedBox(height: 15),
       Row(children: [
         Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           Text('${o.rate.toStringAsFixed(0)}%', style: const TextStyle(color: Colors.white, fontSize: 43, fontWeight: FontWeight.w900, letterSpacing: -2)),
-          const Text('今日日志提交率', style: TextStyle(color: Color(0xFFC5D4E1), fontSize: 12)),
+          const Text('今日日志提交率', style: TextStyle(color: Color(0xFFFFD9EC), fontSize: 12)),
           const SizedBox(height: 12),
           Text('${o.submitted} / ${o.expected} 人已完成记录', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 12)),
         ])),

@@ -76,7 +76,7 @@ class _PublishedTaskDetailPageState extends State<PublishedTaskDetailPage> {
       body:RefreshIndicator(onRefresh:_refresh,child:ListView(
         padding:const EdgeInsets.fromLTRB(16,10,16,30),children:[
           Container(padding:const EdgeInsets.all(18),decoration:BoxDecoration(
-            color:Palette.deep,borderRadius:BorderRadius.circular(12)),
+            color:Palette.deep,borderRadius:BorderRadius.circular(22)),
             child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[
               const Text('ISSUED TASK / 发布记录',style:TextStyle(color:Color(0xFFB8CAD5),fontSize:11,letterSpacing:1)),
               const SizedBox(height:8),
