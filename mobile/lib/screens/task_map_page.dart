@@ -366,7 +366,7 @@ class _TaskMapPageState extends State<TaskMapPage> {
     padding: const EdgeInsets.all(18),
     decoration: BoxDecoration(
       color: Colors.white, border: Border.all(color: Palette.divider),
-      borderRadius: BorderRadius.circular(23)),
+      borderRadius: BorderRadius.circular(9)),
     child: child);
 
   Widget _aiTitle() => const Row(children: [

@@ -136,8 +136,8 @@ class _HomePageState extends State<HomePage> {
           SizedBox(height: 810, child: DailyTodosCalendar(
             key: ValueKey('daily_todo_${widget.app.user?.id ?? 0}'),
             userId: widget.app.user?.id ?? 0,
-            repo: widget.app.repo,
             holidayService: widget.app.holidays,
+            repo: widget.app.repo,
           )),
         ]),
       );
