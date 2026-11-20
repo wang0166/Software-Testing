@@ -1,5 +1,6 @@
 import '../core/daily_todos.dart';
 import '../core/models.dart';
+import '../core/holiday_calendar.dart';
 
 class AppFailure implements Exception {
   final String message;
@@ -37,6 +38,8 @@ abstract class PandoraRepository {
   Future<List<CompanyItem>> companyMatters();
   Future<List<CompanyItem>> companyImportantTasks();
   Future<List<CalendarDay>> calendar(String from,String to);
+  /// China mainland holiday calendar; no user tasks or personal todos included.
+  Future<HolidayYearData> holidayYear(int year);
   Future<List<TaskItem>> taskMap();
   /// 服务端汇总当前用户授权数据并调用 DeepSeek；refresh=true 跳过 5 分钟缓存。
   Future<AiAnalysis> aiMapAnalysis({bool refresh = false});

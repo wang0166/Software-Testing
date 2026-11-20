@@ -5,6 +5,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../core/theme.dart';
+
 /// Pandora AI 地图分析组件。
 ///
 /// 真实接口：POST /api/ai/map/analysis
@@ -220,7 +222,7 @@ class _PandoraAiAnalysisPanelState extends State<PandoraAiAnalysisPanel> {
       decoration: BoxDecoration(
         color: Colors.white,
         border: Border.all(color: const Color(0xFFD6DEE0)),
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(22),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -280,7 +282,7 @@ class _PandoraAiAnalysisPanelState extends State<PandoraAiAnalysisPanel> {
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
         color: isError ? const Color(0xFFFFF2F0) : const Color(0xFFF2F6F7),
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: BorderRadius.circular(22),
       ),
       child: Text(message, style: TextStyle(
         fontSize: 13,
@@ -326,7 +328,7 @@ class _PandoraAiAnalysisPanelState extends State<PandoraAiAnalysisPanel> {
 
   Widget _heading(String title, IconData icon) {
     return Row(children: [
-      Icon(icon, size: 19, color: const Color(0xFF087A80)),
+      Icon(icon, size: 19, color: Palette.primary),
       const SizedBox(width: 6),
       Expanded(child: Text(title, style: const TextStyle(
           color: Color(0xFF123247), fontWeight: FontWeight.w800, fontSize: 15))),

@@ -122,6 +122,9 @@ class _TasksPageState extends State<TasksPage> {
           Padding(padding: const EdgeInsets.fromLTRB(16, 8, 16, 9),
             child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
               Row(children: [
+                const Icon(Icons.auto_awesome_rounded,
+                  color: Palette.primary, size: 18),
+                const SizedBox(width: 7),
                 const Expanded(child: Text('任务执行台账', style: TextStyle(
                   color: Palette.deep, fontSize: 20, fontWeight: FontWeight.w900))),
                 Text('共 ${visible.length} 项', style: const TextStyle(

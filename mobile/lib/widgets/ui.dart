@@ -10,7 +10,11 @@ class SoftCard extends StatelessWidget {
   const SoftCard({super.key,required this.child,this.padding=const EdgeInsets.all(18),this.color});
   @override Widget build(BuildContext context)=>Container(
     padding:padding,
-    decoration:BoxDecoration(color:color??Colors.white,borderRadius:BorderRadius.circular(23),boxShadow:[BoxShadow(color:Palette.deep.withValues(alpha:.035),offset:const Offset(0,6),blurRadius:23)]),
+    decoration:BoxDecoration(color:color??Colors.white,
+      border:Border.all(color:Palette.divider),
+      borderRadius:BorderRadius.circular(26),
+      boxShadow:[BoxShadow(color:Palette.primary.withValues(alpha:.055),
+        offset:const Offset(0,6),blurRadius:23)]),
     child:child,
   );
 }
@@ -28,7 +32,7 @@ class Pill extends StatelessWidget {
   final String text;
   final Color color;
   final Color background;
-  const Pill({super.key,required this.text,this.color=Palette.primary,this.background=Palette.sage});
+  const Pill({super.key,required this.text,this.color=Palette.primary,this.background=Palette.rose});
   @override Widget build(BuildContext context)=>Container(padding:const EdgeInsets.symmetric(horizontal:11,vertical:6),decoration:BoxDecoration(color:background,borderRadius:BorderRadius.circular(100)),child:Text(text,style:TextStyle(color:color,fontWeight:FontWeight.w700,fontSize:11)));
 }
 class EmptyPanel extends StatelessWidget {
@@ -151,7 +155,7 @@ class PageHeading extends StatelessWidget {
   final String overline,title,description;
   const PageHeading({super.key,required this.overline,required this.title,required this.description});
   @override Widget build(BuildContext context)=>Column(crossAxisAlignment:CrossAxisAlignment.start,children:[
-    Text(overline.toUpperCase(),style:const TextStyle(fontSize:11,fontWeight:FontWeight.w800,letterSpacing:2,color:Palette.primary)),
+    Text(overline.toUpperCase(),style:const TextStyle(fontSize:11,fontWeight:FontWeight.w900,letterSpacing:2,color:Palette.primary)),
     const SizedBox(height:7),Text(title,style:Theme.of(context).textTheme.headlineMedium),
     const SizedBox(height:7),Text(description,style:Theme.of(context).textTheme.bodySmall),
   ]);

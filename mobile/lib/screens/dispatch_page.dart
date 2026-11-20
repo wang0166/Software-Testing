@@ -199,7 +199,7 @@ class _DispatchPageState extends State<DispatchPage> {
     final visible = _visibleMembers(all);
     return Material(
       color: Colors.white,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(22),
         side: const BorderSide(color: Palette.divider)),
       clipBehavior: Clip.antiAlias,
       child: Column(children: [
@@ -295,9 +295,9 @@ class _DispatchPageState extends State<DispatchPage> {
   }
 
   Widget _dateLine(String caption, DateTime value, VoidCallback tap) => Material(
-    color: Colors.white, borderRadius: BorderRadius.circular(8), child: InkWell(
-      onTap: tap, borderRadius: BorderRadius.circular(8), child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 13), decoration: BoxDecoration(border: Border.all(color: Palette.divider), borderRadius: BorderRadius.circular(8)),
+    color: Colors.white, borderRadius: BorderRadius.circular(22), child: InkWell(
+      onTap: tap, borderRadius: BorderRadius.circular(22), child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 13), decoration: BoxDecoration(border: Border.all(color: Palette.divider), borderRadius: BorderRadius.circular(22)),
         child: Row(children: [
           Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
             Text(caption, style: const TextStyle(color: Palette.muted, fontSize: 11)),

@@ -2,11 +2,14 @@ import 'package:flutter/material.dart';
 import '../core/gantt_utils.dart';
 import '../core/app_state.dart';
 import '../core/models.dart';
+import '../core/holiday_calendar.dart';
+import '../data/holiday_calendar_service.dart';
 import '../core/theme.dart';
 import '../widgets/task_gantt_chart.dart';
 import '../widgets/ui.dart';
 import '../widgets/redesign.dart';
 import '../widgets/business.dart';
+import '../widgets/holiday_calendar_widgets.dart';
 
 /// Month/week/day task calendar and full Gantt view.
 /// As required by the client, calendar views never request or display log data.
@@ -17,6 +20,7 @@ class CalendarPage extends StatefulWidget {
   final DateTime? initialDate;
   final bool embedded;
   final ValueChanged<int>? onTaskViewed;
+  final HolidayCalendarService? holidayService;
 
   const CalendarPage({
     super.key,
@@ -25,6 +29,7 @@ class CalendarPage extends StatefulWidget {
     this.initialDate,
     this.embedded = false,
     this.onTaskViewed,
+    this.holidayService,
   });
 
   @override
@@ -36,6 +41,7 @@ class _CalendarPageState extends State<CalendarPage> {
   late DateTime _selected;
   late int _mode;
   late Future<List<TaskItem>> _receivedTasks;
+  late Future<HolidayCalendarView> _holidayViewFuture;
 
   DateTime get _monthLast => DateTime(_month.year, _month.month + 1, 0);
   DateTime get _weekFirst => DateTime(_selected.year, _selected.month, _selected.day)
@@ -60,7 +66,19 @@ class _CalendarPageState extends State<CalendarPage> {
     _reload();
   }
 
+  void _loadHolidays({bool forceRefresh = false}) {
+    final rangeStart = _mode == 1 ? _weekFirst
+        : _mode == 2 ? _selected
+        : _month.subtract(Duration(days: _month.weekday - 1));
+    final rangeEnd = _mode == 1 || _mode == 2
+        ? _rangeLast
+        : _monthLast.add(Duration(days: 7 - _monthLast.weekday));
+    _holidayViewFuture = (widget.holidayService ?? widget.app.holidays).loadRange(
+      rangeStart, rangeEnd, forceRefresh: forceRefresh);
+  }
+
   void _reload() {
+    _loadHolidays();
     final allowed = widget.app.user?.canUseTasks ?? false;
     _receivedTasks = allowed
         ? widget.app.repo.tasks(personal: false)
@@ -102,9 +120,12 @@ class _CalendarPageState extends State<CalendarPage> {
   }
 
   Future<void> _refresh() async {
-    setState(_reload);
+    setState(() {
+      _reload();
+      _loadHolidays(forceRefresh: true);
+    });
     try {
-      await _receivedTasks;
+      await Future.wait([_receivedTasks, _holidayViewFuture]);
     } catch (_) {
       // FutureBuilders show the corresponding error/retry state.
     }
@@ -134,9 +155,9 @@ class _CalendarPageState extends State<CalendarPage> {
                 _controls(),
                 const SizedBox(height: 17),
                 if (_mode == 3)
-                  _taskChart(full: true)
+                  _holidayAwareContents()
                 else ...[
-                  _calendarContents(),
+                  _holidayAwareContents(),
                   if (_mode != 2) ...[
                     const SizedBox(height: 12),
                     Align(
@@ -191,7 +212,7 @@ class _CalendarPageState extends State<CalendarPage> {
                   child: InkWell(
                     key: const Key('calendar_date_picker'),
                     onTap: _pickDate,
-                    borderRadius: BorderRadius.circular(9),
+                    borderRadius: BorderRadius.circular(18),
                     child: Padding(padding: const EdgeInsets.symmetric(vertical: 9), child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
                       Flexible(child: Text(_periodText, textAlign: TextAlign.center, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w900, color: Palette.deep))),
                       const SizedBox(width: 5), const Icon(Icons.arrow_drop_down_circle_outlined, size: 19, color: Palette.primary),
@@ -224,14 +245,14 @@ class _CalendarPageState extends State<CalendarPage> {
                       padding: const EdgeInsets.symmetric(horizontal: 2),
                       child: InkWell(
                         key: ValueKey('calendar_mode_$i'),
-                        borderRadius: BorderRadius.circular(9),
+                        borderRadius: BorderRadius.circular(18),
                         onTap: () => _changeMode(i),
                         child: Container(
                           alignment: Alignment.center,
                           padding: const EdgeInsets.symmetric(vertical: 11),
                           decoration: BoxDecoration(
                             color: _mode == i ? Palette.deep : Colors.white,
-                            borderRadius: BorderRadius.circular(9),
+                            borderRadius: BorderRadius.circular(18),
                           ),
                           child: Text(
                             const ['月', '周', '日', '甘特图'][i],
@@ -255,6 +276,8 @@ class _CalendarPageState extends State<CalendarPage> {
               children: [
                 _Legend(color: Color(0xFFC7D9EC), label: '进行中'),
                 _Legend(color: Color(0xFFC7E5DD), label: '已完成'),
+                Text('休 / 班 · 法定调休', style: TextStyle(
+                  color: Palette.muted, fontSize: 10)),
               ],
             ),
           ],
@@ -266,7 +289,27 @@ class _CalendarPageState extends State<CalendarPage> {
   // Assigned-task spans are clipped by week and shown on collision-free lanes.
   // The backend calendar endpoint mixes task counts with log-related data.
   // This page intentionally uses only the received-task endpoint.
-  Widget _calendarContents() => FutureBuilder<List<TaskItem>>(
+  Widget _holidayAwareContents() => FutureBuilder<HolidayCalendarView>(
+        future: _holidayViewFuture,
+        builder: (context, snapshot) {
+          final holidayView = snapshot.data;
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              HolidaySyncNotice(
+                view: holidayView,
+                retry: () => setState(() => _loadHolidays(forceRefresh: true)),
+              ),
+              if (_mode == 3)
+                _taskChart(full: true)
+              else
+                _calendarContents(holidayView),
+            ],
+          );
+        },
+      );
+
+  Widget _calendarContents(HolidayCalendarView? holidays) => FutureBuilder<List<TaskItem>>(
         future: _receivedTasks,
         builder: (context, snapshot) {
           if (snapshot.connectionState != ConnectionState.done) {
@@ -282,7 +325,7 @@ class _CalendarPageState extends State<CalendarPage> {
             );
           }
           final tasks = snapshot.data ?? <TaskItem>[];
-          return _mode == 2 ? _dayView(tasks) : _weeksView(tasks);
+          return _mode == 2 ? _dayView(tasks, holidays) : _weeksView(tasks, holidays);
         },
       );
 
@@ -291,11 +334,12 @@ class _CalendarPageState extends State<CalendarPage> {
     Navigator.push(context, MaterialPageRoute<void>(
       builder: (_) => CalendarPage(
         app: widget.app, initialMode: 3, initialDate: _selected,
-        onTaskViewed: widget.onTaskViewed),
+        onTaskViewed: widget.onTaskViewed,
+        holidayService: widget.holidayService),
     ));
   }
 
-  Widget _weeksView(List<TaskItem> tasks) {
+  Widget _weeksView(List<TaskItem> tasks, HolidayCalendarView? holidays) {
     final first = _mode == 0
         ? _month.subtract(Duration(days: _month.weekday - 1))
         : _weekFirst;
@@ -323,11 +367,11 @@ class _CalendarPageState extends State<CalendarPage> {
           ),
           const SizedBox(height: 12),
           for (var weekIndex = 0; weekIndex < numberOfWeeks; weekIndex++)
-            _weekRow(first.add(Duration(days: weekIndex * 7)), tasks),
+            _weekRow(first.add(Duration(days: weekIndex * 7)), tasks, holidays),
           const SizedBox(height: 15),
           const Divider(height: 1),
           const SizedBox(height: 15),
-          _dayInfo(tasks),
+          _dayInfo(tasks, holidays),
           const SizedBox(height: 8),
           const Text(
             '每日期最多显示两项任务，+数字表示未展示的任务数，点击可查看甘特图',
@@ -340,19 +384,22 @@ class _CalendarPageState extends State<CalendarPage> {
 
   // iOS-like month grid: show two task titles in each day, then +N.
   // The calendar never has an independent vertical task scrollbar.
-  Widget _weekRow(DateTime weekFirst, List<TaskItem> tasks) => Container(
+  Widget _weekRow(DateTime weekFirst, List<TaskItem> tasks,
+      HolidayCalendarView? holidays) => Container(
     padding: const EdgeInsets.symmetric(vertical: 5),
     decoration: const BoxDecoration(
       border: Border(bottom: BorderSide(color: Palette.divider)),
     ),
     child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
       for (var i = 0; i < 7; i++)
-        Expanded(child: _dateCell(weekFirst.add(Duration(days: i)), tasks)),
+        Expanded(child: _dateCell(weekFirst.add(Duration(days: i)), tasks, holidays)),
     ]),
   );
 
-  Widget _dateCell(DateTime date, List<TaskItem> tasks) {
+  Widget _dateCell(DateTime date, List<TaskItem> tasks,
+      HolidayCalendarView? holidays) {
     final key = dayString(date);
+    final holiday = holidays?.on(date);
     final selected = key == dayString(_selected);
     final today = key == todayChina;
     final inMonth = _mode == 1 ||
@@ -363,7 +410,7 @@ class _CalendarPageState extends State<CalendarPage> {
     final remaining = matches.length - visibleLimit;
     return InkWell(
       key: ValueKey('calendar_day_$key'),
-      borderRadius: BorderRadius.circular(8),
+      borderRadius: BorderRadius.circular(22),
       onTap: () => setState(() {
         final changedMonth = _month.year != date.year || _month.month != date.month;
         _selected = date;
@@ -379,25 +426,35 @@ class _CalendarPageState extends State<CalendarPage> {
         padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 3),
         decoration: BoxDecoration(
           color: selected ? const Color(0xFFF0F7FA) : Colors.transparent,
-          borderRadius: BorderRadius.circular(8),
+          borderRadius: BorderRadius.circular(22),
         ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-          Align(alignment: Alignment.center, child: Container(
-            width: 26, height: 26, alignment: Alignment.center,
-            decoration: BoxDecoration(
-              color: selected ? Palette.primary
-                  : today ? Palette.sage : Colors.transparent,
-              borderRadius: BorderRadius.circular(13),
-            ),
-            child: Text('${date.day}', style: TextStyle(
-              fontSize: 12, fontWeight: FontWeight.w800,
-              color: selected ? Colors.white
-                : inMonth ? Palette.deep : Palette.muted,
+          SizedBox(height: 26, child: Stack(children: [
+            Center(child: Container(
+              width: 26, height: 26, alignment: Alignment.center,
+              decoration: BoxDecoration(
+                color: selected ? Palette.primary
+                    : today ? Palette.sage : Colors.transparent,
+                borderRadius: BorderRadius.circular(13),
+              ),
+              child: Text('${date.day}', style: TextStyle(
+                fontSize: 12, fontWeight: FontWeight.w800,
+                color: selected ? Colors.white
+                  : inMonth ? Palette.deep : Palette.muted,
+              )),
             )),
-          )),
+            if (inMonth && holiday?.dayTypeLabel.isNotEmpty == true)
+              Positioned(right: 0, top: 0,
+                child: HolidayDayBadge(day: holiday)),
+          ])),
+          if (inMonth && holiday != null && holiday.festivalLabel.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(top: 2),
+              child: HolidayFestivalLabel(day: holiday),
+            ),
           const SizedBox(height: 4),
           for (final task in matches.take(visibleLimit))
             Padding(padding: const EdgeInsets.only(bottom: 3), child: Material(
@@ -426,13 +483,13 @@ class _CalendarPageState extends State<CalendarPage> {
     );
   }
 
-  Widget _dayView(List<TaskItem> tasks) {
+  Widget _dayView(List<TaskItem> tasks, HolidayCalendarView? holidays) {
     final todaySpans = buildGanttSpans(tasks, _selected, _selected);
     return SoftCard(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _dayInfo(tasks),
+          _dayInfo(tasks, holidays),
           if (todaySpans.isNotEmpty) ...[
             const Divider(height: 28),
             const Text(
@@ -453,7 +510,7 @@ class _CalendarPageState extends State<CalendarPage> {
 
   Widget _dayTaskTile(TaskItem task) => Material(
     color: _barColor(task.status),
-    borderRadius: BorderRadius.circular(9),
+    borderRadius: BorderRadius.circular(18),
     clipBehavior: Clip.antiAlias,
     child: ListTile(
       dense: true,
@@ -574,7 +631,7 @@ class _CalendarPageState extends State<CalendarPage> {
     );
   }
 
-  Widget _dayInfo(List<TaskItem> tasks) {
+  Widget _dayInfo(List<TaskItem> tasks, HolidayCalendarView? holidays) {
     final selected = dayString(_selected);
     final taskCount = buildGanttSpans(tasks, _selected, _selected).length;
     return Column(
@@ -586,6 +643,10 @@ class _CalendarPageState extends State<CalendarPage> {
             fontSize: 16, fontWeight: FontWeight.w800, color: Palette.deep,
           ),
         ),
+        if (holidays?.on(_selected) != null) ...[
+          const SizedBox(height: 6),
+          SelectedHolidayInfo(day: holidays!.on(_selected)),
+        ],
         const SizedBox(height: 11),
         if (taskCount == 0)
           const EmptyPanel(
@@ -599,7 +660,7 @@ class _CalendarPageState extends State<CalendarPage> {
             decoration: BoxDecoration(
               color: Colors.white,
               border: Border.all(color: Palette.divider),
-              borderRadius: BorderRadius.circular(9),
+              borderRadius: BorderRadius.circular(18),
             ),
             child: Row(children: [
               const Icon(Icons.task_alt_rounded, color: Palette.primary, size: 19),
