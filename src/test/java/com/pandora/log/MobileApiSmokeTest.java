@@ -47,6 +47,7 @@ class MobileApiSmokeTest extends EmbeddedPostgresSupport {
 
     @DynamicPropertySource
     static void datasourceProperties(DynamicPropertyRegistry registry) {
+        registry.add("app.log-deadline-job.enabled", () -> "false");
         registry.add("spring.datasource.url", () -> JDBC_URL);
         registry.add("spring.datasource.username", () -> "postgres");
         registry.add("spring.datasource.password", () -> "");
@@ -186,7 +187,7 @@ class MobileApiSmokeTest extends EmbeddedPostgresSupport {
 
         JsonNode recipients = call(get("/api/tasks/recipients"), founderToken);
         List<String> recipientNames = toListOfField(recipients.path("data").path("items"), "username");
-        assertThat(recipientNames).containsExactly("deptmgr");
+        assertThat(recipientNames).containsExactlyInAnyOrder("deptmgr","teamlead","employee1");
 
         LocalDate today = LocalDate.now();
         JsonNode dispatched = call(post("/api/tasks").contentType(MediaType.APPLICATION_JSON)

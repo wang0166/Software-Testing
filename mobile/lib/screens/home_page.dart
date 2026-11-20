@@ -137,6 +137,7 @@ class _HomePageState extends State<HomePage> {
             key: ValueKey('daily_todo_${widget.app.user?.id ?? 0}'),
             userId: widget.app.user?.id ?? 0,
             holidayService: widget.app.holidays,
+            repo: widget.app.repo,
           )),
         ]),
       );

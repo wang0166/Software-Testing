@@ -3,6 +3,10 @@ package com.pandora.log.entity;
 import java.time.OffsetDateTime;
 
 public class User {
+    private int authVersion;
+
+    public int getAuthVersion() { return authVersion; }
+    public void setAuthVersion(int authVersion) { this.authVersion = authVersion; }
 
     private Long id;
     private String username;

@@ -52,7 +52,8 @@ class _LogsPageState extends State<LogsPage> {
       _selectedSubordinateId = null;
       _shown = 20;
       if (mode == '我的下属') {
-        _subordinates ??= widget.app.repo.subordinatesTaskOverview();
+        // 每次进入该分区都重新请求，避免后端恢复后仍复用上一次失败的 Future。
+        _subordinates = widget.app.repo.subordinatesTaskOverview();
       }
     });
   }

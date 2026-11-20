@@ -12,6 +12,8 @@ import org.springframework.web.bind.MissingServletRequestParameterException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
+import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
+import org.springframework.dao.DataIntegrityViolationException;
 
 import jakarta.validation.ConstraintViolationException;
 
@@ -40,7 +42,7 @@ public class GlobalExceptionHandler {
     }
 
     @ExceptionHandler({ConstraintViolationException.class, HttpMessageNotReadableException.class,
-            MissingServletRequestParameterException.class})
+            MissingServletRequestParameterException.class, MethodArgumentTypeMismatchException.class})
     public ResponseEntity<ApiResponse<Void>> handleBadRequest(Exception exception) {
         return ResponseEntity.status(ErrorCode.VALIDATION_FAILED.getHttpStatus())
                 .body(ApiResponse.error(ErrorCode.VALIDATION_FAILED, ErrorCode.VALIDATION_FAILED.getMessage()));
@@ -50,6 +52,12 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ApiResponse<Void>> handleNotFound(NoResourceFoundException exception) {
         return ResponseEntity.status(ErrorCode.NOT_FOUND.getHttpStatus())
                 .body(ApiResponse.error(ErrorCode.NOT_FOUND));
+    }
+
+    @ExceptionHandler(DataIntegrityViolationException.class)
+    public ResponseEntity<ApiResponse<Void>> handleDataConflict(DataIntegrityViolationException exception) {
+        // 数据库异常可能包含 SQL 和参数，统一返回安全错误，不暴露约束细节。
+        return ResponseEntity.status(409).body(ApiResponse.error(ErrorCode.DATA_CONFLICT));
     }
 
     @ExceptionHandler(Exception.class)

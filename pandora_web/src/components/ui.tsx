@@ -1,6 +1,7 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import { createContext, useCallback, useContext, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 
-// ---------- Toast：替代 alert，右下角浮出更精致 ----------
+// ---------- Toast：统一操作反馈 ----------
 type ToastKind = 'ok' | 'err' | 'info';
 interface ToastItem { id: number; kind: ToastKind; text: string }
 interface ToastCtx { push: (kind: ToastKind, text: string) => void }
@@ -20,33 +21,70 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
   return (
     <ToastContext.Provider value={ctx}>
       {children}
-      <div className="pd-toasts">
+      {createPortal(<div className="pd-toasts" aria-live="polite" aria-atomic="false">
         {items.map((t) => (
           <div key={t.id} className={`pd-toast ${t.kind}`}><span className="ico">{icon[t.kind]}</span>{t.text}</div>
         ))}
-      </div>
+      </div>, document.body)}
     </ToastContext.Provider>
   );
 }
 
 // ---------- Modal + Confirm ----------
+const modalStack: HTMLElement[] = [];
+let originalOverflow = '';
+let originalInert = false;
 export function Modal({ title, onClose, children, footer }: { title: string; onClose: () => void; children: React.ReactNode; footer?: React.ReactNode }) {
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [onClose]);
-  return (
+  const titleId = useId();
+  const dialog = useRef<HTMLDivElement>(null);
+  const close = useRef(onClose);
+  close.current = onClose;
+  useLayoutEffect(() => {
+    const node = dialog.current!;
+    const previousFocus = document.activeElement as HTMLElement | null;
+    const root = document.getElementById('root');
+    if (!modalStack.length) {
+      originalOverflow = document.body.style.overflow;
+      originalInert = root?.inert ?? false;
+      document.body.style.overflow = 'hidden';
+      if (root) root.inert = true;
+    }
+    modalStack.push(node);
+    const controls = () => [...node.querySelectorAll<HTMLElement>('button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), a[href], [tabindex="0"]')].filter(element => element.getClientRects().length > 0);
+    const initial = node.querySelector<HTMLElement>('input:not([disabled]), select:not([disabled]), textarea:not([disabled])') ?? controls()[0] ?? node;
+    initial.focus();
+    const onKey = (event: KeyboardEvent) => {
+      if (modalStack[modalStack.length - 1] !== node) return;
+      if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); close.current(); }
+      if (event.key === 'Tab') {
+        const items = controls(), first = items[0] ?? node, last = items[items.length - 1] ?? node;
+        if (event.shiftKey && (document.activeElement === first || !node.contains(document.activeElement))) { event.preventDefault(); last.focus(); }
+        else if (!event.shiftKey && (document.activeElement === last || !node.contains(document.activeElement))) { event.preventDefault(); first.focus(); }
+      }
+    };
+    const onFocus = (event: FocusEvent) => { if (modalStack[modalStack.length - 1] === node && !node.contains(event.target as Node)) (controls()[0] ?? node).focus(); };
+    document.addEventListener('keydown', onKey);
+    document.addEventListener('focusin', onFocus);
+    return () => {
+      document.removeEventListener('keydown', onKey);
+      document.removeEventListener('focusin', onFocus);
+      modalStack.splice(modalStack.indexOf(node), 1);
+      if (!modalStack.length) { document.body.style.overflow = originalOverflow; if (root) root.inert = originalInert; }
+      if (previousFocus?.isConnected) previousFocus.focus();
+    };
+  }, []);
+  // 渲染到 body，避免页面动画或滚动容器限制 fixed 遮罩的范围。
+  return createPortal(
     <div className="pd-mask" onClick={onClose}>
-      <div className="pd-modal" onClick={(e) => e.stopPropagation()}>
+      <div className="pd-modal" role="dialog" aria-modal="true" aria-labelledby={titleId} tabIndex={-1} ref={dialog} onClick={(e) => e.stopPropagation()}>
         <div className="pd-modal-head">
-          <span>{title}</span>
-          <button className="pd-btn ghost" onClick={onClose} aria-label="关闭">✕</button>
+          <span id={titleId}>{title}</span>
+          <button className="pd-btn ghost" type="button" onClick={onClose} aria-label="关闭">×</button>
         </div>
         <div className="pd-modal-body">{children}</div>
         {footer && <div className="pd-modal-foot">{footer}</div>}
       </div>
-    </div>
+    </div>, document.body
   );
 }
 
@@ -73,7 +111,7 @@ export function ConfirmProvider({ children }: { children: React.ReactNode }) {
             </>
           }
         >
-          <p style={{ margin: 0, color: '#4a4770' }}>{state.opts.desc ?? '确定继续吗？'}</p>
+          <p style={{ margin: 0, color: 'var(--sub)' }}>{state.opts.desc ?? '确定继续吗？'}</p>
         </Modal>
       )}
     </ConfirmContext.Provider>
@@ -106,8 +144,8 @@ export function Ring({ percent, label }: { percent: number; label: string }) {
 export function Empty({ emoji = '🗂️', title, hint }: { emoji?: string; title: string; hint?: string }) {
   return (
     <div className="pd-empty">
-      <span className="emoji">{emoji}</span>
-      <div style={{ fontWeight: 800, color: '#4a4770' }}>{title}</div>
+      <span className="empty-mark" aria-hidden="true">—</span>
+      <div style={{ fontWeight: 500, color: 'var(--sub)' }}>{title}</div>
       {hint && <div className="pd-hint" style={{ margin: '6px 0 0' }}>{hint}</div>}
     </div>
   );

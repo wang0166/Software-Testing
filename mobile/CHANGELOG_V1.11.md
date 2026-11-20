@@ -10,15 +10,12 @@
 5. 首页下半区域新增「每日事项」：月视图，可自由选择日期、创建/编辑/删除/勾选完成，事项和公司任务、任务审批、日志完全独立。
 
 ## 每日事项的数据范围
-- **当前可运行版本：本机持久化** `shared_preferences`，按登录用户 ID 分开。退出登录不清除该用户事项。
-- 不将个人事项写入工作日志/任务；不影响任务数量、审批、任务甘特图或员工统计。
-- **上线前需甲方明确**是否要求跨设备同步、数据备份、管理端查看。若需要，后端应增加个人事项接口：
-  - `GET /api/daily-items?month=YYYY-MM`
-  - `POST /api/daily-items` （date/title/note）
-  - `PATCH /api/daily-items/{id}` （date/title/note/completed）
+- **已上云**：`ApiRepository` 调用 `/api/daily-items` 接口，服务端按认证用户本人隔离读写，支持跨设备同步；未注入 `repo` 的离线/组件测试仍回退 `shared_preferences`。
+  - `GET /api/daily-items?from=YYYY-MM-DD&to=YYYY-MM-DD`
+  - `POST /api/daily-items` （date/title/note/completed）
+  - `PUT /api/daily-items/{id}` （date/title/note/completed）
   - `DELETE /api/daily-items/{id}`
-  - 服务端只能按认证用户本人读写，不允许通过传入任意 userId 访问其他员工。
-  - 未对接前不能宣称每日事项已跨设备同步。
+- 不将个人事项写入工作日志/任务；不影响任务数量、审批、任务甘特图或员工统计。
 
 ## 发版核查
 - `flutter analyze` 无 error；`flutter test` 通过；Pixel6 和 Android 真机验证。

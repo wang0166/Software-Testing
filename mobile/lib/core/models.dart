@@ -276,3 +276,30 @@ class SubordinateTaskSummary {
     );
   }
 }
+
+/// DeepSeek 生成的 AI 地图分析结果，全部来自服务端授权数据。
+class AiAnalysis {
+  final String summary, model, generatedAt, range;
+  final List<String> highlights, risks, suggestions;
+  final int logCount, taskCount, dispatchedTaskCount;
+  const AiAnalysis({required this.summary, this.highlights = const [],
+    this.risks = const [], this.suggestions = const [], this.model = '',
+    this.generatedAt = '', this.range = '', this.logCount = 0,
+    this.taskCount = 0, this.dispatchedTaskCount = 0});
+  factory AiAnalysis.fromJson(dynamic obj) {
+    final j = mapOf(obj);
+    final scope = mapOf(j['dataScope']);
+    return AiAnalysis(
+      summary: textOf(j['summary']),
+      highlights: listOf(j['highlights']).map((e) => e.toString()).toList(),
+      risks: listOf(j['risks']).map((e) => e.toString()).toList(),
+      suggestions: listOf(j['suggestions']).map((e) => e.toString()).toList(),
+      model: textOf(j['model']),
+      generatedAt: textOf(j['generatedAt']),
+      range: textOf(scope['range']),
+      logCount: intOf(scope['logCount']),
+      taskCount: intOf(scope['taskCount']),
+      dispatchedTaskCount: intOf(scope['dispatchedTaskCount']),
+    );
+  }
+}
