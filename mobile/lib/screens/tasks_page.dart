@@ -7,6 +7,7 @@ import '../widgets/ui.dart';
 import 'dispatch_page.dart';
 import 'task_progress_page.dart';
 import 'published_task_detail_page.dart';
+import 'task_handover_page.dart';
 
 /// One searchable ledger for received assignments and my issued records.
 /// The parent screen provides the vertical viewport; only columns scroll sideways.
@@ -40,6 +41,8 @@ class _TasksPageState extends State<TasksPage> {
   late Future<List<TaskItem>> _received;
   late Future<IssuedTasksResult> _issued;
   final _search = TextEditingController();
+  bool get _manager => const ['TEAM_LEADER', 'DEPT_MANAGER', 'FOUNDER']
+    .contains(widget.app.user?.role);
   final _horizontal = ScrollController();
   String _source = '全部来源';
   String _state = '全部状态';
@@ -98,6 +101,7 @@ class _TasksPageState extends State<TasksPage> {
         final visible = items.where((entry) {
           if (_source == '收到的任务' && entry.isIssued) return false;
           if (_source == '我发布的' && !entry.isIssued) return false;
+          if (_source == '待交接') return false;
           if (_state != '全部状态' && entry.state != _state) return false;
           if (_type != '全部类型' && entry.taskType != _type) return false;
           if (_urgency != '全部优先级' && entry.urgency != _urgency) return false;
@@ -127,7 +131,7 @@ class _TasksPageState extends State<TasksPage> {
                 const SizedBox(width: 7),
                 const Expanded(child: Text('任务执行台账', style: TextStyle(
                   color: Palette.deep, fontSize: 20, fontWeight: FontWeight.w900))),
-                Text('共 ${visible.length} 项', style: const TextStyle(
+                Text(_source == '待交接' ? '待确认交接' : '共 ${visible.length} 项', style: const TextStyle(
                   color: Palette.primary, fontWeight: FontWeight.w800)),
                 IconButton(onPressed: _refresh, tooltip: '刷新任务',
                   icon: const Icon(Icons.refresh, size: 21)),
@@ -142,8 +146,15 @@ class _TasksPageState extends State<TasksPage> {
                   contentPadding: EdgeInsets.symmetric(vertical: 8)))),
               const SizedBox(height: 8),
               Wrap(spacing: 7, runSpacing: 7, children: [
-                _select(_source, ['全部来源', '收到的任务', '我发布的'],
+                _select(_source, ['全部来源', '收到的任务', '我发布的',
+                    if (_manager) '待交接'],
                   (v) => setState(() => _source = v), width: 117),
+                if (_manager) FilterChip(
+                  key: const Key('task_handover_filter'),
+                  label: const Text('待交接'),
+                  selected: _source == '待交接', showCheckmark: false,
+                  onSelected: (v) => setState(() =>
+                    _source = v ? '待交接' : '全部来源')),
                 _select(_state, ['全部状态', '进行中', '已完成',
                     ...issuedStates],
                   (v) => setState(() => _state = v), width: 114),
@@ -180,7 +191,9 @@ class _TasksPageState extends State<TasksPage> {
                 '发布记录暂不可用，当前仅显示已加载的接收任务',
                 style: TextStyle(color: Palette.coral, fontSize: 11))),
             ])),
-          Expanded(child: waiting ? const Center(child: CircularProgressIndicator())
+          Expanded(child: _source == '待交接'
+            ? TaskHandoverInbox(app: widget.app, onChanged: _refresh)
+            : waiting ? const Center(child: CircularProgressIndicator())
             : receivedSnap.hasError && issuedSnap.hasError
               ? ErrorPanel(error: receivedSnap.error!, onRetry: _refresh)
               : visible.isEmpty

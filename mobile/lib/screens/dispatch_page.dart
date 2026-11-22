@@ -20,6 +20,7 @@ class _DispatchPageState extends State<DispatchPage> {
   final detail = TextEditingController();
   final search = TextEditingController();
   final selected = <int>{};
+  final _originalAssignees = <int>{};
   late Future<List<UserProfile>> members;
   late DateTime start, deadline;
   String urgency = 'NOT_URGENT';
@@ -47,6 +48,7 @@ class _DispatchPageState extends State<DispatchPage> {
       start=DateTime.tryParse(previous.startDate) ?? start;
       deadline=DateTime.tryParse(previous.deadline) ?? deadline;
       selected.addAll(previous.assigneeIds);
+      _originalAssignees.addAll(previous.assigneeIds);
     }
     members = _resolveMembers();
   }
@@ -59,15 +61,34 @@ class _DispatchPageState extends State<DispatchPage> {
       if (assignments.isEmpty) {
         throw const AppFailure('无法查询任务原有接收人，已阻止可能覆盖接收人的编辑');
       }
-      if(mounted) setState(() => selected.addAll(assignments.map((e)=>e.assigneeId)));
+      if (mounted) {
+        setState(() {
+        _originalAssignees.addAll(assignments.map((item) => item.assigneeId));
+        selected.addAll(_originalAssignees);
+      });
+      }
     }
-    return list;
+    final me = widget.app.user;
+    final eligible = {
+      if (me != null && me.id > 0 && me.canUseTasks) me.id: me,
+      for (final person in list)
+        if (person.id > 0 && person.canUseTasks) person.id: person,
+    };
+    return eligible.values.toList();
   }
   @override void dispose() { title.dispose(); detail.dispose(); search.dispose(); super.dispose(); }
-  Future<void> _submit() async {
+  bool _mayRetainAssignee(int id) =>
+      widget.editing?.isRequest == false && _originalAssignees.contains(id);
+
+  Future<void> _submit(List<UserProfile> candidates) async {
     if (busy) return;
     if (title.text.trim().isEmpty || detail.text.trim().isEmpty || selected.isEmpty) {
       toast(context, '请填写任务标题、内容并选择接收人'); return;
+    }
+    final availableIds = candidates.map((person) => person.id).toSet();
+    if (selected.any((id) => !availableIds.contains(id) && !_mayRetainAssignee(id))) {
+      toast(context, '请先移除已不可选的接收人');
+      return;
     }
     if (!deadline.isAfter(start)) { toast(context, '截止时间必须晚于开始时间'); return; }
     setState(() => busy = true);
@@ -86,9 +107,9 @@ class _DispatchPageState extends State<DispatchPage> {
           );
       if (!mounted) return;
       toast(context, state == 'PENDING'
-          ? (editing == null ? '派发申请已提交，等待审核' : '修改已提交，等待审核')
+          ? (editing == null ? '派发申请已提交，等待直属上级审核' : '修改已提交，等待审核')
           : state == 'APPROVED'
-              ? (editing == null ? '派发给下级或同级，已直接生成任务' : '修改已生效')
+              ? (editing == null ? '服务器已直接发布任务，请核对后端审核规则' : '修改已生效')
               : '请求状态：$state');
       Navigator.pop(context, true);
     } catch (e) { if (mounted) toast(context, '提交未成功：$e'); }
@@ -99,7 +120,8 @@ class _DispatchPageState extends State<DispatchPage> {
     body: FutureBuilder<List<UserProfile>>(future: members, builder: (context, snap) => ListView(
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 22), children: [
         BusinessHeading(title: widget.editing == null ? '任务派发申请' : '修改任务申请',
-          subtitle: widget.editing?.isRequest == true ? '修改待审申请 · 不会直接派发' : '可编辑所有任务字段 · 审核前不改变已发布任务'),
+          subtitle: widget.editing == null ? '提交给申请人的直属上级审核'
+            : widget.editing!.isRequest ? '修改待审派发申请' : '修改申请审核后生效'),
         const SizedBox(height: 14),
         TextField(controller: title, maxLength: 200, decoration: const InputDecoration(labelText: '任务标题')),
         const SizedBox(height: 9),
@@ -175,18 +197,31 @@ class _DispatchPageState extends State<DispatchPage> {
           const BusinessPanel(title: '成员列表', child: BusinessEmpty('暂无可选公司成员'))
         else _membersList(snap.data!),
         const SizedBox(height: 12),
-        const Text('审核说明：派发给下级或同级时直接生成任务，无需审核；派发给上级（团队长、部门负责人、创始人）需要审核，通过后才生成接收任务。',
-          style: TextStyle(color: Palette.muted, fontSize: 11, height: 1.6)),
+        if (snap.hasData)
+          Wrap(spacing: 6, children: [
+            for (final id in selected.where((id) => !snap.data!.any((m) => m.id == id)))
+              InputChip(
+                label: Text(_mayRetainAssignee(id) ? '保留原接收人 $id' : '成员 $id 已不可选'),
+                onDeleted: busy ? null : () => setState(() => selected.remove(id)),
+              ),
+          ]),
+        if (widget.editing == null)
+          const Text('直属上级审核通过后，任务会出现在接收人的任务清单里。',
+            style: TextStyle(color: Palette.muted, fontSize: 11, height: 1.6)),
       ],
     )),
-    bottomNavigationBar: SafeArea(top: false, child: Padding(padding: const EdgeInsets.fromLTRB(16, 9, 16, 10), child: FilledButton(
-      onPressed: busy ? null : _submit, child: Text(busy ? '正在提交…' : widget.editing == null ? '提交派发' : '提交修改申请（待审核）'),
-    ))),
+    bottomNavigationBar: SafeArea(top: false, child: Padding(
+      padding: const EdgeInsets.fromLTRB(16, 9, 16, 10),
+      child: FutureBuilder<List<UserProfile>>(future: members, builder: (context, snap) =>
+        FilledButton(
+          onPressed: busy || !snap.hasData ? null : () => _submit(snap.data!),
+          child: Text(busy ? '正在提交…' : widget.editing == null ? '提交派发申请' : '提交修改申请（待审核）'),
+        )),
+    )),
   );
   List<UserProfile> _visibleMembers(List<UserProfile> all) {
     final keyword = search.text.trim().toLowerCase();
     return all.where((p) =>
-      p.id != widget.app.user?.id &&
       (keyword.isEmpty || '${p.name} ${p.username}'.toLowerCase().contains(keyword)) &&
       (_roles.isEmpty || _roles.contains(p.role)) &&
       (_departments.isEmpty || _departments.contains(p.departmentId)) &&
@@ -220,7 +255,9 @@ class _DispatchPageState extends State<DispatchPage> {
               final person = visible[index];
               return CheckboxListTile(
                 key: Key('dispatch_member_${person.id}'),
-                title: Text(person.name, style: const TextStyle(fontSize: 13,
+                title: Text(person.id == widget.app.user?.id
+                  ? '${person.name}（我）' : person.name,
+                  style: const TextStyle(fontSize: 13,
                   fontWeight: FontWeight.w700)),
                 subtitle: Text('${person.roleLabel} · 部门 ${person.departmentId ?? '未分配'} · 团队 ${person.teamId ?? '未分配'}',
                   style: const TextStyle(fontSize: 11)),

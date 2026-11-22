@@ -7,6 +7,10 @@ import 'models.dart';
 
 const bool pandoraDemo=bool.fromEnvironment('PANDORA_DEMO',defaultValue:true);
 const String apiBaseUrl=String.fromEnvironment('API_BASE_URL',defaultValue:'http://10.0.2.2:8080/api');
+// Demo-only switch. Example: --dart-define=PANDORA_DEMO_DISABLED_IDS=12
+// Never used in real API mode; real account states come from the backend.
+const String demoDisabledUserIds = String.fromEnvironment(
+  'PANDORA_DEMO_DISABLED_IDS', defaultValue: '');
 
 class AppState extends ChangeNotifier {
   late final PandoraRepository repo;
@@ -14,7 +18,9 @@ class AppState extends ChangeNotifier {
   UserProfile? user;
   bool initialized=false;
   AppState(){
-    repo=pandoraDemo?MockRepository():ApiRepository(baseUrl:apiBaseUrl);
+    repo=pandoraDemo ? MockRepository(disabledUserIds: demoDisabledUserIds
+      .split(',').map((value) => int.tryParse(value.trim()))
+      .whereType<int>().toSet()) : ApiRepository(baseUrl:apiBaseUrl);
     holidays=HolidayCalendarService(fetchYear: repo.holidayYear);
   }
   Future<void> initialize() async {

@@ -40,9 +40,13 @@ void main() {
     final repo=MockRepository();
     await repo.login('leader','demo123456');
     final member=(await repo.recipients()).first;
-    await repo.dispatchTask(name:'专项工作复盘',details:'整理每周汇总和目标',
+    await repo.submitDispatchRequest(name:'专项工作复盘',details:'整理每周汇总和目标',
       startDate:'2026-11-05T09:00:00',deadline:'2026-11-10T18:00:00',
-      urgency:'NOT_URGENT',assigneeIds:[member.id]);
+      urgency:'NOT_URGENT',taskType:'GENERAL',assigneeIds:[member.id]);
+    await repo.login('manager','demo123456');
+    final approval = (await repo.dispatchReviewInbox()).single;
+    await repo.reviewDispatchRequest(approval.request.id, approve: true);
+    await repo.login('leader','demo123456');
     final current=(await repo.issuedTasks()).items.singleWhere((e)=>!e.isRequest);
     expect(current.name,'专项工作复盘');
     expect(await repo.requestIssuedTaskEdit(current,
@@ -59,9 +63,13 @@ void main() {
     final repo=MockRepository();
     await repo.login('leader','demo123456');
     final member=(await repo.recipients()).first;
-    await repo.dispatchTask(name:'发布记录待删除',details:'审核前不实际删除',
+    await repo.submitDispatchRequest(name:'发布记录待删除',details:'审核前不实际删除',
       startDate:'2026-11-05T09:00:00',deadline:'2026-11-10T18:00:00',
-      urgency:'NOT_URGENT',assigneeIds:[member.id]);
+      urgency:'NOT_URGENT',taskType:'GENERAL',assigneeIds:[member.id]);
+    await repo.login('manager','demo123456');
+    final approval = (await repo.dispatchReviewInbox()).single;
+    await repo.reviewDispatchRequest(approval.request.id, approve: true);
+    await repo.login('leader','demo123456');
     final task=(await repo.issuedTasks()).items.singleWhere((e)=>!e.isRequest);
     expect(await repo.requestIssuedTaskDelete(task),'PENDING');
     final pending=(await repo.issuedTasks()).items.singleWhere((e)=>!e.isRequest);

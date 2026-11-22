@@ -50,7 +50,19 @@ abstract class PandoraRepository {
   Future<String> submitDispatchRequest({required String name, required String details,
     required String startDate, required String deadline, required String urgency,
     required String taskType, required List<int> assigneeIds});
+  /// Requests waiting for this user's direct-manager review.
+  Future<List<DispatchReview>> dispatchReviewInbox();
+  Future<void> reviewDispatchRequest(int requestId, {required bool approve});
   /// All authorized subordinates' tasks, regardless of sender.
+
+  /// Only authorized managers receive handovers. Disabled employees' unfinished
+  /// assignments are queued by the server; clients do not infer pending state.
+  Future<List<TaskHandover>> taskHandovers();
+  /// Permission-scoped eligible *active* successors for one handover.
+  Future<List<UserProfile>> handoverCandidates(String handoverId);
+  /// Server atomically reassigns the assignment and stores an audit record.
+  Future<TaskHandover> confirmTaskHandover(String handoverId, {
+    required int newAssigneeId, required String note, String? deadline});
   Future<List<SubordinateTaskSummary>> subordinatesTaskOverview();
   /// Published tasks and the caller's own pending dispatch requests.
   Future<IssuedTasksResult> issuedTasks();
@@ -67,7 +79,7 @@ abstract class PandoraRepository {
   Future<DailyTodo> createDailyItem({required String date, required String title,
     String note = '', bool completed = false,
     int colorValue = DailyTodoColors.defaultColor,
-    String? startTime, String? endTime, int sortOrder = 0});
+    String? endDate, String? startTime, String? endTime, int sortOrder = 0});
   Future<DailyTodo> updateDailyItem(DailyTodo item);
   Future<void> deleteDailyItem(String id);
   Future<List<DispatchedTask>> dispatchedTasks();

@@ -16,21 +16,32 @@ String textOf(dynamic value, [String fallback = '']) => value == null ? fallback
 int intOf(dynamic value, [int fallback = 0]) => value is num ? value.toInt() : int.tryParse(textOf(value)) ?? fallback;
 double doubleOf(dynamic value, [double fallback = 0]) => value is num ? value.toDouble() : double.tryParse(textOf(value)) ?? fallback;
 
+bool _accountIsActive(Map<String, dynamic> json) {
+  final status = textOf(json['accountStatus'], textOf(json['status'])).toUpperCase();
+  if (const ['DISABLED', 'DEACTIVATED', 'INACTIVE'].contains(status)) return false;
+  for (final value in [json['active'], json['isActive'], json['enabled']]) {
+    if (const ['false', '0'].contains(textOf(value).toLowerCase())) return false;
+  }
+  return !const ['true', '1'].contains(
+    textOf(json['disabled'], textOf(json['isDisabled'])).toLowerCase());
+}
+
 class UserProfile {
   final int id;
   final String username, name, role;
   final String mbtiType;
   final int? departmentId, teamId;
   final List<String> permissions;
-  const UserProfile({required this.id, required this.username, required this.name, required this.role, this.departmentId, this.teamId, this.permissions = const [],this.mbtiType=''});
+  final bool isActive;
+  const UserProfile({required this.id, required this.username, required this.name, required this.role, this.departmentId, this.teamId, this.permissions = const [],this.mbtiType='',this.isActive=true});
   factory UserProfile.fromJson(dynamic obj) {
     final j=mapOf(obj);
-    return UserProfile(id:intOf(j['id']),username:textOf(j['username']),name:textOf(j['realName'],textOf(j['name'], '用户')),role:textOf(j['role'],'EMPLOYEE'),mbtiType:textOf(j['mbtiType'],textOf(j['mbti'])),departmentId:j['departmentId']==null?null:intOf(j['departmentId']),teamId:j['teamId']==null?null:intOf(j['teamId']),permissions:listOf(j['permissions']).map((e)=>e.toString()).toList());
+    return UserProfile(id:intOf(j['id']),username:textOf(j['username']),name:textOf(j['realName'],textOf(j['name'], '用户')),role:textOf(j['role'],'EMPLOYEE'),isActive:_accountIsActive(j),mbtiType:textOf(j['mbtiType'],textOf(j['mbti'])),departmentId:j['departmentId']==null?null:intOf(j['departmentId']),teamId:j['teamId']==null?null:intOf(j['teamId']),permissions:listOf(j['permissions']).map((e)=>e.toString()).toList());
   }
-  Map<String,dynamic> toJson()=>{'id':id,'username':username,'realName':name,'role':role,'departmentId':departmentId,'teamId':teamId,'permissions':permissions,'mbtiType':mbtiType};
+  Map<String,dynamic> toJson()=>{'id':id,'username':username,'realName':name,'role':role,'departmentId':departmentId,'teamId':teamId,'permissions':permissions,'mbtiType':mbtiType,'active':isActive};
   String get roleLabel => const {'EMPLOYEE':'员工','TEAM_LEADER':'团队长','DEPT_MANAGER':'部门老总','FOUNDER':'创始人','ADMIN':'系统管理员'}[role] ?? '员工';
-  bool get canWriteLog => role!='ADMIN';
-  bool get canUseTasks => role!='ADMIN';
+  bool get canWriteLog => isActive && role!='ADMIN';
+  bool get canUseTasks => isActive && role!='ADMIN';
 }
 
 class WorkLog {
@@ -74,19 +85,85 @@ class TaskItem {
   final String? progressUpdatedAt;
   /// Server-calculated unresolved issues when available; null means unsupported.
   final int? openIssueCount;
-  int get visibleIssueCount => openIssueCount ?? (status == 'BLOCKED' ? 1 : 0);
-  const TaskItem({required this.id,required this.name,required this.details,required this.status,required this.source,this.urgency='NOT_URGENT',this.deadline,this.startDate,this.taskId,this.senderId,this.reviewStatus='NONE',this.taskType='GENERAL',this.assigneeName='',this.progressNote='',this.progressPercent,this.progressUpdatedAt,this.openIssueCount});
+  final String handoverStatus, handoverToName;
+  int get visibleIssueCount => handoverStatus == 'COMPLETED'
+    ? 0 : (openIssueCount ?? (status == 'BLOCKED' ? 1 : 0));
+  const TaskItem({required this.id,required this.name,required this.details,required this.status,required this.source,this.urgency='NOT_URGENT',this.deadline,this.startDate,this.taskId,this.senderId,this.reviewStatus='NONE',this.taskType='GENERAL',this.assigneeName='',this.progressNote='',this.progressPercent,this.progressUpdatedAt,this.openIssueCount,
+    this.handoverStatus='NONE',this.handoverToName=''});
   factory TaskItem.fromJson(dynamic obj,{String source='PERSONAL'}) {
     final j=mapOf(obj);
-    return TaskItem(id:intOf(j[source=='RECEIVED'?'assignmentId':'id'],intOf(j['id'],intOf(j['personalTaskId']))),name:textOf(j['name']),details:textOf(j['details']),status:textOf(j['executionStatus'],textOf(j['status'],'NOT_STARTED')),source:source,urgency:textOf(j['urgency'],'NOT_URGENT'),deadline:j['deadline']?.toString(),startDate:j['startDate']?.toString(),taskId:j['taskId']==null?null:intOf(j['taskId']),senderId:j['senderId']==null?intOf(mapOf(j['sender'])['id'],0):intOf(j['senderId']),reviewStatus:textOf(j['reviewStatus'],'NONE'),taskType:textOf(j['taskType'],textOf(j['category'],textOf(j['type'],'GENERAL'))),assigneeName:textOf(j['assigneeName'],textOf(j['receiverName'],textOf(mapOf(j['assignee'])['realName']))),progressNote:textOf(j['progressNote'],textOf(j['progressRemark'],textOf(j['remarks']))),progressPercent:j['progressPercent']==null && j['completionRate']==null ? null : intOf(j['progressPercent'],intOf(j['completionRate'])).clamp(0,100).toInt(),progressUpdatedAt:j['progressUpdatedAt']?.toString(),openIssueCount:j['openIssueCount']==null && j['unresolvedIssueCount']==null?null:intOf(j['openIssueCount'],intOf(j['unresolvedIssueCount'])).clamp(0,999).toInt());
+    return TaskItem(id:intOf(j[source=='RECEIVED'?'assignmentId':'id'],intOf(j['id'],intOf(j['personalTaskId']))),name:textOf(j['name']),details:textOf(j['details']),status:textOf(j['executionStatus'],textOf(j['status'],'NOT_STARTED')),source:source,urgency:textOf(j['urgency'],'NOT_URGENT'),deadline:j['deadline']?.toString(),startDate:j['startDate']?.toString(),taskId:j['taskId']==null?null:intOf(j['taskId']),senderId:j['senderId']==null?intOf(mapOf(j['sender'])['id'],0):intOf(j['senderId']),reviewStatus:textOf(j['reviewStatus'],'NONE'),taskType:textOf(j['taskType'],textOf(j['category'],textOf(j['type'],'GENERAL'))),assigneeName:textOf(j['assigneeName'],textOf(j['receiverName'],textOf(mapOf(j['assignee'])['realName']))),progressNote:textOf(j['progressNote'],textOf(j['progressRemark'],textOf(j['remarks']))),progressPercent:j['progressPercent']==null && j['completionRate']==null ? null : intOf(j['progressPercent'],intOf(j['completionRate'])).clamp(0,100).toInt(),progressUpdatedAt:j['progressUpdatedAt']?.toString(),openIssueCount:j['openIssueCount']==null && j['unresolvedIssueCount']==null?null:intOf(j['openIssueCount'],intOf(j['unresolvedIssueCount'])).clamp(0,999).toInt(),
+    handoverStatus:textOf(j['handoverStatus'],'NONE'),
+    handoverToName:textOf(j['handoverToName']));
   }
   String get statusLabel=>const {'NOT_STARTED':'待开始','IN_PROGRESS':'进行中','COMPLETED':'已完成','BLOCKED':'受阻'}[status]??status;
-  Map<String,dynamic> toJson()=>{'id':id,'name':name,'details':details,'status':status,'source':source,'urgency':urgency,'deadline':deadline,'startDate':startDate,'taskId':taskId,'senderId':senderId,'reviewStatus':reviewStatus,'taskType':taskType,'assigneeName':assigneeName,'progressNote':progressNote,'progressPercent':progressPercent,'progressUpdatedAt':progressUpdatedAt,'openIssueCount':openIssueCount};
+  Map<String,dynamic> toJson()=>{'id':id,'name':name,'details':details,'status':status,'source':source,'urgency':urgency,'deadline':deadline,'startDate':startDate,'taskId':taskId,'senderId':senderId,'reviewStatus':reviewStatus,'taskType':taskType,'assigneeName':assigneeName,'progressNote':progressNote,'progressPercent':progressPercent,'progressUpdatedAt':progressUpdatedAt,'openIssueCount':openIssueCount,
+    'handoverStatus':handoverStatus,'handoverToName':handoverToName};
   bool get isOverdue {
-    if (status=='COMPLETED' || deadline==null || deadline!.isEmpty) return false;
+    if (status=='COMPLETED' || handoverStatus=='COMPLETED' ||
+        deadline==null || deadline!.isEmpty) {
+      return false;
+    }
     final end=DateTime.tryParse(deadline!.replaceFirst(' ', 'T'));
     return end!=null && end.isBefore(DateTime.now());
   }
+}
+
+/// Immutable audit-oriented handover record. Assignment progress/status and
+/// work logs are retained; only assignment ownership changes after approval.
+class TaskHandover {
+  final String id;
+  final int originalUserId, originalAssignmentId;
+  final String originalUserName, taskName, taskDetails, executionStatus;
+  final String status, taskType, urgency, progressNote;
+  final int progressPercent;
+  final String? deadline, completedAt, note, newAssigneeName;
+  final int? newAssigneeId, newAssignmentId;
+
+  const TaskHandover({required this.id, required this.originalUserId,
+    required this.originalAssignmentId, required this.originalUserName,
+    required this.taskName, required this.taskDetails,
+    required this.executionStatus, required this.status,
+    this.taskType = 'GENERAL', this.urgency = 'NOT_URGENT',
+    this.progressNote = '', this.progressPercent = 0, this.deadline,
+    this.completedAt, this.note, this.newAssigneeName, this.newAssigneeId,
+    this.newAssignmentId});
+
+  bool get pending => status == 'PENDING';
+  factory TaskHandover.fromJson(dynamic value) {
+    final j = mapOf(value);
+    return TaskHandover(
+      id: textOf(j['id']),
+      originalUserId: intOf(j['originalUserId']),
+      originalAssignmentId: intOf(j['originalAssignmentId']),
+      originalUserName: textOf(j['originalUserName']),
+      taskName: textOf(j['taskName']), taskDetails: textOf(j['taskDetails']),
+      executionStatus: textOf(j['executionStatus'], 'NOT_STARTED'),
+      status: textOf(j['status'], 'PENDING'),
+      taskType: textOf(j['taskType'], 'GENERAL'),
+      urgency: textOf(j['urgency'], 'NOT_URGENT'),
+      progressNote: textOf(j['progressNote']),
+      progressPercent: intOf(j['progressPercent']).clamp(0, 100).toInt(),
+      deadline: j['deadline']?.toString(),
+      completedAt: j['completedAt']?.toString(),
+      note: j['note']?.toString(),
+      newAssigneeName: j['newAssigneeName']?.toString(),
+      newAssigneeId: j['newAssigneeId'] == null ? null : intOf(j['newAssigneeId']),
+      newAssignmentId: j['newAssignmentId'] == null ? null : intOf(j['newAssignmentId']),
+    );
+  }
+  Map<String, dynamic> toJson() => {
+    'id': id, 'originalUserId': originalUserId,
+    'originalAssignmentId': originalAssignmentId,
+    'originalUserName': originalUserName,
+    'taskName': taskName, 'taskDetails': taskDetails,
+    'executionStatus': executionStatus, 'status': status,
+    'taskType': taskType, 'urgency': urgency, 'progressNote': progressNote,
+    'progressPercent': progressPercent, 'deadline': deadline,
+    'completedAt': completedAt, 'note': note,
+    'newAssigneeName': newAssigneeName, 'newAssigneeId': newAssigneeId,
+    'newAssignmentId': newAssignmentId,
+  };
 }
 
 /// Immutable server/auditable record for a received assignment's progress.
@@ -158,25 +235,25 @@ class TrendPoint {
 
 class DispatchedTask {
   final int id, assigneeCount, completedCount, pendingReviewCount;
-  final String name, details, urgency, startDate, deadline;
-  const DispatchedTask({required this.id,required this.name,required this.details,required this.urgency,required this.startDate,required this.deadline,this.assigneeCount=0,this.completedCount=0,this.pendingReviewCount=0});
-  factory DispatchedTask.fromJson(dynamic obj) {final j=mapOf(obj);return DispatchedTask(id:intOf(j['id']),name:textOf(j['name']),details:textOf(j['details']),urgency:textOf(j['urgency'],'NOT_URGENT'),startDate:textOf(j['startDate']),deadline:textOf(j['deadline']),assigneeCount:intOf(j['assigneeCount']),completedCount:intOf(j['completedCount']),pendingReviewCount:intOf(j['pendingReviewCount']));}
-  Map<String,dynamic> toJson()=>{'id':id,'name':name,'details':details,'urgency':urgency,'startDate':startDate,'deadline':deadline,'assigneeCount':assigneeCount,'completedCount':completedCount,'pendingReviewCount':pendingReviewCount};
+  final String name, details, urgency, startDate, deadline, taskType;
+  const DispatchedTask({required this.id,required this.name,required this.details,required this.urgency,required this.startDate,required this.deadline,this.taskType='GENERAL',this.assigneeCount=0,this.completedCount=0,this.pendingReviewCount=0});
+  factory DispatchedTask.fromJson(dynamic obj) {final j=mapOf(obj);return DispatchedTask(id:intOf(j['id']),name:textOf(j['name']),details:textOf(j['details']),urgency:textOf(j['urgency'],'NOT_URGENT'),startDate:textOf(j['startDate']),deadline:textOf(j['deadline']),taskType:textOf(j['taskType'],'GENERAL'),assigneeCount:intOf(j['assigneeCount']),completedCount:intOf(j['completedCount']),pendingReviewCount:intOf(j['pendingReviewCount']));}
+  Map<String,dynamic> toJson()=>{'id':id,'name':name,'details':details,'urgency':urgency,'startDate':startDate,'deadline':deadline,'taskType':taskType,'assigneeCount':assigneeCount,'completedCount':completedCount,'pendingReviewCount':pendingReviewCount};
 }
 
 /// A task submitted by this user. CREATE_REQUEST records are approval requests,
-/// not tasks visible in the recipient's inbox until an administrator approves.
+/// published to recipients only after the applicant's direct manager approves.
 class IssuedTask {
   final int id;
   final String name, details, urgency, taskType, startDate, deadline;
-  final String reviewStatus, recordType;
+  final String reviewStatus, recordType, reviewerName;
   final bool changePending;
   final List<int> assigneeIds;
   final int assigneeCount;
   const IssuedTask({required this.id, required this.name, required this.details,
     required this.startDate, required this.deadline,
     this.urgency='NOT_URGENT', this.taskType='GENERAL',
-    this.reviewStatus='APPROVED', this.recordType='ACTIVE',
+    this.reviewStatus='APPROVED', this.recordType='ACTIVE', this.reviewerName='',
     this.changePending=false, this.assigneeIds=const [], this.assigneeCount=0});
   bool get isRequest => recordType == 'CREATE_REQUEST';
   bool get isWaiting => isRequest && reviewStatus == 'PENDING';
@@ -200,7 +277,26 @@ class IssuedTask {
       assigneeIds:ids,assigneeCount:intOf(j['assigneeCount'],ids.length),
       reviewStatus:textOf(j['status'],textOf(j['reviewStatus'],request?'PENDING':'APPROVED')),
       recordType:request?'CREATE_REQUEST':'ACTIVE',
+      reviewerName:textOf(j['reviewerName']),
       changePending:j['changePending']==true || textOf(j['changeRequestStatus'])=='PENDING',
+    );
+  }
+}
+
+class DispatchReview {
+  final IssuedTask request;
+  final String requesterName;
+  final List<String> assigneeNames;
+
+  const DispatchReview({required this.request, required this.requesterName,
+    required this.assigneeNames});
+
+  factory DispatchReview.fromJson(dynamic value) {
+    final json = mapOf(value);
+    return DispatchReview(
+      request: IssuedTask.fromJson(json, request: true),
+      requesterName: textOf(json['requesterName']),
+      assigneeNames: listOf(json['assigneeNames']).map((name) => textOf(name)).toList(),
     );
   }
 }
@@ -253,11 +349,12 @@ class SubordinateTaskSummary {
   final String role, teamName, username, mbtiType;
   final List<TaskItem> tasks;
   final int? openIssueCount;
+  final bool isActive;
   int get visibleIssueCount => openIssueCount ?? tasks.fold<int>(0,(sum,t)=>sum+t.visibleIssueCount);
   const SubordinateTaskSummary({required this.userId, required this.name,
     required this.departmentName, required this.total, required this.inProgress,
     required this.completed, required this.tasks,
-    this.role = '', this.teamName = '', this.username = '',this.mbtiType='',this.openIssueCount});
+    this.role = '', this.teamName = '', this.username = '',this.mbtiType='',this.openIssueCount,this.isActive=true});
   factory SubordinateTaskSummary.fromJson(dynamic obj) {
     final j = mapOf(obj);
     final items = listOf(j['tasks']).map((e) => TaskItem.fromJson(e, source: 'RECEIVED')).toList();
@@ -265,6 +362,7 @@ class SubordinateTaskSummary {
       userId: intOf(j['userId'], intOf(j['id'])), name: textOf(j['name'], textOf(j['realName'], '成员')),
       departmentName: textOf(j['departmentName']),
       role: textOf(j['role']),
+      isActive: _accountIsActive(j) && _accountIsActive(mapOf(j['user'])),
       teamName: textOf(j['teamName']),
       username: textOf(j['username']),
       mbtiType: textOf(j['mbtiType'],textOf(j['mbti'])),
