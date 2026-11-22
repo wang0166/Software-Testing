@@ -1,3 +1,4 @@
+import 'dart:collection' show IterableExtensions;
 import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../core/daily_todos.dart';
@@ -17,22 +18,33 @@ class MockRepository implements PandoraRepository {
     UserProfile(id:1,username:'founder',name:'许远山',role:'FOUNDER'),
     UserProfile(id:99,username:'admin',name:'系统管理员',role:'ADMIN'),
   ];
+  final Set<int> disabledUserIds;
+  MockRepository({this.disabledUserIds = const {}});
+
+  bool _isEnabled(UserProfile user) => user.isActive && !disabledUserIds.contains(user.id);
+
   static const demoPassword='demo123456';
   UserProfile? _current;
   Future<SharedPreferences> get _prefs => SharedPreferences.getInstance();
   Future<void> _wait() => Future<void>.delayed(const Duration(milliseconds:220));
-  UserProfile get _user {final u=_current;if(u==null) throw const AppFailure('请先登录');return u;}
+  UserProfile get _user {
+    final user = _current;
+    if (user == null) throw const AppFailure('请先登录');
+    if (!_isEnabled(user)) throw const AppFailure('该账号已停用');
+    return user;
+  }
 
   @override Future<UserProfile?> restore() async {
     final p=await _prefs;
     final name=p.getString('pandora_mock_user');
-    for (final u in users) {if (u.username==name) { _current=u;return u;}}
+    for (final u in users) {if (u.username==name && _isEnabled(u)) { _current=u;return u;}}
     return null;
   }
   @override Future<UserProfile> login(String username,String password) async {
     await _wait();
     for(final u in users) {
       if(u.username==username.trim() && password==demoPassword) {
+        if (!_isEnabled(u)) throw const AppFailure('该账号已停用');
         _current=u;
         (await _prefs).setString('pandora_mock_user',u.username);
         return u;
@@ -301,6 +313,18 @@ class MockRepository implements PandoraRepository {
         await p.setString(historyKey, jsonEncode([event.toJson()]));
       }
     }
+    final existingIds = items.where((item) => item.source == 'RECEIVED')
+      .map((item) => item.id).toSet();
+    for (final request in await _approvedDispatches()) {
+      final assignmentId = intOf(mapOf(request['assignmentIds'])['$userId']);
+      if (assignmentId == 0 || !existingIds.add(assignmentId)) continue;
+      items.add(TaskItem(id: assignmentId, taskId: intOf(request['taskId']),
+        senderId: intOf(request['requesterId']), name: textOf(request['name']),
+        details: textOf(request['details']), startDate: textOf(request['startDate']),
+        deadline: textOf(request['deadline']), urgency: textOf(request['urgency']),
+        taskType: textOf(request['taskType']), status: 'NOT_STARTED',
+        source: 'RECEIVED', reviewStatus: 'NONE'));
+    }
     return items;
   }
   Future<void> _writeTasks(List<TaskItem> items) async => _writeTasksFor(_user.id,items);
@@ -433,41 +457,132 @@ class MockRepository implements PandoraRepository {
 
   @override Future<List<UserProfile>> companyMembers() async {
     final viewer = _user;
-    return users.where((u) => u.role != 'ADMIN' && u.id != viewer.id).toList();
+    if (!viewer.canUseTasks) {
+      throw const AppFailure('当前账号无法申请派发任务');
+    }
+    return users.where((user) => user.canUseTasks && _isEnabled(user)).toList();
   }
+
+  UserProfile? _directReviewer(UserProfile requester) =>
+    users.where((candidate) => _isDirectManager(candidate, requester)).firstOrNull;
+
   @override Future<String> submitDispatchRequest({required String name, required String details,
     required String startDate, required String deadline, required String urgency,
     required String taskType, required List<int> assigneeIds}) async {
-    final allowed = (await companyMembers()).map((u) => u.id).toSet();
-    if (name.trim().isEmpty || details.trim().isEmpty || assigneeIds.isEmpty) throw const AppFailure('请填写任务信息');
-    if (assigneeIds.any((id) => !allowed.contains(id))) throw const AppFailure('接收人不存在或无权限');
-    if (startDate.compareTo(deadline) >= 0) throw const AppFailure('截止时间必须晚于开始时间');
-    final prefs = await _prefs;
-    final key = 'pandora_mock_dispatch_requests_${_user.id}';
-    final saved = prefs.getStringList(key) ?? <String>[];
-    saved.add(jsonEncode({'id': DateTime.now().microsecondsSinceEpoch,
-      'name':name.trim(), 'details':details.trim(), 'urgency':urgency,
-      'taskType':taskType, 'assigneeIds':assigneeIds,
-      'startDate':startDate, 'deadline':deadline, 'status':'PENDING'}));
-    await prefs.setStringList(key, saved);
-    // No task is dispatched before administrator approval.
-    return 'PENDING';
+    _checkIssueChange(name, details, startDate, deadline, assigneeIds);
+    final requester = _user;
+    final reviewer = _directReviewer(requester);
+    if (reviewer == null || !_isEnabled(reviewer)) {
+      throw const AppFailure('当前账号没有可用的直属上级，请联系管理员配置组织关系');
+    }
+    return _mutateDispatch(() async {
+      final saved = await _requestsFor(requester.id);
+      saved.add({
+        'id': DateTime.now().microsecondsSinceEpoch,
+        'name': name.trim(), 'details': details.trim(), 'urgency': urgency,
+        'taskType': taskType, 'assigneeIds': assigneeIds, 'startDate': startDate,
+        'deadline': deadline, 'status': 'PENDING', 'reviewerName': reviewer.name,
+      });
+      await _writeRequestsFor(requester.id, saved);
+      return 'PENDING';
+    });
   }
-  String get _issuedChangesKey => 'pandora_mock_issued_changes_${_user.id}';
-  String get _requestsKey => 'pandora_mock_dispatch_requests_${_user.id}';
 
-  Future<List<Map<String,dynamic>>> _myRequests() async {
-    final prefs=await _prefs;
-    final raw=prefs.getStringList(_requestsKey) ?? [];
-    return [for(var i=0;i<raw.length;i++) () {
-      final entry=mapOf(jsonDecode(raw[i]));
-      // Support requests generated by the previous V1.7 demo version.
-      if(entry['id']==null) entry['id']=-(i+1);
-      return entry;
-    }()];
+  String get _issuedChangesKey => 'pandora_mock_issued_changes_${_user.id}';
+
+  Future<List<Map<String,dynamic>>> _requestsFor(int userId) async {
+    return _readRequests(await _prefs, userId);
   }
-  Future<void> _writeRequests(List<Map<String,dynamic>> items) async =>
-    (await _prefs).setStringList(_requestsKey,items.map(jsonEncode).toList());
+
+  List<Map<String, dynamic>> _readRequests(SharedPreferences prefs, int userId) {
+    final raw = prefs.getStringList('pandora_mock_dispatch_requests_$userId') ?? [];
+    final rows = raw.map((value) => mapOf(jsonDecode(value))).toList();
+    for (var index = 0; index < rows.length; index++) {
+      // Early demo versions stored requests without an ID.
+      rows[index]['id'] ??= -(userId * 100000 + index + 1);
+    }
+    return rows;
+  }
+
+  Future<void> _writeRequestsFor(int userId, List<Map<String,dynamic>> items) async {
+    final ok = await (await _prefs).setStringList('pandora_mock_dispatch_requests_$userId',
+      items.map(jsonEncode).toList());
+    if (!ok) throw const AppFailure('保存派发申请失败');
+  }
+
+  Future<List<Map<String,dynamic>>> _myRequests() => _requestsFor(_user.id);
+
+  Future<void> _writeRequests(List<Map<String,dynamic>> items) =>
+    _writeRequestsFor(_user.id, items);
+
+  Future<List<Map<String,dynamic>>> _approvedDispatches() async {
+    final prefs = await _prefs;
+    return [
+      for (final user in users)
+        for (final request in _readRequests(prefs, user.id))
+          if (request['status'] == 'APPROVED' && request['assignmentIds'] is Map)
+            {...request, 'requesterId': user.id},
+    ];
+  }
+
+  @override Future<List<DispatchReview>> dispatchReviewInbox() async {
+    final viewer = _user;
+    final byId = {for (final user in users) user.id: user.name};
+    final prefs = await _prefs;
+    return [
+      for (final requester in users.where((user) => _directReviewer(user)?.id == viewer.id))
+        for (final request in _readRequests(prefs, requester.id))
+          if (request['status'] == 'PENDING')
+            DispatchReview(request: IssuedTask.fromJson(request, request: true),
+              requesterName: requester.name,
+              assigneeNames: listOf(request['assigneeIds']).map((id) =>
+                byId[intOf(id)] ?? '成员 $id').toList()),
+    ];
+  }
+
+  static Future<void> _dispatchWrites = Future<void>.value();
+
+  Future<T> _mutateDispatch<T>(Future<T> Function() mutate) {
+    final result = _dispatchWrites.then((_) => mutate());
+    _dispatchWrites = result.then<void>((_) {}, onError: (Object _, StackTrace __) {});
+    return result;
+  }
+
+  @override Future<void> reviewDispatchRequest(int requestId, {required bool approve}) =>
+    _mutateDispatch(() => _reviewRequest(requestId, approve: approve));
+
+  Future<void> _reviewRequest(int requestId, {required bool approve}) async {
+    final viewer = _user;
+    for (final requester in users.where((user) => _directReviewer(user)?.id == viewer.id)) {
+      final rows = await _requestsFor(requester.id);
+      final request = rows.where((row) =>
+        row['id'] == requestId && row['status'] == 'PENDING').firstOrNull;
+      if (request == null) continue;
+      if (approve) {
+        final ids = listOf(request['assigneeIds']).map((id) => intOf(id)).toSet();
+        final allowed = users.where((user) => user.canUseTasks && _isEnabled(user))
+          .map((user) => user.id).toSet();
+        if (!_isEnabled(requester) || ids.isEmpty || !allowed.containsAll(ids)) {
+          throw const AppFailure('申请人或接收人已不可用，请驳回申请');
+        }
+        // Publish the task and all its assignments with a single storage write.
+        var publicationId = DateTime.now().microsecondsSinceEpoch;
+        for (final published in await _approvedDispatches()) {
+          final previous = intOf(published['taskId']);
+          if (publicationId <= previous + 100) publicationId = previous + 101;
+        }
+        request['taskId'] = publicationId;
+        request['assignmentIds'] = {
+          for (final id in ids) '$id': publicationId + id,
+        };
+      }
+      request['status'] = approve ? 'APPROVED' : 'REJECTED';
+      request['reviewerName'] = viewer.name;
+      await _writeRequestsFor(requester.id, rows);
+      return;
+    }
+    throw const AppFailure('申请已处理或不在您的直属审核范围');
+  }
 
   Future<List<Map<String,dynamic>>> _myChanges() async {
     final raw=(await _prefs).getStringList(_issuedChangesKey) ?? [];
@@ -479,10 +594,10 @@ class MockRepository implements PandoraRepository {
   @override Future<IssuedTasksResult> issuedTasks() async {
     final changes=await _myChanges();
     final active=await _myDispatched();
-    final requestItems=(await _myRequests()).map((j)=>
+    final requestItems=(await _myRequests()).where((j)=>j['status']!='APPROVED').map((j)=>
       IssuedTask.fromJson(j,request:true)).toList().reversed;
     final activeItems=active.reversed.map((t)=>IssuedTask(
-      id:t.id,name:t.name,details:t.details,urgency:t.urgency,
+      id:t.id,name:t.name,details:t.details,urgency:t.urgency,taskType:t.taskType,
       startDate:t.startDate,deadline:t.deadline,assigneeCount:t.assigneeCount,
       changePending:changes.any((j)=>intOf(j['taskId'])==t.id && j['status']=='PENDING'),
     )).toList();
@@ -491,19 +606,25 @@ class MockRepository implements PandoraRepository {
     for(final t in activeItems) {
       final ids=(await dispatchedAssignments(t.id)).map((a)=>a.assigneeId).toList();
       withRecipients.add(IssuedTask(id:t.id,name:t.name,details:t.details,
-        urgency:t.urgency,startDate:t.startDate,deadline:t.deadline,
+        urgency:t.urgency,taskType:t.taskType,startDate:t.startDate,deadline:t.deadline,
         assigneeCount:ids.length,assigneeIds:ids,changePending:t.changePending));
     }
     return IssuedTasksResult([...requestItems,...withRecipients]);
   }
 
-  void _checkIssueChange(String name,String details,String startDate,
-    String deadline,List<int> assigneeIds) {
+  void _checkIssueChange(String name, String details, String startDate,
+    String deadline, List<int> assigneeIds, {Set<int> existingAssignees = const {}}) {
     if(name.trim().isEmpty || details.trim().isEmpty || assigneeIds.isEmpty) {
       throw const AppFailure('任务标题、内容及接收人不能为空');
     }
     if(startDate.compareTo(deadline)>=0) throw const AppFailure('截止时间必须晚于开始时间');
-    if(assigneeIds.any((id)=>!users.any((u)=>u.id==id && u.role!='ADMIN' && u.id!=_user.id))) {
+    final viewer = _user;
+    if (!viewer.canUseTasks) {
+      throw const AppFailure('当前账号无法申请派发任务');
+    }
+    if (assigneeIds.toSet().length != assigneeIds.length ||
+        assigneeIds.any((id) => !existingAssignees.contains(id) &&
+          !users.any((user) => user.id == id && user.canUseTasks && _isEnabled(user)))) {
       throw const AppFailure('接收人不属于可派发成员范围');
     }
   }
@@ -511,8 +632,11 @@ class MockRepository implements PandoraRepository {
   @override Future<String> requestIssuedTaskEdit(IssuedTask original, {
     required String name, required String details, required String startDate,
     required String deadline, required String urgency, required String taskType,
-    required List<int> assigneeIds}) async {
-    _checkIssueChange(name,details,startDate,deadline,assigneeIds);
+    required List<int> assigneeIds}) => _mutateDispatch(() async {
+    final existing = original.isRequest ? const <int>{} :
+      (await dispatchedAssignments(original.id)).map((item) => item.assigneeId).toSet();
+    _checkIssueChange(name, details, startDate, deadline, assigneeIds,
+      existingAssignees: existing);
     final data={'name':name.trim(),'details':details.trim(),
       'startDate':startDate,'deadline':deadline,'urgency':urgency,
       'taskType':taskType,'assigneeIds':assigneeIds,'status':'PENDING'};
@@ -536,9 +660,10 @@ class MockRepository implements PandoraRepository {
     await _writeChanges(changes);
     // Active task remains unchanged pending approval.
     return 'PENDING';
-  }
+  });
 
-  @override Future<String> requestIssuedTaskDelete(IssuedTask original) async {
+  @override Future<String> requestIssuedTaskDelete(IssuedTask original) =>
+    _mutateDispatch(() async {
     if(original.isRequest) {
       final all=await _myRequests();
       final before=all.length;
@@ -557,7 +682,7 @@ class MockRepository implements PandoraRepository {
     await _writeChanges(changes);
     // Only administrator approval may remove the published task.
     return 'PENDING';
-  }
+  });
 
   @override Future<List<SubordinateTaskSummary>> subordinatesTaskOverview() async {
     final me = _user;
@@ -580,7 +705,7 @@ class MockRepository implements PandoraRepository {
       list.add(SubordinateTaskSummary(userId:member.id, name:member.name,
         departmentName:'${member.roleLabel} · ${member.departmentId ?? '公司级'}',
         role: member.role, teamName: member.teamId == null ? '部门直属' : '团队 ${member.teamId}',
-        username: member.username,
+        username: member.username, isActive: _isEnabled(member),
         total:tasks.length, inProgress:tasks.where((t)=>t.status=='IN_PROGRESS').length,
         completed:tasks.where((t)=>t.status=='COMPLETED').length,
         openIssueCount:tasks.fold<int>(0,(total,t)=>total+t.visibleIssueCount), tasks:tasks));
@@ -590,22 +715,35 @@ class MockRepository implements PandoraRepository {
 
   @override Future<List<UserProfile>> recipients() async {
     final me=_user;
-    if(me.role=='TEAM_LEADER') return users.where((u)=>u.role=='EMPLOYEE' && u.teamId==me.teamId).toList();
-    if(me.role=='DEPT_MANAGER') return users.where((u)=>u.role=='TEAM_LEADER' && u.departmentId==me.departmentId).toList();
-    if(me.role=='FOUNDER') return users.where((u)=>u.role=='DEPT_MANAGER').toList();
+    if (const ['TEAM_LEADER', 'DEPT_MANAGER', 'FOUNDER'].contains(me.role) && _isEnabled(me)) {
+      return users.where((user) => _isEnabled(user) && _isDirectManager(me, user)).toList();
+    }
     throw const AppFailure('当前角色不可派发任务');
   }
   Future<List<DispatchedTask>> _myDispatched() async {
     final raw=(await _prefs).getString('pandora_mock_dispatched_${_user.id}');
-    if(raw==null) return [];
-    try{return (jsonDecode(raw) as List).map(DispatchedTask.fromJson).toList();}catch(_){return [];}
+    final saved = <DispatchedTask>[];
+    if (raw != null) {
+      try {
+        saved.addAll(listOf(jsonDecode(raw)).map(DispatchedTask.fromJson));
+      } on FormatException {
+        // Unreadable legacy records must not prevent access to new requests.
+      }
+    }
+    return [
+      ...saved,
+      for (final request in await _myRequests())
+        if (request['status'] == 'APPROVED')
+          DispatchedTask.fromJson({...request, 'id': request['taskId'],
+            'assigneeCount': listOf(request['assigneeIds']).length}),
+    ];
   }
   @override Future<List<DispatchedTask>> dispatchedTasks() async {
     final existing=await _myDispatched();
     final result=<DispatchedTask>[];
     for(final item in existing){
       final assignments=await dispatchedAssignments(item.id);
-      result.add(DispatchedTask(id:item.id,name:item.name,details:item.details,urgency:item.urgency,startDate:item.startDate,deadline:item.deadline,assigneeCount:assignments.length,completedCount:assignments.where((a)=>a.status=='COMPLETED').length,pendingReviewCount:assignments.where((a)=>a.reviewStatus=='PENDING').length));
+      result.add(DispatchedTask(id:item.id,name:item.name,details:item.details,urgency:item.urgency,startDate:item.startDate,deadline:item.deadline,taskType:item.taskType,assigneeCount:assignments.length,completedCount:assignments.where((a)=>a.status=='COMPLETED').length,pendingReviewCount:assignments.where((a)=>a.reviewStatus=='PENDING').length));
     }
     return result.reversed.toList();
   }
@@ -629,22 +767,29 @@ class MockRepository implements PandoraRepository {
     try{return (jsonDecode(raw) as List).map(DailyTodo.fromJson).toList();}catch(_){return [];}
   }
   Future<void> _saveDaily(List<DailyTodo> items) async {
-    await (await _prefs).setString('pandora_mock_daily_${_user.id}',
-      jsonEncode(items.map((e)=>e.toJson()).toList()));
+    final ok = await (await _prefs).setString('pandora_mock_daily_${_user.id}',
+      jsonEncode(items.map((e) => e.toJson()).toList()));
+    if (!ok) throw const AppFailure('保存事项失败');
   }
   @override Future<List<DailyTodo>> dailyItems({String? from,String? to}) async {
     final all=await _loadDaily();
-    return all.where((e)=>(from==null||e.date.compareTo(from)>=0) &&
-      (to==null||e.date.compareTo(to)<=0)).toList();
+    return all.where((e) => e.overlaps(from: from, to: to)).toList();
   }
-  @override Future<DailyTodo> createDailyItem({required String date,required String title,String note='',bool completed=false}) async {
+  @override Future<DailyTodo> createDailyItem({required String date,
+    required String title, String note = '', bool completed = false,
+    String? endDate, String? startTime, String? endTime}) async {
     if(title.trim().isEmpty) throw const AppFailure('请填写事项名称');
     final all=await _loadDaily();
     final item=DailyTodo(id:'${DateTime.now().microsecondsSinceEpoch}',
-      date:date,title:title.trim(),note:note.trim(),completed:completed);
+      date: date, endDate: endDate, title: title.trim(), note: note.trim(),
+      completed: completed, startTime: startTime, endTime: endTime);
+    if (!item.hasValidRange) throw const AppFailure('事项起止日期或时间无效');
     all.add(item); await _saveDaily(all); return item;
   }
   @override Future<DailyTodo> updateDailyItem(DailyTodo item) async {
+    if (!item.hasValidRange || item.title.trim().isEmpty) {
+      throw const AppFailure('事项名称、起止日期或时间无效');
+    }
     final all=await _loadDaily();
     final index=all.indexWhere((e)=>e.id==item.id);
     if(index<0) throw const AppFailure('事项不存在或无权修改');
@@ -653,22 +798,6 @@ class MockRepository implements PandoraRepository {
   @override Future<void> deleteDailyItem(String id) async {
     final all=await _loadDaily();
     await _saveDaily(all.where((e)=>e.id!=id).toList());
-  }
-  @override Future<void> dispatchTask({required String name,required String details,required String startDate,required String deadline,required String urgency,required List<int> assigneeIds}) async {
-    if(name.trim().isEmpty||details.trim().isEmpty||assigneeIds.isEmpty) throw const AppFailure('请填写任务信息并选择接收人');
-    if(startDate.compareTo(deadline)>0) throw const AppFailure('截止时间不能早于开始日期');
-    final legal=(await recipients()).map((e)=>e.id).toSet();
-    if(assigneeIds.toSet().length!=assigneeIds.length||assigneeIds.any((e)=>!legal.contains(e)))throw const AppFailure('存在无权派发的接收人');
-    final me=_user,items=await _myDispatched();
-    final id=DateTime.now().microsecondsSinceEpoch;
-    final task=DispatchedTask(id:id,name:name.trim(),details:details.trim(),startDate:startDate,deadline:deadline,urgency:urgency,assigneeCount:assigneeIds.length);
-    items.add(task);
-    (await _prefs).setString('pandora_mock_dispatched_${me.id}',jsonEncode(items.map((e)=>e.toJson()).toList()));
-    for(final receiverId in assigneeIds){
-      final inbox=await _tasksFor(receiverId);
-      inbox.add(TaskItem(id:id+receiverId,taskId:id,senderId:me.id,name:name.trim(),details:details.trim(),status:'NOT_STARTED',reviewStatus:'NONE',source:'RECEIVED',startDate:startDate,deadline:deadline,urgency:urgency));
-      await _writeTasksFor(receiverId,inbox);
-    }
   }
   @override Future<void> inviteReview(int assignmentId) async {
     final inbox=await _myTasks();

@@ -77,6 +77,7 @@ void main() {
     await tester.enterText(find.byKey(const Key('daily_todo_title_input')), '阅读半小时');
     await tester.tap(find.byKey(const Key('daily_todo_save_button')));
     await tester.pumpAndSettle();
-    expect(find.text('阅读半小时'), findsOneWidget);
+    expect(find.text('阅读半小时'), findsWidgets);
+    expect((await const DailyTodoStorage(12).read()).single.title, '阅读半小时');
   });
 }

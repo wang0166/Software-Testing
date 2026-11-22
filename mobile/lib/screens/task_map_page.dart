@@ -72,11 +72,22 @@ class _TaskMapPageState extends State<TaskMapPage> {
     return _TaskMapData(received, dispatched, authorizedLogs);
   }
 
+  // Attach an error observer immediately: a failed mock/backend request can
+  // complete before FutureBuilder subscribes on the next build frame.
+  // FutureBuilder still receives the same failure and renders ErrorPanel.
+  Future<AiAnalysis> _startAiAnalysis({bool refresh = false}) {
+    final future = Future<AiAnalysis>.sync(
+      () => widget.app.repo.aiMapAnalysis(refresh: refresh),
+    );
+    future.then<void>((_) {}, onError: (Object error, StackTrace trace) {});
+    return future;
+  }
+
   void _selectSection(int index) {
     if (index == 2 && _aiFuture == null) {
       setState(() {
         section = index;
-        _aiFuture = widget.app.repo.aiMapAnalysis();
+        _aiFuture = _startAiAnalysis();
       });
     } else {
       setState(() => section = index);
@@ -84,7 +95,7 @@ class _TaskMapPageState extends State<TaskMapPage> {
   }
 
   void _loadAi({bool refresh = false}) {
-    setState(() => _aiFuture = widget.app.repo.aiMapAnalysis(refresh: refresh));
+    setState(() => _aiFuture = _startAiAnalysis(refresh: refresh));
   }
 
   Future<void> _refresh() async {
@@ -289,16 +300,18 @@ class _TaskMapPageState extends State<TaskMapPage> {
     if (future == null) return _aiIntro();
     return FutureBuilder<AiAnalysis>(future: future, builder: (context, snap) {
       if (snap.connectionState != ConnectionState.done) return _aiLoading();
-      if (snap.hasError) return Column(children: [
-        _aiShell(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          _aiTitle(),
+      if (snap.hasError) {
+        return Column(children: [
+          _aiShell(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            _aiTitle(),
+            const SizedBox(height: 10),
+            const Text('服务端尚未完成分析。若提示未配置，请联系管理员在后端设置 DEEPSEEK_API_KEY 后重试。',
+              style: TextStyle(color: Palette.muted, height: 1.5, fontSize: 12)),
+          ])),
           const SizedBox(height: 10),
-          const Text('服务端尚未完成分析。若提示未配置，请联系管理员在后端设置 DEEPSEEK_API_KEY 后重试。',
-            style: TextStyle(color: Palette.muted, height: 1.5, fontSize: 12)),
-        ])),
-        const SizedBox(height: 10),
-        ErrorPanel(error: snap.error!, onRetry: () => _loadAi(refresh: true)),
-      ]);
+          ErrorPanel(error: snap.error!, onRetry: () => _loadAi(refresh: true)),
+        ]);
+      }
       return _aiResult(snap.data!);
     });
   }

@@ -56,9 +56,13 @@ void main() {
     final repo=MockRepository();
     await repo.login('leader','demo123456');
     final employee=(await repo.recipients()).first;
-    await repo.dispatchTask(name:'年度任务联调',details:'确认任务与日志互通',
+    await repo.submitDispatchRequest(name:'年度任务联调',details:'确认任务与日志互通',
       startDate:'2026-11-03T09:00:00',deadline:'2026-11-10T18:00:00',
-      urgency:'URGENT',assigneeIds:[employee.id]);
+      urgency:'URGENT',taskType:'GENERAL',assigneeIds:[employee.id]);
+    await repo.login('manager','demo123456');
+    final approval = (await repo.dispatchReviewInbox()).single;
+    await repo.reviewDispatchRequest(approval.request.id, approve: true);
+    await repo.login('leader','demo123456');
     final issued=(await repo.issuedTasks()).items.singleWhere((e)=>!e.isRequest);
     await repo.login(employee.username,'demo123456');
     final received=(await repo.tasks(personal:false)).singleWhere((e)=>e.taskId==issued.id);

@@ -25,7 +25,8 @@ void main() {
     expect(find.text('个人10大信息'), findsNothing);
     expect(find.text('日志展示'), findsNothing);
     expect(find.byKey(const Key('daily_todo_month_grid')), findsOneWidget);
-    expect(find.byType(ListView), findsNWidgets(2));
+    expect(find.byKey(const PageStorageKey('home_tile_01')), findsOneWidget);
+    expect(find.byKey(const PageStorageKey('home_tile_02')), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 }

@@ -9,6 +9,7 @@ import 'calendar_page.dart';
 import 'stats_page.dart';
 import 'subordinates_page.dart';
 import 'dispatch_page.dart';
+import 'dispatch_review_page.dart';
 
 /// 默认日历；任务列表、下属动态、统计为同级视图。
 class ViewPage extends StatefulWidget {
@@ -54,6 +55,16 @@ class _ViewPageState extends State<ViewPage> {
     }
   }
 
+  Future<void> _openDispatchReviews() async {
+    await Navigator.of(context).push<void>(MaterialPageRoute<void>(
+      builder: (_) => DispatchReviewPage(app: widget.app),
+    ));
+    if (!mounted) return;
+    widget.onRefreshTasks?.call();
+    widget.onRefreshIssues?.call();
+    setState(() => revision++);
+  }
+
   @override
   Widget build(BuildContext context) => Scaffold(
     backgroundColor: Palette.paper,
@@ -74,7 +85,9 @@ class _ViewPageState extends State<ViewPage> {
     body: Column(children: [
       Padding(padding: const EdgeInsets.fromLTRB(16, 18, 16, 10), child: BusinessHeading(
         title: '公司', subtitle: '日历、任务与团队工作一目了然',
-        action: selected == 0 ? TextButton(
+        action: canViewTeam && (selected == 1 || selected == 2)
+          ? TextButton(onPressed: _openDispatchReviews, child: const Text('派发审核'))
+          : selected == 0 ? TextButton(
           onPressed: () => Navigator.push(context, MaterialPageRoute<void>(
             builder: (_) => CalendarPage(app: widget.app, initialMode: 3,
               onTaskViewed: widget.onTaskViewed))),

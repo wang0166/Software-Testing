@@ -72,7 +72,7 @@ class _SubordinatesPageState extends State<SubordinatesPage> {
           (keyword.isEmpty || '${m.name} ${m.username} ${m.departmentName} ${m.teamName}'
             .toLowerCase().contains(keyword))).toList();
         return RefreshIndicator(onRefresh: _refresh,
-          child: ListView(padding: const EdgeInsets.fromLTRB(16, 10, 16, 110), children: [
+          child: ListView(physics: const AlwaysScrollableScrollPhysics(), padding: const EdgeInsets.fromLTRB(16, 10, 16, 110), children: [
         const BusinessHeading(title:'下属工作动态',
           subtitle:'点开人员查看完整任务，红色数字表示待解决问题'),
         const SizedBox(height:15),
@@ -129,6 +129,10 @@ class _SubordinatesPageState extends State<SubordinatesPage> {
                 Expanded(child:InkWell(onTap:()=>_openMember(member),
                   child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[
                     Text(member.name,style:const TextStyle(color:Palette.deep,fontWeight:FontWeight.w800)),
+                    if (!member.isActive)
+                      Text('已停用', key: Key('subordinate_disabled_${member.userId}'),
+                        style: const TextStyle(color: Palette.coral, fontSize: 12,
+                          fontWeight: FontWeight.w800)),
                     const Text('点击头像查看人员与全部任务',
                       style:TextStyle(color:Palette.muted,fontSize:11)),
                   ]))),

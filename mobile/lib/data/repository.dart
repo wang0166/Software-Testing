@@ -43,10 +43,13 @@ abstract class PandoraRepository {
   Future<List<UserProfile>> recipients();
   /// Company-wide candidate list for dispatch approval requests.
   Future<List<UserProfile>> companyMembers();
-  /// Server checks permission and creates a PENDING approval request, not a live task.
+  /// The server assigns the request to the authenticated applicant’s direct manager.
   Future<String> submitDispatchRequest({required String name, required String details,
     required String startDate, required String deadline, required String urgency,
     required String taskType, required List<int> assigneeIds});
+  /// Pending creation requests assigned to the authenticated reviewer.
+  Future<List<DispatchReview>> dispatchReviewInbox();
+  Future<void> reviewDispatchRequest(int requestId, {required bool approve});
   /// All authorized subordinates' tasks, regardless of sender.
   Future<List<SubordinateTaskSummary>> subordinatesTaskOverview();
   /// Published tasks and the caller's own pending dispatch requests.
@@ -62,12 +65,12 @@ abstract class PandoraRepository {
   /// 每日待办云端同步：按日期区间拉取，服务端按登录用户隔离。
   Future<List<DailyTodo>> dailyItems({String? from, String? to});
   Future<DailyTodo> createDailyItem({required String date, required String title,
-    String note = '', bool completed = false});
+    String note = '', bool completed = false,
+    String? endDate, String? startTime, String? endTime});
   Future<DailyTodo> updateDailyItem(DailyTodo item);
   Future<void> deleteDailyItem(String id);
   Future<List<DispatchedTask>> dispatchedTasks();
   Future<List<TaskAssignment>> dispatchedAssignments(int taskId);
-  Future<void> dispatchTask({required String name,required String details,required String startDate,required String deadline,required String urgency,required List<int> assigneeIds});
   Future<void> inviteReview(int assignmentId);
   Future<void> reviewAssignment(int assignmentId,String result,String comment);
 }
