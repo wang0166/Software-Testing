@@ -137,11 +137,11 @@ input[type=checkbox] { accent-color: var(--brand); }
 .pd-department-list { margin-top: 12px; border-top: 1px solid var(--line); padding-top: 12px; }
 .pd-department-row { display: flex; align-items: center; border-radius: 5px; margin-top: 4px; }
 .pd-department-row:hover { background: #f5f8fa; }
-.pd-department-select { display: flex; align-items: center; gap: 9px; flex: 1; min-width: 0; padding: 12px 8px; border: 0; color: inherit; background: transparent; text-align: left; }
-.pd-department-select > span:last-child { min-width: 0; }
+.pd-department-main { display: flex; align-items: center; flex: 1; min-width: 0; }
+.pd-department-select { display: flex; align-items: center; gap: 9px; flex: 1; min-width: 0; min-height: 44px; padding: 6px 8px; border: 0; color: inherit; background: transparent; text-align: left; }
 .pd-department-glyph { flex-shrink: 0; color: #7a9ba8; }
-.pd-department-select b { display: block; font-size: 16px; font-weight: 500; }
-.pd-department-select small { display: block; margin-top: 3px; font-size: 16px; color: #657784; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pd-department-select b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 16px; font-weight: 500; }
+.pd-department-intro { flex-shrink: 0; white-space: nowrap; }
 .pd-department-delete { color: #a2b0b8; flex-shrink: 0; }
 .pd-department-delete:hover { color: var(--danger); }
 .pd-teams { min-height: 320px; }
@@ -182,6 +182,7 @@ input[type=checkbox] { accent-color: var(--brand); }
 .pd-form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
 .pd-password-field { display: flex; gap: 8px; align-items: center; }
 .pd-password-field input { min-width: 0; flex: 1; }
+.pd-password-control { gap: 8px; }
 .pd-form .pd-inline-error { margin: 0; }
 .pd-mask { position: fixed; inset: 0; z-index: 1000; background: rgba(15, 34, 45, .4); display: flex; align-items: center; justify-content: center; padding: 24px; }
 .pd-modal { width: 760px; min-width: 0; max-width: 100%; max-height: min(900px, calc(100dvh - 48px)); display: flex; flex-direction: column; overflow: hidden; background: #fff; border: 1px solid #dbe5f4; border-radius: 16px; box-shadow: 0 24px 90px #13234238; outline: none; }
@@ -290,7 +291,7 @@ input[type=checkbox] { accent-color: var(--brand); }
 .pd-audit-quick-types { display: flex; flex-wrap: wrap; gap: 10px; margin: 18px 0 6px; }
 .pd-audit-filters { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 18px 16px; margin: 20px 0 4px; }
 .pd-audit-filters > label { display: flex; flex-direction: column; gap: 8px; min-width: 0; font-size: 14px; color: #465d7c; }
-.pd-audit-filters > .pd-actions { grid-column: span 2; align-self: end; }
+.pd-audit-filters > .pd-actions { grid-column: 1 / -1; }
 .pd-audit-list .pd-table { min-width: 780px; }
 .pd-audit-list .pd-member-copy small { max-width: 420px; overflow-wrap: anywhere; line-height: 1.6; }
 .pd-result { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 6px; font-size: 14px; white-space: nowrap; }
@@ -317,7 +318,6 @@ input[type=checkbox] { accent-color: var(--brand); }
   .pd-mask { padding: 12px; }
   .pd-modal-head, .pd-modal-body, .pd-modal-foot { padding: 18px; }
   .pd-form-grid, .pd-audit-filters { grid-template-columns: minmax(0, 1fr); }
-  .pd-audit-filters > .pd-actions { grid-column: auto; }
   .pd-filter-row .pd-search-field { min-width: 0; width: 100%; flex-basis: 100%; max-width: none; }
   .pd-password-field { flex-wrap: wrap; }
   .pd-password-field input { flex-basis: 100%; }

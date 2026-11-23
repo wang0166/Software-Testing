@@ -73,7 +73,7 @@ const CODE_TEXT: Record<number, string> = {
 };
 
 export class ApiError extends Error {
-  constructor(public httpStatus: number, public code: number, message: string) {
+  constructor(public httpStatus: number, public code: number, message: string, public field?: string) {
     super(message);
     this.name = 'ApiError';
   }
@@ -100,6 +100,8 @@ export async function request<T>(path: string, init: RequestInit = {}): Promise<
   }
 
   const body = await parse(res);
+  const details = body?.data;
+  const field = details && typeof details === 'object' && 'field' in details && typeof details.field === 'string' ? details.field : undefined;
   const expired = !publicAuth && (res.status === 401 || body?.code === 40102 || body?.code === 40104);
   if (expired) {
     clearTokens();
@@ -109,14 +111,14 @@ export async function request<T>(path: string, init: RequestInit = {}): Promise<
   if (!res.ok) {
     const code = body?.code ?? res.status;
     const msg = body?.message || CODE_TEXT[code] || `请求失败（HTTP ${res.status}）`;
-    throw new ApiError(res.status, code, msg);
+    throw new ApiError(res.status, code, msg, field);
   }
   if (!body || typeof body.code !== 'number' || !Object.prototype.hasOwnProperty.call(body, 'data')) {
     throw new ApiError(res.status, 0, '接口响应格式不正确，请检查服务地址和代理配置');
   }
   // HTTP 200 但 code 非 0，同样是业务错误
   if (body && body.code !== 0) {
-    throw new ApiError(res.status, body.code, body.message || CODE_TEXT[body.code] || '操作失败');
+    throw new ApiError(res.status, body.code, body.message || CODE_TEXT[body.code] || '操作失败', field);
   }
   return body.data as T;
 }

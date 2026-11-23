@@ -1,6 +1,10 @@
 // 事项按上海时区整点记录，避免浏览器所在时区改变用户选择的小时。
 const HOUR_PATTERN = /^(\d{4}-\d{2}-\d{2})T([01]\d|2[0-3]):00:00\+08:00$/;
 
+export function isMatterSortOrder(value: number): boolean {
+  return Number.isInteger(value) && value >= -2147483648 && value <= 2147483647;
+}
+
 export function isMatterHour(value: string): boolean {
   const match = HOUR_PATTERN.exec(value);
   if (!match) return false;
