@@ -5,10 +5,10 @@ import 'models.dart';
 DateTime ganttDateOnly(DateTime date) =>
     DateTime.utc(date.year, date.month, date.day);
 
-/// Parses the date-only format required by the task API (YYYY-MM-DD).
+/// Accepts legacy date-only and new minute-precision task timestamps.
 DateTime? parseGanttDate(String? raw) {
   if (raw == null) return null;
-  final match = RegExp(r'^(\d{4})-(\d{2})-(\d{2})$').firstMatch(raw);
+  final match = RegExp(r'^(\d{4})-(\d{2})-(\d{2})(?:[T ].*)?$').firstMatch(raw);
   if (match == null) return null;
   final year = int.parse(match.group(1)!);
   final month = int.parse(match.group(2)!);
@@ -76,4 +76,27 @@ List<GanttTaskSpan> buildGanttSpans(
     return order != 0 ? order : a.end.compareTo(b.end);
   });
   return result;
+}
+
+
+/// Assign every weekly task span to a non-overlapping display lane.
+///
+/// Previously, the calendar discarded spans that needed a fourth lane.
+/// Keeping all lanes lets the week-row viewport scroll vertically without
+/// losing tasks or interfering with the full Gantt navigation.
+List<({GanttTaskSpan span, int lane})> allocateGanttLanes(
+    Iterable<GanttTaskSpan> spans) {
+  final endByLane = <int>[];
+  final rows = <({GanttTaskSpan span, int lane})>[];
+  for (final span in spans) {
+    var lane = 0;
+    while (lane < endByLane.length &&
+        span.startColumn <= endByLane[lane]) {
+      lane++;
+    }
+    if (lane == endByLane.length) endByLane.add(-1);
+    rows.add((span: span, lane: lane));
+    endByLane[lane] = span.startColumn + span.dayCount - 1;
+  }
+  return rows;
 }

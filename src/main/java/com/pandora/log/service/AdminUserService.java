@@ -1,6 +1,9 @@
 package com.pandora.log.service;
 
 import java.nio.charset.StandardCharsets;
+import java.time.LocalDate;
+import java.time.format.DateTimeFormatter;
+import java.time.format.DateTimeParseException;
 import java.util.*;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
@@ -73,10 +76,11 @@ public class AdminUserService {
             throw new BusinessException(ErrorCode.USERNAME_EXISTS);
         }
         validateAssignment(request.role(), request.departmentId(), request.teamId(), -1L);
+        String idNumber = validateIdNumber(request.idNumber());
         Long id = jdbc.queryForObject("INSERT INTO users(username,password_hash,real_name,role_code,department_id,team_id,"
                 + "phone,gender,id_number) VALUES (?,?,?,?,?,?,?,?,?) RETURNING id", Long.class,
                 request.username(), passwords.encode(request.password()), request.realName().trim(), request.role(),
-                request.departmentId(), request.teamId(), request.phone(), blankToNull(request.gender()), blankToNull(request.idNumber()));
+                request.departmentId(), request.teamId(), request.phone(), blankToNull(request.gender()), idNumber);
         syncOwner(id, request.role(), request.departmentId(), request.teamId());
         support.audit("创建用户", "USER", id);
         return new IdDto(id);
@@ -164,6 +168,34 @@ public class AdminUserService {
         if (role.equals("FOUNDER")) jdbc.update("UPDATE companies SET founder_id=?", id);
         if (role.equals("DEPT_MANAGER")) jdbc.update("UPDATE departments SET manager_id=? WHERE id=?", id, department);
         if (role.equals("TEAM_LEADER")) jdbc.update("UPDATE teams SET leader_id=? WHERE id=?", id, team);
+    }
+
+    /** 身份证号必填；去首尾空格、小写 x 统一为大写，并校验出生日期与校验码。 */
+    private static String validateIdNumber(String raw) {
+        String value = raw == null ? "" : raw.trim().toUpperCase(Locale.ROOT);
+        if (!value.matches("[0-9]{17}[0-9X]")) {
+            AdminSupport.invalid("身份证号格式不正确");
+        }
+        LocalDate birth;
+        try {
+            birth = LocalDate.parse(value.substring(6, 14), DateTimeFormatter.BASIC_ISO_DATE);
+        } catch (DateTimeParseException exception) {
+            AdminSupport.invalid("身份证号出生日期不合法");
+            return value;
+        }
+        if (birth.isAfter(LocalDate.now())) {
+            AdminSupport.invalid("身份证号出生日期不合法");
+        }
+        int[] weights = {7, 9, 10, 5, 8, 4, 2, 1, 6, 3, 7, 9, 10, 5, 8, 4, 2};
+        char[] checks = {'1', '0', 'X', '9', '8', '7', '6', '5', '4', '3', '2'};
+        int sum = 0;
+        for (int index = 0; index < weights.length; index++) {
+            sum += (value.charAt(index) - '0') * weights[index];
+        }
+        if (checks[sum % 11] != value.charAt(17)) {
+            AdminSupport.invalid("身份证号校验码不正确");
+        }
+        return value;
     }
 
     private static void validateRole(String role) {

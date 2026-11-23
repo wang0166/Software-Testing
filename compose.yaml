@@ -1,0 +1,67 @@
+services:
+  postgres:
+    image: m.daocloud.io/docker.io/library/postgres:17
+    container_name: pandora-postgres
+    restart: unless-stopped
+
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+
+    ports:
+      - "5433:5432"
+
+    volumes:
+      - pandora_pgdata:/var/lib/postgresql/data
+
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+
+    container_name: pandora-backend
+    restart: unless-stopped
+
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+    environment:
+      SERVER_PORT: 8080
+
+      SPRING_DATASOURCE_URL: ${SPRING_DATASOURCE_URL}
+      SPRING_DATASOURCE_USERNAME: ${SPRING_DATASOURCE_USERNAME}
+      SPRING_DATASOURCE_PASSWORD: ${SPRING_DATASOURCE_PASSWORD}
+
+      ADMIN_INIT_PASSWORD: ${ADMIN_INIT_PASSWORD}
+
+      DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
+      DEEPSEEK_BASE_URL: ${DEEPSEEK_BASE_URL:-https://api.deepseek.com}
+      DEEPSEEK_MODEL: ${DEEPSEEK_MODEL:-deepseek-chat}
+
+    ports:
+      - "8080:8080"
+
+  web:
+    build:
+      context: ./pandora_web
+      dockerfile: Dockerfile
+
+    container_name: pandora-web
+    restart: unless-stopped
+
+    depends_on:
+      - backend
+
+    ports:
+      - "5174:80"
+
+volumes:
+  pandora_pgdata:

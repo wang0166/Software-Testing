@@ -46,7 +46,8 @@ public class LogController {
 
     @PostMapping
     public ApiResponse<WorkLogDto> create(@RequestBody LogRequest request) {
-        return ApiResponse.success(logService.create(request == null ? null : request.content()));
+        return ApiResponse.success(logService.create(request == null ? null : request.content(),
+                request == null ? null : request.logDate()));
     }
 
     @PutMapping("/{id}")

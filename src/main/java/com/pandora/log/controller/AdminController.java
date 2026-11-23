@@ -46,7 +46,11 @@ public class AdminController {
     @PutMapping("/company-matters/{id}") public ApiResponse<Void> matter(@PathVariable Long id, @Valid @RequestBody MatterRequest r) { matters.update(id,r); return ApiResponse.success(); }
     @GetMapping("/audits")
     public ApiResponse<PageResult<AuditDto>> audits(@RequestParam(required=false) String actor,
-            @RequestParam(required=false) String action, @RequestParam(required=false) String from,
-            @RequestParam(required=false) String to, @RequestParam(required=false) Integer page,
-            @RequestParam(required=false) Integer size) { return ApiResponse.success(audits.list(actor,action,from,to,page,size)); }
+            @RequestParam(required=false) String action, @RequestParam(required=false) String objectType,
+            @RequestParam(required=false) String from, @RequestParam(required=false) String to,
+            @RequestParam(required=false) Integer page, @RequestParam(required=false) Integer size) {
+        return ApiResponse.success(audits.list(actor,action,objectType,from,to,page,size));
+    }
+    @GetMapping("/audits/{id}")
+    public ApiResponse<AuditDetailDto> audit(@PathVariable Long id) { return ApiResponse.success(audits.get(id)); }
 }

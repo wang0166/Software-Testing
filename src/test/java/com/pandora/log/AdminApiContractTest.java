@@ -54,7 +54,7 @@ class AdminApiContractTest extends EmbeddedPostgresSupport {
 
     @Test void persistsPhoneIndependentUsernameAndPasswordHashWithoutCredentialResponses() throws Exception {
         Map<String,Object> body = user("custom_account", "EMPLOYEE", department, team);
-        body.put("gender", "女"); body.put("idNumber", "110101200001010019");
+        body.put("gender", "女"); body.put("idNumber", "110101200001010010");
         long id = ok(post("/api/users"), body).path("data").path("id").asLong();
         String hash = jdbc.queryForObject("SELECT password_hash FROM users WHERE id=?", String.class, id);
         assertThat(hash).isNotEqualTo(PASSWORD); assertThat(passwords.matches(PASSWORD, hash)).isTrue();
@@ -62,7 +62,7 @@ class AdminApiContractTest extends EmbeddedPostgresSupport {
         assertThat(profile.path("username").asText()).isEqualTo("custom_account");
         assertThat(profile.path("phone").asText()).isEqualTo("13000000001");
         assertThat(profile.path("gender").asText()).isEqualTo("女");
-        assertThat(profile.path("idNumber").asText()).isEqualTo("110101200001010019");
+        assertThat(profile.path("idNumber").asText()).isEqualTo("110101200001010010");
         assertThat(profile.has("password")).isFalse(); assertThat(profile.has("passwordHash")).isFalse();
         assertThat(login("custom_account", PASSWORD).path("code").asInt()).isZero();
         assertThat(login("13000000001", PASSWORD).path("code").asInt()).isEqualTo(40101);
@@ -217,9 +217,23 @@ class AdminApiContractTest extends EmbeddedPostgresSupport {
         assertStatus(get("/api/audits").param("from","wrong"),null,token,400,40001);
     }
 
+    @Test void requiresValidIdNumberWhenCreatingUser() throws Exception {
+        Map<String,Object> missing=user("no_id","EMPLOYEE",department,team);missing.remove("idNumber");
+        assertStatus(post("/api/users"),missing,token,400,40001);
+        Map<String,Object> invalid=user("bad_id","EMPLOYEE",department,team);
+        invalid.put("idNumber","110101200001010019");
+        assertStatus(post("/api/users"),invalid,token,400,40001);
+        Map<String,Object> padded=user("padded_id","EMPLOYEE",department,team);
+        padded.put("idNumber"," 11010119900307002x ");
+        long id=ok(post("/api/users"),padded).path("data").path("id").asLong();
+        assertThat(jdbc.queryForObject("SELECT id_number FROM users WHERE id=?",String.class,id))
+                .isEqualTo("11010119900307002X");
+    }
+
     private Map<String,Object> user(String name,String role,Long dep,Long group) {
         Map<String,Object> r=new HashMap<>();r.put("username",name);r.put("phone","13000000001");r.put("password",PASSWORD);
-        r.put("realName","验收成员");r.put("role",role);r.put("departmentId",dep);r.put("teamId",group);return r;
+        r.put("realName","验收成员");r.put("role",role);r.put("departmentId",dep);r.put("teamId",group);
+        r.put("idNumber","110101200001010010");return r;
     }
     private Map<String,Object> matter(String start,String end) {
         return new HashMap<>(Map.of("title","事项验收","content","整点入库","sortOrder",1,"startDate","2026-10-29T"+start+":00:00+08:00","deadline","2026-10-29T"+end+":00:00+08:00"));

@@ -65,25 +65,31 @@
 部署与运行说明见 [技术设计文档](./documents/技术设计文档.md) 第 13 章，简要步骤如下：
 
 1. 本地可用 `tools/start-local-backend.ps1` 启动后端及独立 PostgreSQL，无需另装数据库；初始管理员密码通过安全输入设置。
-2. 后端通过 Flyway 自动应用 V1～V8；Web 在 pandora_web 中运行 `npm run dev`，登录时取消演示模式可连接真实接口。
+2. 后端通过 Flyway 自动应用 V1～V12；Web 在 pandora_web 中运行 `npm run dev`，登录时取消演示模式可连接真实接口。
 3. Android 端使用 Flutter 构建并安装 APK。服务器部署使用独立 PostgreSQL 与生产环境配置，不使用本地启动器。
+
+### 云端部署
+
+1. 复制 `.env.example` 为 `.env`，至少填写 `POSTGRES_*`、`SPRING_DATASOURCE_*`、`ADMIN_INIT_PASSWORD`、`JWT_SECRET`；启用 AI 地图分析时再填写 `DEEPSEEK_API_KEY`。
+2. 执行 `docker compose up -d --build`。后端启动时自动执行 Flyway 迁移，已有云库只需重启 backend 即可升级到 V12。
+3. 不要修改已发布的 V1～V11 迁移；数据库结构变更统一新增 V12 及之后的迁移文件。CI 与 ECS 发布只在 `devops/docker` 分支触发，发布前先把改动合回该分支。
 
 用户、部门/团队、团队人员、审计和公司事项整点读写已在本地补齐并联调；尚未代表服务器已部署。详细步骤与交接清单见 [Web 管理端后端启动与验收](documents/Web管理端后端启动与验收.md)。
 
-新版移动端对接补充：任务分钟时间、日志组织字段/截止处理/点评规则及密码审批接口见 [移动端新版后端对接与验收](documents/移动端新版后端对接与验收.md)。服务器需部署含 V8 的对应代码，移动端实机由客户端同学验收。
+新版移动端对接补充：任务分钟时间、进度留痕、派发/变更审批、日志组织字段/截止处理/点评规则及密码审批接口见 V12 迁移与 [移动端新版后端对接与验收](documents/移动端新版后端对接与验收.md)。服务器需部署含 V12 的对应代码，移动端实机由客户端同学验收。
 
 ### 演示账号
 
-后端启动时 Flyway 执行 `V5__seed_demo_users.sql`，自动创建以下账号（密码均为 `123456`）：
+后端启动时 Flyway 执行 `V9__seed_showcase_organization.sql` 创建星海数字科技有限公司的组织与 18 名演示人员，`V11__cleanup_legacy_demo_data.sql` 会清理旧的 founder/deptmgr/teamlead/employee 演示账号（密码均为 `123456`）：
 
 | 用户名 | 角色 | 部门 | 团队 |
 |---|---|---|---|
-| founder | 创始人 | — | — |
-| deptmgr | 部门老总 | 研发部 | — |
-| teamlead | 团队长 | 研发部 | 研发一组 |
-| employee | 普通员工 | 研发部 | 研发一组 |
+| linzhiyuan | 创始人 | — | — |
+| zhoumingyuan | 部门老总 | 产品研发部 | — |
+| chenyu | 团队长 | 产品研发部 | 平台研发组 |
+| lihaoran | 普通员工 | 产品研发部 | 平台研发组 |
 
-系统管理员不在该脚本中，仍需通过 `ADMIN_INIT_PASSWORD` 环境变量创建。
+系统管理员不在种子脚本中，仍需通过 `ADMIN_INIT_PASSWORD` 环境变量创建。
 
 ## 协作规范
 

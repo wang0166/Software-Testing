@@ -2,160 +2,288 @@ import 'package:flutter/material.dart';
 import '../core/app_state.dart';
 import '../core/models.dart';
 import '../core/theme.dart';
-import '../widgets/redesign.dart';
-import '../widgets/ui.dart';
-import 'calendar_page.dart';
-import 'log_detail_page.dart';
+import 'daily_todos_calendar.dart';
+import 'task_progress_page.dart';
 
+/// 客户 2026-11 调整：首页只保留事件纪、任务看板、个人每日事项。
+/// 每日事项是独立 Todo，不属于公司任务，也不进入工作日志。
 class HomePage extends StatefulWidget {
   final AppState app;
   final ValueChanged<int> onTab;
-  const HomePage({super.key, required this.app, required this.onTab});
-  @override State<HomePage> createState() => _HomePageState();
+  final ValueChanged<int>? onTaskViewed;
+  const HomePage({super.key, required this.app, required this.onTab,
+    this.onTaskViewed});
+
+  @override
+  State<HomePage> createState() => _HomePageState();
 }
+
 class _HomePageState extends State<HomePage> {
   late Future<_HomeData> _future;
-  @override void initState() { super.initState(); _refresh(); }
-  void _refresh() => _future = _load();
-  Future<_HomeData> _load() async {
-    final r = widget.app.repo;
-    Future<T?> safely<T>(Future<T> Function() get) async { try { return await get(); } catch (_) { return null; } }
-    final result = await Future.wait<dynamic>([
-      safely(() => r.overview()), safely(() => r.logs()),
-      safely(() => r.companyMatters()), safely(() => r.companyImportantTasks()),
-    ]);
-    return _HomeData(result[0] as Overview?, result[1] as List<WorkLog>?, result[2] as List<CompanyItem>?, result[3] as List<CompanyItem>?);
+
+  @override
+  void initState() {
+    super.initState();
+    _refresh();
   }
-  void _reload() => setState(_refresh);
-  void _calendar() => Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => CalendarPage(app: widget.app)));
-  @override Widget build(BuildContext context) {
-    final me = widget.app.user!;
-    final hour = chinaNow.hour;
-    final greeting = hour < 11 ? '早安' : hour < 18 ? '午安' : '晚上好';
-    final shortName = me.name.isEmpty ? '伙伴' : me.name;
-    return RefreshIndicator(onRefresh: () async { _reload(); await _future; }, child: ListView(
-      padding: const EdgeInsets.fromLTRB(22, 19, 22, 38),
-      children: [
-        Row(children: [
-          Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            const Text('PANDORA  /  DAILY WORK', style: TextStyle(fontWeight: FontWeight.w900, fontSize: 10, letterSpacing: 2.1, color: Palette.primary)),
-            const SizedBox(height: 7),
-            Text('$greeting，$shortName', maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 28, letterSpacing: -.8, fontWeight: FontWeight.w900, color: Palette.deep)),
-            const SizedBox(height: 3),
-            Text('${friendlyDate(todayChina)} · 让每一天都有好进展', style: const TextStyle(color: Palette.muted, fontSize: 12)),
-          ])),
-          Container(width: 53, height: 53, decoration: BoxDecoration(color: Palette.pastel, borderRadius: BorderRadius.circular(18)), child: const Icon(Icons.wb_sunny_rounded, color: Color(0xFFD49A47), size: 29)),
-        ]),
-        const SizedBox(height: 22),
-        _spotlight(),
-        const SizedBox(height: 24),
-        const TinyLabel(title: '快捷开始'),
-        const SizedBox(height: 11),
-        Row(children: [
-          Expanded(child: _shortcut(Icons.edit_note_rounded, '写工作日志', '今天的成果', Palette.sage, () => widget.onTab(1))),
-          const SizedBox(width: 12),
-          Expanded(child: _shortcut(Icons.calendar_month_rounded, '查看日历', '工作时间轴', Palette.pastel, _calendar)),
-        ]),
-        const SizedBox(height: 24),
-        const TinyLabel(title: '今日工作速览'),
-        const SizedBox(height: 11),
-        FutureBuilder<_HomeData>(future: _future, builder: (context, snapshot) {
-          if (!snapshot.hasData) return const Padding(padding: EdgeInsets.all(30), child: Center(child: CircularProgressIndicator()));
-          final data = snapshot.data!;
-          final logs = data.logs?.where((e) => e.logDate == todayChina && e.authorId == me.id).toList() ?? [];
-          final myLog = logs.isEmpty ? null : logs.first;
-          return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-            Row(children: [
-              Expanded(child: _statBox(data.overview == null ? '—' : '${data.overview!.rate.toStringAsFixed(0)}%', '日志提交率', Icons.pie_chart_rounded, Palette.sage)),
-              const SizedBox(width: 11),
-              Expanded(child: _statBox(data.overview == null ? '—' : '${data.overview!.unsubmitted}', '待提交人数', Icons.hourglass_top_rounded, Palette.lavender)),
-            ]),
-            const SizedBox(height: 17),
-            StoryCard(color: Palette.deep, child: InkWell(
-              onTap: () => myLog == null ? widget.onTab(1) : Navigator.push(context, MaterialPageRoute<void>(builder: (_) => LogDetailPage(app: widget.app, log: myLog))),
-              child: Row(children: [
-                Container(padding: const EdgeInsets.all(12), decoration: BoxDecoration(color: Colors.white.withValues(alpha: .12), borderRadius: BorderRadius.circular(16)), child: const Icon(Icons.auto_stories_rounded, color: Colors.white, size: 25)),
-                const SizedBox(width: 13),
-                Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  Text(myLog == null ? '今日日志待开启' : '今天的记录', style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w900)),
-                  const SizedBox(height: 4),
-                  Text(myLog == null ? '写下完成的工作，留住今天的收获' : myLog.content, maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Color(0xFFC6DEDA), fontSize: 11, height: 1.6)),
-                ])),
-                const Icon(Icons.arrow_forward_rounded, color: Palette.gold),
-              ]),
-            )),
-            const SizedBox(height: 25),
-            const TinyLabel(title: '四大信息面板'),
-            const SizedBox(height: 5),
-            const Text('重要的事，井然有序', style: TextStyle(color: Palette.muted, fontSize: 12)),
-            const SizedBox(height: 13),
-            Row(children: [
-              Expanded(child: _infoTile('公司事项', '${data.matters?.length ?? '—'} 条信息', Icons.campaign_outlined, const Color(0xFFFFF1DC), () => _itemsSheet('公司重要事项', data.matters))),
-              const SizedBox(width: 10),
-              Expanded(child: _infoTile('公司任务', '${data.companyTasks?.length ?? '—'} 条信息', Icons.flag_outlined, Palette.lavender, () => _itemsSheet('公司重要任务', data.companyTasks))),
-            ]),
-            const SizedBox(height: 10),
-            Row(children: [
-              Expanded(child: _infoTile('我的待办', '管理当前任务', Icons.task_alt_rounded, Palette.sage, () => widget.onTab(2))),
-              const SizedBox(width: 10),
-              Expanded(child: _infoTile('日志动态', '回顾团队记录', Icons.forum_outlined, const Color(0xFFE8F2F9), () => widget.onTab(1))),
-            ]),
-            if (data.overview == null || data.logs == null)
-              const Padding(padding: EdgeInsets.only(top: 12), child: Text('部分信息暂无数据，下拉可重新加载。', style: TextStyle(color: Palette.muted, fontSize: 11))),
-          ]);
-        }),
-      ],
+
+  void _refresh() {
+    _future = _load();
+  }
+
+  Future<_HomeData> _load() async {
+    Future<List<T>?> safe<T>(Future<List<T>> Function() action) async {
+      try { return await action(); } catch (_) { return null; }
+    }
+    final results = await Future.wait<dynamic>([
+      safe(widget.app.repo.companyMatters),
+      safe(() => widget.app.repo.tasks(personal: false)),
+    ]);
+    return _HomeData(results[0] as List<CompanyItem>?,
+      results[1] as List<TaskItem>?);
+  }
+
+  String _taskSummary(TaskItem task) {
+    final deadline = task.deadline;
+    final deadlineLabel = deadline == null || deadline.isEmpty
+      ? '未设置截止' : '截止 ${deadline.replaceFirst('T', ' ')}';
+    final urgent = task.urgency == 'URGENT' ? '紧急 · ' : '';
+    return '${task.status == 'COMPLETED' ? '已完成' : '进行中'} · $urgent$deadlineLabel';
+  }
+
+  Future<void> _openReceivedTask(TaskItem task) async {
+    widget.onTaskViewed?.call(task.id);
+    await Navigator.of(context).push<void>(MaterialPageRoute<void>(
+      builder: (_) => TaskProgressPage(app: widget.app, task: task),
+    ));
+    if (mounted) setState(_refresh);
+  }
+
+  void _showEvent(CompanyItem item) {
+    showDialog<void>(context: context, builder: (context) => AlertDialog(
+      title: Text(item.title),
+      content: SingleChildScrollView(child: Text(item.content.isEmpty ? '暂无详细说明' : item.content)),
+      actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('关闭'))],
     ));
   }
-  Widget _spotlight() => Container(
-    height: 190,
-    clipBehavior: Clip.antiAlias,
-    decoration: BoxDecoration(gradient: const LinearGradient(colors: [Color(0xFF0A6763), Color(0xFF178F84), Color(0xFF42B19A)], begin: Alignment.topLeft, end: Alignment.bottomRight), borderRadius: BorderRadius.circular(28)),
-    child: Stack(children: [
-      Positioned(right: -52, top: -54, child: Container(width: 210, height: 210, decoration: BoxDecoration(shape: BoxShape.circle, border: Border.all(color: Colors.white.withValues(alpha: .15), width: 33)))),
-      Positioned(right: 15, bottom: -37, child: Icon(Icons.spa_rounded, size: 118, color: Colors.white.withValues(alpha: .14))),
-      Positioned.fill(child: Padding(padding: const EdgeInsets.all(23), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Row(children: [
-          Container(padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 6), decoration: BoxDecoration(color: Colors.white.withValues(alpha: .18), borderRadius: BorderRadius.circular(30)), child: const Text('✦  TODAY IN FOCUS', style: TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.w900, letterSpacing: 1.2))),
-          const Spacer(), const Icon(Icons.north_east_rounded, color: Colors.white),
+
+  @override
+  Widget build(BuildContext context) => FutureBuilder<_HomeData>(
+    future: _future,
+    builder: (context, snap) {
+      final data = snap.data;
+      final loading = snap.connectionState != ConnectionState.done;
+      final matters = data?.matters?.take(10).map((m) => _TileRecord(
+        m.title, m.content, onTap: () => _showEvent(m),
+      )).toList();
+      // /tasks/received gives assignments of *this executor*. It must never
+      // expose unapproved requests or unrelated employees' tasks.
+      final received = data?.receivedTasks?.map((task) => _TileRecord(
+        task.name,
+        _taskSummary(task),
+        onTap: () => _openReceivedTask(task),
+      )).toList();
+      return Padding(
+        padding: const EdgeInsets.fromLTRB(12, 10, 12, 9),
+        child: ListView(children: [
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 4),
+            child: Row(children: [
+              const Expanded(child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Row(children: [
+                    Text('首页', style: TextStyle(color: Palette.deep,
+                      fontSize: 22, fontWeight: FontWeight.w900)),
+                    SizedBox(width: 7),
+                    Icon(Icons.auto_awesome_rounded,
+                      color: Color(0xFFD789A9), size: 20),
+                  ]),
+                  Text('企业事件 · 我的接收任务 · 个人每日事项',
+                    maxLines: 1, overflow: TextOverflow.ellipsis,
+                    style: TextStyle(color: Palette.muted, fontSize: 10)),
+                ],
+              )),
+              TextButton.icon(
+                key: const Key('home_refresh'),
+                icon: const Icon(Icons.refresh_rounded, size: 16),
+                onPressed: loading ? null : () => setState(_refresh),
+                style: TextButton.styleFrom(
+                  minimumSize: Size.zero, padding: const EdgeInsets.symmetric(horizontal: 5),
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap),
+                label: const Text('刷新', style: TextStyle(fontSize: 12)),
+              ),
+            ]),
+          ),
+          const SizedBox(height: 12),
+          SizedBox(height: 240, child: Row(children: [
+            Expanded(child: _HomeTile(
+              key: const Key('event_history_panel'),
+              title: '事件纪', order: '01', records: matters,
+              loading: loading,
+            )),
+            const SizedBox(width: 9),
+            Expanded(child: _HomeTile(
+              key: const Key('task_board_panel'),
+              title: '任务看板', order: '02', records: received,
+              loading: loading, countSuffix: '项',
+            )),
+          ])),
+          const SizedBox(height: 13),
+          // 中等高度：为每周的两条可长按事项标签留出位置，
+          // 同时保持与工作视图一致的无日期方框、按周横线分隔布局。
+          SizedBox(height: 810, child: DailyTodosCalendar(
+            key: ValueKey('daily_todo_${widget.app.user?.id ?? 0}'),
+            userId: widget.app.user?.id ?? 0,
+            repo: widget.app.repo,
+            holidayService: widget.app.holidays,
+          )),
         ]),
-        const Spacer(),
-        const Text('把计划，变成今天的进展。', maxLines: 2, style: TextStyle(color: Colors.white, fontSize: 23, fontWeight: FontWeight.w900, height: 1.3)),
-        const SizedBox(height: 8),
-        Text('每一次认真记录，都在积累成长', style: TextStyle(color: Colors.white.withValues(alpha: .82), fontSize: 12)),
-      ]))),
-    ]),
+      );
+    },
   );
-  Widget _shortcut(IconData icon, String title, String subtitle, Color bg, VoidCallback onTap) => StoryCard(padding: EdgeInsets.zero, child: Material(color: Colors.transparent, child: InkWell(
-    onTap: onTap, borderRadius: BorderRadius.circular(24), child: Padding(padding: const EdgeInsets.all(16), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      ColoredIcon(icon: icon, background: bg),
-      const SizedBox(height: 13),
-      Text(title, style: const TextStyle(fontWeight: FontWeight.w900, color: Palette.deep, fontSize: 14)),
-      const SizedBox(height: 3),
-      Row(children: [Expanded(child: Text(subtitle, style: const TextStyle(color: Palette.muted, fontSize: 11))), const Icon(Icons.arrow_outward_rounded, color: Palette.primary, size: 17)]),
-    ])),
-  )));
-  Widget _statBox(String value, String title, IconData icon, Color bg) => StoryCard(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-    Row(children: [ColoredIcon(icon: icon, background: bg, size: 35), const Spacer(), const Icon(Icons.trending_up_rounded, size: 18, color: Palette.primary)]),
-    const SizedBox(height: 12), Text(value, style: const TextStyle(fontSize: 27, color: Palette.deep, fontWeight: FontWeight.w900)),
-    Text(title, style: const TextStyle(fontSize: 11, color: Palette.muted)),
-  ]));
-  Widget _infoTile(String title, String subtitle, IconData icon, Color bg, VoidCallback onTap) => StoryCard(color: bg, padding: EdgeInsets.zero, child: Material(color: Colors.transparent, child: InkWell(onTap: onTap, borderRadius: BorderRadius.circular(24), child: SizedBox(height: 125, child: Padding(padding: const EdgeInsets.all(15), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-    Icon(icon, color: Palette.deep, size: 24),
-    const Spacer(), Text(title, style: const TextStyle(color: Palette.deep, fontWeight: FontWeight.w900, fontSize: 15)),
-    const SizedBox(height: 2), Text(subtitle, style: const TextStyle(color: Palette.muted, fontSize: 10)),
-  ]))))));
-  void _itemsSheet(String title, List<CompanyItem>? data) {
-    if (data == null) { toast(context, '当前信息暂不可用'); return; }
-    showModalBottomSheet<void>(context: context, isScrollControlled: true, showDragHandle: true, builder: (ctx) => SafeArea(child: Padding(padding: const EdgeInsets.fromLTRB(20, 8, 20, 26), child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
-      Text(title, style: Theme.of(ctx).textTheme.titleLarge), const SizedBox(height: 13),
-      if (data.isEmpty) const Text('暂无内容') else ...data.take(10).map((item) => ListTile(contentPadding: EdgeInsets.zero, leading: const Icon(Icons.fiber_manual_record_rounded, color: Palette.primary, size: 12), title: Text(item.title), subtitle: Text(item.content, maxLines: 2, overflow: TextOverflow.ellipsis))),
-    ]))));
+}
+
+class _TileRecord {
+  final String title;
+  final String subtitle;
+  final VoidCallback? onTap;
+  const _TileRecord(this.title, this.subtitle, {this.onTap});
+}
+
+class _HomeTile extends StatefulWidget {
+  final String title;
+  final String order;
+  final List<_TileRecord>? records;
+  final bool loading;
+  final String countSuffix;
+  const _HomeTile({super.key, required this.title, required this.order,
+    required this.records, required this.loading, this.countSuffix = '/10'});
+
+  @override State<_HomeTile> createState() => _HomeTileState();
+}
+
+class _HomeTileState extends State<_HomeTile> {
+  final ScrollController _scroll = ScrollController();
+  @override
+  void dispose() {
+    _scroll.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final records = widget.records;
+    final isEvent = widget.order == '01';
+    final headerColors = isEvent
+        ? const [Color(0xFFFFDCE9), Color(0xFFFFECDD)]
+        : const [Color(0xFFE0EBFF), Color(0xFFE9E0FF)];
+    return Container(
+      clipBehavior: Clip.antiAlias,
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(color: Palette.divider),
+        boxShadow: const [BoxShadow(color: Color(0x0B9E8EB6),
+          blurRadius: 12, offset: Offset(0, 3))],
+      ),
+      child: Column(
+        children: [
+          Container(
+            constraints: const BoxConstraints(minHeight: 57),
+            padding: const EdgeInsets.fromLTRB(10, 9, 9, 9),
+            decoration: BoxDecoration(gradient: LinearGradient(colors: headerColors)),
+            child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text(isEvent ? '✿' : '✦', style: const TextStyle(
+                color: Color(0xFFBF6996), fontSize: 12, fontWeight: FontWeight.w800,
+              )),
+              const SizedBox(width: 5),
+              Expanded(child: Text(widget.title, maxLines: 2,
+                overflow: TextOverflow.ellipsis, style: const TextStyle(
+                  color: Palette.deep, fontWeight: FontWeight.w800,
+                  fontSize: 12, height: 1.3,
+                ))),
+              if (records != null) Padding(
+                padding: const EdgeInsets.only(left: 3),
+                child: Text('${records.length}${widget.countSuffix}', style: const TextStyle(
+                  color: Palette.muted, fontSize: 10,
+                )),
+              ),
+            ]),
+          ),
+          Expanded(
+            child: widget.loading && records == null
+                ? const Center(child: CircularProgressIndicator(strokeWidth: 2))
+                : records == null || records.isEmpty
+                    ? Padding(
+                        padding: const EdgeInsets.all(11),
+                        child: Align(alignment: Alignment.topLeft,
+                          child: Text(records == null ? '数据加载失败，请刷新' : '暂无可查看的信息',
+                            style: const TextStyle(fontSize: 12, color: Palette.muted))),
+                      )
+                    : Scrollbar(
+                        controller: _scroll,
+                        thumbVisibility: true,
+                        thickness: 2.5,
+                        radius: const Radius.circular(3),
+                        child: ListView.separated(
+                          key: PageStorageKey('home_tile_${widget.order}'),
+                          controller: _scroll,
+                          primary: false,
+                          padding: const EdgeInsets.fromLTRB(9, 4, 8, 4),
+                          itemCount: records.length,
+                          separatorBuilder: (_, __) => const Divider(
+                            height: 1, color: Color(0xFFF0E7ED),
+                          ),
+                          itemBuilder: (context, index) {
+                            final row = records[index];
+                            return Material(
+                              color: Colors.transparent,
+                              child: InkWell(
+                                onTap: row.onTap,
+                                child: Padding(
+                                  padding: const EdgeInsets.symmetric(vertical: 9),
+                                  child: Row(crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text('${index + 1}'.padLeft(2, '0'),
+                                        style: const TextStyle(color: Color(0xFFC77A9D),
+                                          fontSize: 10, fontWeight: FontWeight.w900)),
+                                      const SizedBox(width: 6),
+                                      Expanded(child: Column(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
+                                          Text(row.title, maxLines: 2,
+                                            overflow: TextOverflow.ellipsis,
+                                            style: const TextStyle(fontSize: 12,
+                                              height: 1.3, fontWeight: FontWeight.w700,
+                                              color: Palette.deep)),
+                                          if (row.subtitle.isNotEmpty) ...[
+                                            const SizedBox(height: 3),
+                                            Text(row.subtitle, maxLines: 1,
+                                              overflow: TextOverflow.ellipsis,
+                                              style: const TextStyle(fontSize: 10,
+                                                color: Palette.muted)),
+                                          ],
+                                        ],
+                                      )),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            );
+                          },
+                        ),
+                      ),
+          ),
+        ],
+      ),
+    );
   }
 }
+
 class _HomeData {
-  final Overview? overview;
-  final List<WorkLog>? logs;
-  final List<CompanyItem>? matters, companyTasks;
-  const _HomeData(this.overview, this.logs, this.matters, this.companyTasks);
+  final List<CompanyItem>? matters;
+  final List<TaskItem>? receivedTasks;
+  const _HomeData(this.matters, this.receivedTasks);
 }

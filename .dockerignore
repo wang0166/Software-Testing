@@ -1,0 +1,7 @@
+target
+.git
+.idea
+.vscode
+mobile
+node_modules
+*.log

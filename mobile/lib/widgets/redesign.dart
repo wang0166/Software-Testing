@@ -18,7 +18,7 @@ class CanvasHeader extends StatelessWidget {
         Text(subtitle, style: const TextStyle(color: Palette.muted, fontSize: 12)),
       ])),
       const SizedBox(width: 12),
-      Container(width: 58, height: 58, decoration: BoxDecoration(color: accent.withValues(alpha: .10), borderRadius: BorderRadius.circular(21)), child: Icon(icon, color: accent, size: 29)),
+      Container(width: 58, height: 58, decoration: BoxDecoration(color: accent.withValues(alpha: .12), borderRadius: BorderRadius.circular(24)), child: Icon(icon, color: accent, size: 29)),
     ]),
   );
 }
@@ -32,9 +32,10 @@ class StoryCard extends StatelessWidget {
   @override Widget build(BuildContext context) => Container(
     padding: padding,
     decoration: BoxDecoration(
-      color: color, border: border,
-      borderRadius: BorderRadius.circular(24),
-      boxShadow: [BoxShadow(color: Palette.deep.withValues(alpha: .035), blurRadius: 22, offset: const Offset(0, 9))],
+      color: color, border: border ?? Border.all(color: Palette.divider),
+      borderRadius: BorderRadius.circular(26),
+      boxShadow: [BoxShadow(color: Palette.primary.withValues(alpha: .06),
+        blurRadius: 22, offset: const Offset(0, 7))],
     ), child: child,
   );
 }
@@ -57,7 +58,7 @@ class ColoredIcon extends StatelessWidget {
   const ColoredIcon({super.key, required this.icon, this.color = Palette.primary, this.background = Palette.sage, this.size = 48});
   @override Widget build(BuildContext context) => Container(
     width: size, height: size,
-    decoration: BoxDecoration(color: background, borderRadius: BorderRadius.circular(size * .32)),
+    decoration: BoxDecoration(color: background, borderRadius: BorderRadius.circular(size * .40)),
     child: Icon(icon, color: color, size: size * .48),
   );
 }

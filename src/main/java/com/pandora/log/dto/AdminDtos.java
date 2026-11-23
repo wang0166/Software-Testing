@@ -1,6 +1,7 @@
 package com.pandora.log.dto;
 
 import java.time.OffsetDateTime;
+import java.util.List;
 import jakarta.validation.constraints.*;
 import com.fasterxml.jackson.annotation.JsonFormat;
 import com.fasterxml.jackson.annotation.JsonAnySetter;
@@ -26,7 +27,7 @@ public final class AdminDtos {
             @NotBlank @Size(max = 64) String realName,
             @NotBlank String role, Long departmentId, Long teamId,
             @Pattern(regexp = "|男|女") String gender,
-            @Pattern(regexp = "|[0-9]{17}[0-9Xx]") String idNumber) implements StrictRequest {
+            @NotBlank @Pattern(regexp = "\\s*[0-9]{17}[0-9Xx]\\s*") String idNumber) implements StrictRequest {
         @Override public String toString() { return "CreateUserRequest[redacted]"; }
     }
     public record UpdateUserRequest(@NotBlank @Size(max = 64) String realName,
@@ -37,6 +38,23 @@ public final class AdminDtos {
     }
     public record CompanyDto(Long id, String name, Long founderId) { }
     public record CompanyRequest(@NotBlank @Size(max = 100) String name) implements StrictRequest { }
+    public record CompanyMatterRequest(
+            @NotBlank @Size(max = 200) String title,
+            @NotBlank String content,
+            Integer sortOrder) implements StrictRequest { }
+
+    public record DepartmentCreateRequest(
+            @NotBlank @Size(max = 100) String name,
+            Long companyId) implements StrictRequest { }
+
+    public record TeamCreateRequest(
+            @NotBlank @Size(max = 100) String name,
+            @NotNull @Positive Long departmentId) implements StrictRequest { }
+
+    public record OrgUnitDto(
+            Long id,
+            String name,
+            Long parentId) { }
     public record DepartmentDto(Long id, String name, String description, Long companyId, Long managerId) { }
     public record TeamDto(Long id, String name, String description, Long departmentId, Long leaderId) { }
     public record DepartmentRequest(@NotBlank @Size(max = 100) String name,
@@ -50,5 +68,32 @@ public final class AdminDtos {
             @NotNull @JsonFormat(without = JsonFormat.Feature.ADJUST_DATES_TO_CONTEXT_TIME_ZONE) OffsetDateTime startDate,
             @NotNull @JsonFormat(without = JsonFormat.Feature.ADJUST_DATES_TO_CONTEXT_TIME_ZONE) OffsetDateTime deadline) implements StrictRequest { }
     public record AuditDto(Long id, String actor, String action, String target,
-            OffsetDateTime time, String result) { }
+            OffsetDateTime time, String result, String objectType, String objectId,
+            String source, String summary) { }
+
+    /** 字段变化；正文类字段只提供“原内容/新内容”标记，不复制正文。 */
+    public record AuditChangeDto(String field, String before, String after) { }
+
+    public record AuditDetailDto(Long id, String actor, String action, String target,
+            OffsetDateTime time, String result, String objectType, String objectId,
+            String source, String summary, List<AuditChangeDto> changes) { }
+
+    // ---- 管理端（Web）使用的精简请求/响应模型 ----
+
+    public record UserCreateRequest(String username, String password, String realName, String role,
+            Long departmentId, Long teamId) { }
+
+    public record UserUpdateRequest(String realName, String role, Long departmentId, Long teamId) { }
+
+    public record PasswordResetRequest(String password) { }
+
+    public record RoleDto(String code, String name, List<String> permissions) { }
+
+    public record PermissionDto(String code, String name, String module) { }
+
+    public record RolePermissionsRequest(List<String> permissions) { }
+
+    public record ConfigItemDto(String key, String value) { }
+
+    public record ConfigUpdateRequest(String value) { }
 }

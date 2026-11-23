@@ -44,8 +44,8 @@ class MobileBackendContractTest extends EmbeddedPostgresSupport {
     @MockBean Clock clock;
     private volatile Instant instant;
     private LocalDate today;
-    private long adminId, employeeId, leaderId, teamId, departmentId, otherId;
-    private String admin,employee,leader,other;
+    private long adminId, employeeId, leaderId, managerId, teamId, departmentId, otherId;
+    private String admin,employee,leader,manager,other;
 
     @BeforeEach void fixtures() throws Exception {
         today=LocalDate.now(ZONE); at(today.atTime(21,59));
@@ -60,6 +60,8 @@ class MobileBackendContractTest extends EmbeddedPostgresSupport {
         teamId=jdbc.queryForObject("INSERT INTO teams(name,department_id) VALUES ('移动组',?) RETURNING id",Long.class,departmentId);
         leaderId=user("leader","TEAM_LEADER",departmentId,teamId);
         jdbc.update("UPDATE teams SET leader_id=? WHERE id=?",leaderId,teamId);
+        managerId=user("manager","DEPT_MANAGER",departmentId,null);
+        jdbc.update("UPDATE departments SET manager_id=? WHERE id=?",managerId,departmentId);
         employeeId=user("member","EMPLOYEE",departmentId,teamId);
         long otherDepartment=jdbc.queryForObject("INSERT INTO departments(name,company_id) VALUES ('其他部门',?) RETURNING id",Long.class,company);
         long otherTeam=jdbc.queryForObject("INSERT INTO teams(name,department_id) VALUES ('其他组',?) RETURNING id",Long.class,otherDepartment);
@@ -67,6 +69,7 @@ class MobileBackendContractTest extends EmbeddedPostgresSupport {
         admin=login("admin",PASSWORD).path("accessToken").asText();
         employee=login("member",PASSWORD).path("accessToken").asText();
         leader=login("leader",PASSWORD).path("accessToken").asText();
+        manager=login("manager",PASSWORD).path("accessToken").asText();
         other=login("other",PASSWORD).path("accessToken").asText();
     }
 
@@ -86,7 +89,19 @@ class MobileBackendContractTest extends EmbeddedPostgresSupport {
         for (String end:List.of("2026-10-29T09:30:00","2026-10-29T08:30:00","2026-10-29T10:30:01","2026-02-30T10:30:00","2026-10-29T10:30:00+08:00")) {
             response(post("/api/tasks"),leader,task("2026-10-29T09:30:00",end,employeeId),400);
         }
-        response(post("/api/tasks"),leader,task("2026-10-29T09:30:00","2026-10-29T10:30:00",otherId),403);
+        // 同公司跨部门允许派发；跨公司仍拒绝
+        long foreignCompany=jdbc.queryForObject(
+                "INSERT INTO companies(name) VALUES ('外部公司') RETURNING id",Long.class);
+        long foreignDepartment=jdbc.queryForObject(
+                "INSERT INTO departments(name,company_id) VALUES ('外部部门',?) RETURNING id",
+                Long.class,foreignCompany);
+        long foreignTeam=jdbc.queryForObject(
+                "INSERT INTO teams(name,department_id) VALUES ('外部团队',?) RETURNING id",
+                Long.class,foreignDepartment);
+        long foreignId=user("outsider","EMPLOYEE",foreignDepartment,foreignTeam);
+        response(post("/api/tasks"),leader,task("2026-10-29T09:30:00","2026-10-29T10:30:00",foreignId),403);
+        // 派发给上级不能走直接派发，必须提交派发申请
+        response(post("/api/tasks"),leader,task("2026-10-29T09:30:00","2026-10-29T10:30:00",managerId),409);
         assertThat(jdbc.queryForObject("SELECT count(*) FROM tasks",Long.class)).isZero();
     }
     @Test void legacyDateRequestsStillCoverTheWholeDay() throws Exception {
@@ -109,6 +124,11 @@ class MobileBackendContractTest extends EmbeddedPostgresSupport {
         response(post("/api/logs/"+id+"/comments"),leader,Map.of("content","上级只能发起","parentId",comment),400);
         response(get("/api/logs/"+id+"/comments"),other,null,403);
         response(get("/api/logs/"+id+"/comments"),admin,null,403);
+        // 创始人可查看并点评全公司任何人的日志
+        user("boss","FOUNDER",null,null);
+        String founder=login("boss",PASSWORD).path("accessToken").asText();
+        ok(post("/api/logs/"+id+"/comments"),founder,Map.of("content","创始人点评"));
+        assertThat(ok(get("/api/logs/"+id+"/comments"),founder,null).size()).isEqualTo(3);
     }
     @Test void deadlineIsInclusiveAndSettlementIsIdempotent() throws Exception {
         long id=ok(post("/api/logs"),employee,Map.of("content","截止前草稿")).path("id").asLong();
@@ -120,12 +140,31 @@ class MobileBackendContractTest extends EmbeddedPostgresSupport {
         assertThat(ok(get("/api/stats/overview"),leader,null).path("submitted").asInt()).isEqualTo(1);
     }
     @Test void oldDraftCannotBeChangedAndRestartCatchesItUp() throws Exception {
-        long old=jdbc.queryForObject("INSERT INTO work_logs(author_id,log_date,content) VALUES (?,?,'历史草稿') RETURNING id",Long.class,employeeId,today.minusDays(1));
+        long old=jdbc.queryForObject("INSERT INTO work_logs(author_id,log_date,content) VALUES (?,?,'历史草稿') RETURNING id",Long.class,employeeId,today.minusDays(3));
         response(put("/api/logs/"+old),employee,Map.of("content","次日修改"),409);
         response(post("/api/logs/"+old+"/submit"),employee,Map.of(),409);
         long current=ok(post("/api/logs"),other,Map.of("content","今日草稿")).path("id").asLong();
         assertThat(deadlines.settle()).isEqualTo(1);
         assertThat(jdbc.queryForObject("SELECT status FROM work_logs WHERE id=?",String.class,current)).isEqualTo("DRAFT");
+    }
+    @Test void logDateWindowAndAuditTraceAreExposedToWebAdmin() throws Exception {
+        long yesterday=ok(post("/api/logs"),employee,Map.of("content","补写日志","logDate",today.minusDays(1).toString())).path("id").asLong();
+        assertThat(jdbc.queryForObject("SELECT log_date FROM work_logs WHERE id=?",LocalDate.class,yesterday)).isEqualTo(today.minusDays(1));
+        response(post("/api/logs"),employee,Map.of("content","超窗日志","logDate",today.minusDays(3).toString()),409);
+        ok(put("/api/logs/"+yesterday),employee,Map.of("content","补写日志已修改"));
+
+        JsonNode logs=ok(get("/api/audits").param("objectType","LOG"),admin,null);
+        assertThat(logs.path("total").asInt()).isEqualTo(2);
+        JsonNode update=ok(get("/api/audits").param("objectType","LOG").param("action","修改日志"),admin,null);
+        JsonNode item=update.path("items").get(0);
+        assertThat(item.path("objectType").asText()).isEqualTo("LOG");
+        assertThat(item.path("objectId").asText()).isEqualTo(String.valueOf(yesterday));
+        assertThat(item.path("source").asText()).isEqualTo("USER");
+        assertThat(item.path("summary").asText()).contains("工作日志");
+        JsonNode changes=ok(get("/api/audits/"+item.path("id").asLong()),admin,null).path("changes");
+        assertThat(changes.get(0).path("field").asText()).isEqualTo("content");
+        assertThat(changes.get(0).path("before").asText()).isEqualTo("原内容");
+        response(get("/api/audits").param("objectType","USER"),admin,null,400);
     }
     @Test void approvedChangeIsSingleUseAndRevokesAllSessions() throws Exception {
         String refresh=login("member",PASSWORD).path("refreshToken").asText();
@@ -239,6 +278,167 @@ class MobileBackendContractTest extends EmbeddedPostgresSupport {
         long old=jdbc.queryForObject("INSERT INTO work_logs(author_id,log_date,content) VALUES (?,?,'昨天日志') RETURNING id",Long.class,employeeId,today.minusDays(1));
         long comment=ok(post("/api/logs/"+old+"/comments"),leader,Map.of("content","昨日点评")).path("id").asLong();
         response(post("/api/logs/"+first+"/comments"),employee,Map.of("content","不能跨日志回复","parentId",comment),400);
+    }
+
+    @Test void subordinateOverviewAndDispatchRequestRestoreCompanyModule() throws Exception {
+        // 派发给下级不需要审核，直接生成任务
+        JsonNode direct=ok(post("/api/tasks/dispatch-requests"),leader,Map.of(
+                "name","派发申请任务","details","完整说明","startDate","2026-10-29T09:30:00",
+                "deadline","2026-10-29T17:45:00","urgency","NOT_URGENT","taskType","GENERAL",
+                "assigneeIds",List.of(employeeId)));
+        assertThat(direct.path("status").asText()).isEqualTo("APPROVED");
+        assertThat(direct.path("requestId").isNull()).isTrue();
+        long taskId=direct.path("taskId").asLong();
+        assertThat(taskId).isPositive();
+        assertThat(ok(get("/api/tasks/dispatch-requests/mine"),leader,null).path("items").size()).isZero();
+
+        // 派发给上级必须审核，由接收人的上级（部门负责人）审批
+        JsonNode request=ok(post("/api/tasks/dispatch-requests"),leader,Map.of(
+                "name","向上派发任务","details","需要上级确认","startDate","2026-10-29T09:30:00",
+                "deadline","2026-10-29T17:45:00","urgency","NOT_URGENT","taskType","GENERAL",
+                "assigneeIds",List.of(managerId)));
+        assertThat(request.path("status").asText()).isEqualTo("PENDING");
+        assertThat(request.path("taskId").isNull()).isTrue();
+        long requestId=request.path("requestId").asLong();
+        assertThat(ok(get("/api/tasks/dispatch-requests/mine"),leader,null)
+                .path("items").get(0).path("status").asText()).isEqualTo("PENDING");
+        assertThat(ok(get("/api/tasks/dispatch-requests/reviewable"),manager,null)
+                .path("items").get(0).path("requestId").asLong()).isEqualTo(requestId);
+
+        JsonNode approved=ok(post("/api/tasks/dispatch-requests/"+requestId+"/approve"),manager,
+                Map.of("comment","同意派发"));
+        assertThat(approved.path("status").asText()).isEqualTo("APPROVED");
+        assertThat(approved.path("taskId").asLong()).isPositive();
+        assertThat(ok(get("/api/tasks/dispatch-requests/mine"),leader,null)
+                .path("items").get(0).path("status").asText()).isEqualTo("APPROVED");
+        assertThat(ok(get("/api/audits").param("objectType","TASK").param("action","提交派发申请"),admin,null)
+                .path("total").asInt()).isEqualTo(2);
+        assertThat(ok(get("/api/audits").param("objectType","TASK").param("action","通过派发申请"),admin,null)
+                .path("total").asInt()).isEqualTo(1);
+
+        JsonNode recipients=ok(get("/api/tasks/recipients/all"),leader,null);
+        assertThat(recipients.path("items").size()).isEqualTo(3);
+        assertThat(recipients.path("items").get(0).path("id").asLong()).isEqualTo(managerId);
+        assertThat(recipients.path("items").get(0).path("realName").asText()).isEqualTo("manager");
+        assertThat(recipients.path("items").get(1).path("id").asLong()).isEqualTo(employeeId);
+        assertThat(recipients.path("items").get(2).path("id").asLong()).isEqualTo(otherId);
+
+        JsonNode overview=ok(get("/api/tasks/subordinates/overview"),leader,null);
+        assertThat(overview.path("total").asInt()).isEqualTo(1);
+        JsonNode summary=overview.path("items").get(0);
+        assertThat(summary.path("userId").asLong()).isEqualTo(employeeId);
+        assertThat(summary.path("departmentId").asLong()).isEqualTo(departmentId);
+        assertThat(summary.path("departmentName").asText()).isEqualTo("研发部");
+        assertThat(summary.path("teamName").asText()).isEqualTo("移动组");
+        assertThat(summary.path("total").asInt()).isEqualTo(1);
+        JsonNode assignment=summary.path("tasks").get(0);
+        assertThat(assignment.path("taskId").asLong()).isEqualTo(taskId);
+        assertThat(assignment.path("assignmentId").asLong()).isPositive();
+        assertThat(assignment.path("executionStatus").asText()).isEqualTo("NOT_STARTED");
+        assertThat(assignment.path("sender").path("id").asLong()).isEqualTo(leaderId);
+        assertThat(assignment.path("assignee").path("realName").asText()).isEqualTo("member");
+
+        assertThat(ok(get("/api/tasks/subordinates/overview"),employee,null).path("total").asInt()).isZero();
+        response(get("/api/tasks/recipients/all"),employee,null,403);
+        assertThat(ok(get("/api/tasks/received"),employee,null).path("items").size()).isEqualTo(1);
+    }
+
+    @Test void progressHistoryAndChangeRequestApprovalWorkOnCloudDatabase() throws Exception {
+        long taskId=ok(post("/api/tasks"),leader,task("2026-10-29T09:30:00","2026-10-29T17:45:00",employeeId)).path("taskId").asLong();
+        long assignmentId=ok(get("/api/tasks/received"),employee,null).path("items").get(0).path("assignmentId").asLong();
+
+        JsonNode progress=ok(post("/api/tasks/assignments/"+assignmentId+"/progress-updates"),employee,
+                Map.of("status","IN_PROGRESS","progressPercent",40,"note","已开始处理"));
+        assertThat(progress.path("progressPercent").asInt()).isEqualTo(40);
+        assertThat(progress.path("authorName").asText()).isEqualTo("member");
+        assertThat(progress.path("createdAt").asText()).isNotBlank();
+
+        response(post("/api/tasks/assignments/"+assignmentId+"/progress-updates"),employee,
+                Map.of("status","IN_PROGRESS","progressPercent",20,"note","不允许倒退"),409);
+        response(post("/api/tasks/assignments/"+assignmentId+"/progress-updates"),employee,
+                Map.of("status","BLOCKED","progressPercent",50),400);
+
+        JsonNode history=ok(get("/api/tasks/assignments/"+assignmentId+"/progress-updates"),employee,null);
+        assertThat(history.path("items").size()).isEqualTo(1);
+        assertThat(history.path("items").get(0).path("note").asText()).isEqualTo("已开始处理");
+        assertThat(ok(get("/api/tasks/subordinates/"+employeeId+"/assignments/"+assignmentId+"/progress-updates"),leader,null)
+                .path("items").size()).isEqualTo(1);
+        response(get("/api/tasks/subordinates/"+employeeId+"/assignments/"+assignmentId+"/progress-updates"),other,null,403);
+        assertThat(ok(get("/api/tasks/received"),employee,null).path("items").get(0).path("progressPercent").asInt())
+                .isEqualTo(40);
+
+        JsonNode change=ok(post("/api/tasks/"+taskId+"/change-requests"),leader,Map.of(
+                "action","UPDATE","name","改名后的任务","details","更新后的完整说明",
+                "startDate","2026-10-29T10:00:00","deadline","2026-10-29T18:00:00",
+                "urgency","URGENT","taskType","DEVELOPMENT","assigneeIds",List.of(employeeId)));
+        assertThat(change.path("status").asText()).isEqualTo("PENDING");
+        assertThat(ok(get("/api/tasks/dispatched"),leader,null).path("items").get(0).path("changePending").asBoolean())
+                .isTrue();
+        assertThat(ok(get("/api/tasks/change-requests/reviewable"),manager,null)
+                .path("items").get(0).path("id").asLong()).isEqualTo(change.path("id").asLong());
+
+        JsonNode approved=ok(post("/api/tasks/change-requests/"+change.path("id").asLong()+"/approve"),manager,
+                Map.of("comment","同意修改"));
+        assertThat(approved.path("status").asText()).isEqualTo("APPROVED");
+        JsonNode detail=ok(get("/api/tasks/"+taskId),leader,null);
+        assertThat(detail.path("name").asText()).isEqualTo("改名后的任务");
+        assertThat(detail.path("taskType").asText()).isEqualTo("DEVELOPMENT");
+        assertThat(detail.path("assignments").get(0).path("progressPercent").asInt()).isEqualTo(40);
+    }
+
+    @Test void deleteChangeRequestRequiresApprovalAndDailyItemsSyncPerUser() throws Exception {
+        long taskId=ok(post("/api/tasks"),leader,task("2026-10-29T09:30:00","2026-10-29T17:45:00",employeeId)).path("taskId").asLong();
+        JsonNode change=ok(post("/api/tasks/"+taskId+"/change-requests"),leader,Map.of("action","DELETE"));
+        assertThat(change.path("status").asText()).isEqualTo("PENDING");
+        assertThat(ok(get("/api/tasks/"+taskId),leader,null).path("name").asText()).isEqualTo("分钟任务");
+
+        JsonNode rejected=ok(post("/api/tasks/change-requests/"+change.path("id").asLong()+"/reject"),manager,
+                Map.of("comment","暂不删除"));
+        assertThat(rejected.path("status").asText()).isEqualTo("REJECTED");
+        assertThat(ok(get("/api/tasks/"+taskId),leader,null).path("name").asText()).isEqualTo("分钟任务");
+
+        JsonNode second=ok(post("/api/tasks/"+taskId+"/change-requests"),leader,Map.of("action","DELETE"));
+        ok(post("/api/tasks/change-requests/"+second.path("id").asLong()+"/approve"),manager,Map.of());
+        response(get("/api/tasks/"+taskId),leader,null,404);
+
+        JsonNode daily=ok(post("/api/daily-items"),employee,Map.of(
+                "date",today.toString(),"title","整理移动端验收截图","note","下班前完成",
+                "colorValue",4292408293L,"startTime","09:30","endTime","10:45","sortOrder",2));
+        assertThat(daily.path("completed").asBoolean()).isFalse();
+        assertThat(daily.path("colorValue").asLong()).isEqualTo(4292408293L);
+        assertThat(daily.path("startTime").asText()).isEqualTo("09:30");
+        assertThat(daily.path("endTime").asText()).isEqualTo("10:45");
+        assertThat(daily.path("sortOrder").asInt()).isEqualTo(2);
+        assertThat(ok(get("/api/daily-items"),employee,null).path("items").get(0).path("title").asText())
+                .isEqualTo("整理移动端验收截图");
+        assertThat(ok(get("/api/daily-items"),leader,null).path("items").size()).isZero();
+        JsonNode updated=ok(put("/api/daily-items/"+daily.path("id").asLong()),employee,
+                Map.of("completed",true,"startTime","","endTime","","sortOrder",0));
+        assertThat(updated.path("completed").asBoolean()).isTrue();
+        assertThat(updated.path("startTime").isNull()).isTrue();
+        assertThat(updated.path("endTime").isNull()).isTrue();
+        assertThat(updated.path("sortOrder").asInt()).isZero();
+        ok(delete("/api/daily-items/"+daily.path("id").asLong()),employee,null);
+        assertThat(ok(get("/api/daily-items"),employee,null).path("items").size()).isZero();
+    }
+
+    @Test void founderChangeRequestKeepsPendingStatusForMobileClient() throws Exception {
+        long founderId=jdbc.queryForObject("INSERT INTO users(username,password_hash,real_name,role_code) VALUES ('boss',?,'创始人','FOUNDER') RETURNING id",
+                Long.class,passwords.encode(PASSWORD));
+        jdbc.update("UPDATE companies SET founder_id=? WHERE id=(SELECT company_id FROM departments WHERE id=?)",founderId,departmentId);
+        String founder=login("boss",PASSWORD).path("accessToken").asText();
+        long taskId=ok(post("/api/tasks"),founder,task("2026-10-30T09:30:00","2026-10-30T10:30:00",employeeId)).path("taskId").asLong();
+        JsonNode change=ok(post("/api/tasks/"+taskId+"/change-requests"),founder,Map.of(
+                "action","UPDATE","name","创始人改名","details","完整说明",
+                "startDate","2026-10-30T09:30:00","deadline","2026-10-30T11:30:00",
+                "urgency","NOT_URGENT","taskType","GENERAL","assigneeIds",List.of(employeeId)));
+        // 移动端只接受 PENDING，创始人自动生效后对外仍返回待审视图，实际结果由任务与审计体现
+        assertThat(change.path("status").asText()).isEqualTo("PENDING");
+        assertThat(jdbc.queryForObject("SELECT name FROM tasks WHERE id=?",String.class,taskId)).isEqualTo("创始人改名");
+        assertThat(jdbc.queryForObject("SELECT status FROM task_change_requests WHERE id=?",String.class,change.path("id").asLong()))
+                .isEqualTo("APPROVED");
+        assertThat(ok(get("/api/audits").param("objectType","TASK").param("action","修改任务"),admin,null)
+                .path("total").asInt()).isEqualTo(1);
     }
 
     private void at(LocalDateTime time) { instant=time.atZone(ZONE).toInstant(); }
