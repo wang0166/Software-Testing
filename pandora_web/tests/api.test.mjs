@@ -47,6 +47,42 @@ test('空部门仍从公司接口获取真实公司 ID，不假定公司编号�
   assert.deepEqual(urls, ['/api/companies', '/api/departments']);
 });
 
+test('部门与团队拒绝纯数字或符号的名称和介绍，允许含文字的名称以及留空介绍', async () => {
+  const writes = [];
+  globalThis.fetch = async (url, options) => {
+    if (!options.method) return response([]);
+    writes.push({ url, body: JSON.parse(options.body) });
+    return response({ id: 42 });
+  };
+  for (const input of ['11111111111111', '１２３４５', ' @-! ']) {
+    await assert.rejects(api.createDepartment(input, 7), /名称须包含文字/);
+    await assert.rejects(api.createTeam('研发2组', 6, input), /介绍须包含文字/);
+  }
+  assert.equal(writes.length, 0);
+  await api.createDepartment(' 研发2部 ', 7, ' 支持 2 条产品线 ');
+  await api.createTeam(' QA-2 ', 6, ' ');
+  assert.deepEqual(writes, [
+    { url: '/api/departments', body: { name: '研发2部', description: '支持 2 条产品线', companyId: 7 } },
+    { url: '/api/teams', body: { name: 'QA-2', description: '', departmentId: 6 } },
+  ]);
+});
+
+test('创建组织前查最新名称，同级拒绝大小写、全半角和空白变体，跨部门同名仍可创建', async () => {
+  const writes = [];
+  globalThis.fetch = async (url, options) => {
+    if (options.method === 'POST') { writes.push(url); return response({ id: 76 }); }
+    assert.equal(options.cache, 'no-store');
+    if (url === '/api/departments') return response([{ id: 3, companyId: 1, name: '研发  2部' }]);
+    if (url === '/api/teams') return response([{ id: 6, departmentId: 3, name: 'QA  2组' }]);
+    throw new Error('未预期的路径');
+  };
+  await assert.rejects(api.createDepartment(' 研发　２部 ', 1), /已有同名记录/);
+  await assert.rejects(api.createTeam(' ｑａ　２组 ', 3), /已有同名记录/);
+  assert.deepEqual(writes, []);
+  await api.createTeam('ｑａ　２组', 4);
+  assert.deepEqual(writes, ['/api/teams']);
+});
+
 test('拒绝非管理员登录且不残留身份', async () => {
   globalThis.fetch = async () => response({ accessToken: 'test', user: { username: 'employee', role: 'EMPLOYEE' } });
   await assert.rejects(api.login('employee', 'test-only'), /仅允许管理员/);
@@ -203,6 +239,7 @@ test('事项只接受上海时区整点；拒绝缺失小时、非法日期、�
   let calls = 0;
   const input = { title: ' 时间测试 ', content: ' 备注 ', sortOrder: 1, startDate: '2026-10-29T09:00:00+08:00', deadline: '2026-10-29T09:00:00+08:00' };
   globalThis.fetch = async (url, init) => {
+    if (url === '/api/company-matters?page=1&size=1') return response({ items: [], page: 1, size: 1, total: 0 });
     calls++;
     assert.equal(url, '/api/company-matters'); assert.equal(init.method, 'POST');
     assert.deepEqual(JSON.parse(init.body), { ...input, title: '时间测试', content: '备注' });
@@ -224,6 +261,78 @@ test('事项只接受上海时区整点；拒绝缺失小时、非法日期、�
     };
     await api.updateMatter('50', { ...input, deadline: '2026-10-30T00:00:00+08:00' });
   } finally { BACKEND_CAPABILITIES.matterWrite = false; }
+});
+
+test('达到事件纪上限时重新核对服务端总数，阻止新增但保留原有记录的编辑', async () => {
+  const methods = [];
+  const input = { title: '测试事件', content: '测试内容', sortOrder: 1, startDate: '2026-11-18T09:00:00+08:00', deadline: '2026-11-19T18:00:00+08:00' };
+  globalThis.fetch = async (url, options) => {
+    methods.push(options.method ?? 'GET');
+    if (url === '/api/company-matters?page=1&size=1') return response({ items: [{ id: 1, ...input }], page: 1, size: 1, total: 10 });
+    assert.equal(url, '/api/company-matters/1');
+    return response(null);
+  };
+  await assert.rejects(api.createMatter(input), /达到上限/);
+  await api.updateMatter('1', input);
+  assert.deepEqual(methods, ['GET', 'PUT']);
+});
+
+test('身份去重使用完整服务端分页且不把身份证或手机号加入查询参数', async () => {
+  const identity = { username: 'new_account', phone: '13000000018', idNumber: '99000020000101008x' };
+  const queries = [];
+  globalThis.fetch = async url => {
+    queries.push(url);
+    const page = queries.length;
+    const user = page === 1
+      ? { id: 1, username: 'other_user', realName: '同名示例', phone: identity.phone }
+      : { id: 2, username: 'NEW_ACCOUNT', realName: '同名示例', idNumber: identity.idNumber.toUpperCase(), status: 'DISABLED' };
+    return response({ items: [user], page, size: 1, total: 2 });
+  };
+  assert.deepEqual(new Set(await api.findDuplicateUserFields(identity)), new Set(['phone', 'username', 'idNumber']));
+  assert.deepEqual(queries, ['/api/users?page=1&size=100', '/api/users?page=2&size=100']);
+  globalThis.fetch = async () => response({ items: [], page: 1, size: 100, total: 2 });
+  await assert.rejects(api.findDuplicateUserFields(identity), /分页已变化/);
+});
+
+test('编辑身份证号时排除当前用户，停用账号的同号仍占用', async () => {
+  const rows = [
+    { id: 3, username: 'active', idNumber: '99000020000101008X' },
+    { id: 4, username: 'disabled', idNumber: '990000200001010012', status: 'DISABLED' },
+  ];
+  globalThis.fetch = async () => response({ items: rows, total: 2, page: 1, size: 100 });
+  assert.deepEqual(await api.findDuplicateUserFields({ idNumber: '99000020000101008x' }, '3'), []);
+  assert.deepEqual(await api.findDuplicateUserFields({ idNumber: '990000200001010012' }, '3'), ['idNumber']);
+});
+
+test('旧资料编辑省略身份证号，身份证更正须经同一用户详情回读确认', async () => {
+  const requests = [];
+  const update = { realName: '更名测试', role: '管理员', departmentId: null, teamId: null };
+  const idNumber = '99000020000101008X';
+  let result = 'ignore';
+  globalThis.fetch = async (url, options) => {
+    assert.equal(url, '/api/users/3');
+    if (options.method === 'PUT') {
+      requests.push(JSON.parse(options.body));
+      if (result === 'conflict') return response({ field: 'idNumber' }, 409, 40909);
+      return response(null);
+    }
+    assert.equal(options.cache, 'no-store');
+    requests.push('GET');
+    return response({ id: result === 'wrong-user' ? 4 : 3, username: 'sample_user', idNumber: result === 'ignore' ? null : idNumber });
+  };
+  await api.updateUser('3', update);
+  assert.deepEqual(requests, [{ ...update, role: 'ADMIN' }]);
+  await assert.rejects(api.updateUser('3', { ...update, idNumber: '99000020000230008X' }), /出生日期/);
+  assert.equal(requests.length, 1);
+  await assert.rejects(api.updateUser('3', { ...update, idNumber: idNumber.toLowerCase() }), /未能回读确认/);
+  assert.deepEqual(requests.slice(1), [{ ...update, role: 'ADMIN', idNumber }, 'GET']);
+  result = 'wrong-user';
+  await assert.rejects(api.updateUser('3', { ...update, idNumber }), /未能回读确认/);
+  result = 'conflict';
+  await assert.rejects(api.updateUser('3', { ...update, idNumber }), error => error.httpStatus === 409 && error.field === 'idNumber');
+  result = 'saved';
+  await api.updateUser('3', { ...update, idNumber });
+  assert.equal(requests.at(-1), 'GET');
 });
 
 test('旧纯日期显示和编辑不补造小时，整点显示保留北京时间', () => {

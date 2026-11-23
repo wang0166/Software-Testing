@@ -3,16 +3,20 @@
 import { request, requestPage, clearTokens, getToken, getRefreshToken, isMock, setTokens, sleep, type PageData } from './http';
 import { requireCapability } from './capabilities';
 import { labelToCode, codeToLabel, statusLabel, statusValue } from '../constants/roles';
-import { isMatterHour } from '../utils/matterTime';
-import { normalizeIdentity } from '../utils/identity';
+import { isMatterHour, isMatterSortOrder } from '../utils/matterTime';
+import { identityError, normalizeIdentity } from '../utils/identity';
+import { duplicateUserFields, duplicateUserMessages } from '../utils/userValidation';
+import { duplicateOrganizationNameMessage, organizationNameExists, organizationTextErrors } from '../utils/organizationValidation';
 
 export interface UserRow { id: string; username: string; name: string; dept: string; team: string; role: string; status: string; departmentId?: string | null; teamId?: string | null; idNumber?: string; gender?: string; phone?: string }
 export interface CreateUserInput {
   username: string; password: string; realName: string; role: string; phone: string;
   departmentId?: number | null; teamId?: number | null; idNumber: string; gender?: string;
 }
-export interface OrgUnit { id: string; name: string; parentId?: string; description?: string }
+export interface OrgUnit { id: string; name: string; parentId?: string; description?: string; managerId?: string | null; leaderId?: string | null }
 /** 公司事项独立于任务派发；时间按上海时区整点记录，兼容旧纯日期响应。 */
+export const MATTER_LIMIT = 10;
+export const MATTER_LIMIT_MESSAGE = '事件纪最多保留 10 条，已达到上限';
 export interface CompanyMatter { id: string; title: string; content: string; sortOrder: number; startDate?: string; deadline?: string }
 export interface CompanyMatterInput { title: string; content: string; sortOrder: number; startDate: string; deadline: string }
 export interface AuditRow { id: string; actor: string; action: string; target: string; time: string; result: string; objectType?: string; objectId?: string; source?: string; summary?: string }
@@ -155,7 +159,7 @@ export const api = {
     if (params.departmentId) q.set('departmentId', params.departmentId);
     if (params.teamId) q.set('teamId', params.teamId);
     if (!useMock()) {
-      const d = await requestPage<RawUser>('/users?' + q);
+      const d = await requestPage<RawUser>('/users?' + q, { cache: 'no-store' });
       return { ...d, items: d.items.map(mapUser) };
     }
     await sleep();
@@ -165,6 +169,46 @@ export const api = {
       (!params.departmentId || u.departmentId === params.departmentId) &&
       (!params.teamId || u.teamId === params.teamId) &&
       (!key || (u.username + u.name + u.dept + u.team).toLowerCase().includes(key))), page, size);
+  },
+  async findDuplicateUserFields(identity: Partial<Pick<CreateUserInput, 'username' | 'phone' | 'idNumber'>>, exceptUserId?: string) {
+    const normalized = { username: identity.username?.trim().toLowerCase(), phone: identity.phone?.trim(), idNumber: normalizeIdentity(identity.idNumber ?? '') };
+    const fieldsToCheck = Object.values(normalized).filter(Boolean).length;
+    if (!fieldsToCheck) return [];
+    const conflicts = new Set<keyof typeof duplicateUserMessages>();
+    const check = (rows: UserRow[]) => {
+      for (const user of rows) {
+        if (user.id === exceptUserId) continue;
+        for (const field of duplicateUserFields(normalized, user)) conflicts.add(field);
+      }
+    };
+    if (useMock()) {
+      check(demoUserRows());
+      return [...conflicts];
+    }
+    // 当前接口没有手机号或证件号的精确查询，提交前分页核对，仅返回冲突字段。
+    let page = 1;
+    let total: number | undefined;
+    let size: number | undefined;
+    const checkedIds = new Set<string>();
+    do {
+      const result = await api.listUsers({ page, size: 100 });
+      total ??= result.total;
+      size ??= result.size;
+      const expectedCount = Math.max(0, Math.min(size, total - (page - 1) * size));
+      if (result.page !== page || result.size !== size || result.total !== total || result.items.length !== expectedCount) {
+        throw new Error('用户列表分页已变化，请重试身份信息核对');
+      }
+      for (const user of result.items) {
+        if (!/^\d+$/.test(user.id) || checkedIds.has(user.id) || typeof user.username !== 'string'
+          || (user.phone != null && typeof user.phone !== 'string') || (user.idNumber != null && typeof user.idNumber !== 'string')) {
+          throw new Error('用户列表响应无法用于身份信息核对，请刷新后重试');
+        }
+        checkedIds.add(user.id);
+      }
+      check(result.items);
+      page += 1;
+    } while ((page - 1) * size < total && conflicts.size < fieldsToCheck);
+    return [...conflicts];
   },
   async listTeamMembers(teamId: string, params: { keyword?: string; page?: number; size?: number } = {}): Promise<PageData<UserRow>> {
     requireCapability('users');
@@ -191,7 +235,9 @@ export const api = {
         idNumber: normalizeIdentity(p.idNumber), gender: p.gender }),
     });
     await sleep();
-    if (demoUserRows().some(u => u.username === p.username.trim())) throw new Error('该账号已存在，换一个');
+    const candidate = { username: p.username.trim().toLowerCase(), phone: p.phone.trim(), idNumber: normalizeIdentity(p.idNumber) };
+    const duplicate = demoUserRows().map(user => duplicateUserFields(candidate, user)[0]).find(Boolean);
+    if (duplicate) throw new Error(duplicate === 'username' ? '该账号已存在' : duplicateUserMessages[duplicate]);
     const id = 'u-local-' + crypto.randomUUID();
     const departmentId = p.departmentId == null ? null : String(p.departmentId);
     const teamId = p.teamId == null ? null : String(p.teamId);
@@ -203,22 +249,45 @@ export const api = {
   },
   async getUser(id: string) {
     requireCapability('users');
-    if (!useMock()) return mapUser(await request<RawUser>('/users/' + encodeURIComponent(id)));
+    if (!useMock()) return mapUser(await request<RawUser>('/users/' + encodeURIComponent(id), { cache: 'no-store' }));
     const u = demoUserRows().find(x => x.id === id);
     if (!u) throw new Error('用户不存在');
     return withDemoOrgIds(u);
   },
-  async updateUser(id: string, p: { realName?: string; role?: string; departmentId?: number | null; teamId?: number | null }) {
+  async updateUser(id: string, p: { realName?: string; role?: string; departmentId?: number | null; teamId?: number | null; idNumber?: string }) {
     requireCapability('users');
-    if (!useMock()) return request('/users/' + encodeURIComponent(id), { method: 'PUT', body: JSON.stringify({ ...p, role: p.role ? labelToCode(p.role) ?? p.role : undefined }) });
+    const idNumber = p.idNumber === undefined ? undefined : normalizeIdentity(p.idNumber);
+    if (idNumber !== undefined) {
+      const error = identityError(idNumber);
+      if (error) throw new Error(error);
+    }
+    if (!useMock()) {
+      await request('/users/' + encodeURIComponent(id), {
+        method: 'PUT',
+        body: JSON.stringify({ realName: p.realName, role: p.role ? labelToCode(p.role) ?? p.role : undefined,
+          departmentId: p.departmentId, teamId: p.teamId, idNumber }),
+      });
+      if (idNumber !== undefined) {
+        // 旧版接口可能忽略新增字段，必须回读同一用户才能确认身份证号已写入。
+        const saved = await api.getUser(id).catch(() => null);
+        if (!saved || saved.id !== id || typeof saved.idNumber !== 'string' || normalizeIdentity(saved.idNumber) !== idNumber) {
+          throw new Error('身份证号修改未能回读确认，请刷新详情核对后再操作');
+        }
+      }
+      return;
+    }
     await sleep();
-    const current = demoUserRows().find(user => user.id === id);
+    const rows = demoUserRows();
+    const current = rows.find(user => user.id === id);
     if (!current) throw new Error('用户不存在');
+    if (idNumber && rows.some(user => user.id !== id && duplicateUserFields({ idNumber }, user).includes('idNumber'))) {
+      throw new Error(duplicateUserMessages.idNumber);
+    }
     const departmentId = p.departmentId === undefined ? current.departmentId : p.departmentId == null ? null : String(p.departmentId);
     const teamId = p.teamId === undefined ? current.teamId : p.teamId == null ? null : String(p.teamId);
     const edits = demoRecord<Partial<UserRow>>('pandora-web-users-edits');
     writeDemo('pandora-web-users-edits', { ...edits, [id]: { ...edits[id], name: p.realName ?? current.name,
-      role: p.role ? codeToLabel(labelToCode(p.role) ?? p.role) : current.role, departmentId, teamId,
+      role: p.role ? codeToLabel(labelToCode(p.role) ?? p.role) : current.role, departmentId, teamId, idNumber: idNumber ?? current.idNumber,
       dept: mockDepartments.find(d => d.id === departmentId)?.name ?? '-', team: mockTeams.find(t => t.id === teamId)?.name ?? '-' } });
   },
   async setUserStatus(id: string, enabled: boolean) {
@@ -244,8 +313,10 @@ export const api = {
   },
   async listDepartments(): Promise<OrgUnit[]> {
     requireCapability('organization');
-    if (!useMock()) return toUnits(await request('/departments'), 'companyId');
-    await sleep(); return mockDepartments.map(x => ({ ...x }));
+    if (!useMock()) return toUnits(await request('/departments', { cache: 'no-store' }), 'companyId');
+    await sleep();
+    const managers = demoUserRows().filter(user => labelToCode(user.role) === 'DEPT_MANAGER');
+    return mockDepartments.map(unit => ({ ...unit, managerId: managers.find(manager => manager.departmentId === unit.id)?.id ?? null }));
   },
   async listCompanies(): Promise<{ id: string; name: string }[]> {
     requireCapability('organization');
@@ -255,18 +326,28 @@ export const api = {
   },
   async listTeams(): Promise<OrgUnit[]> {
     requireCapability('organization');
-    if (!useMock()) return toUnits(await request('/teams'), 'departmentId');
-    await sleep(); return mockTeams.map(x => ({ ...x }));
+    if (!useMock()) return toUnits(await request('/teams', { cache: 'no-store' }), 'departmentId');
+    await sleep();
+    const leaders = demoUserRows().filter(user => labelToCode(user.role) === 'TEAM_LEADER');
+    return mockTeams.map(unit => ({ ...unit, leaderId: leaders.find(leader => leader.teamId === unit.id)?.id ?? null }));
   },
   async createDepartment(name: string, companyId: number, description?: string) {
     requireCapability('organization');
-    if (!useMock()) return request<{ id: number }>('/departments', { method: 'POST', body: JSON.stringify({ name, companyId, description }) });
-    const id = Date.now(); mockDepartments.push({ id: String(id), name, parentId: String(companyId), description }); return { id };
+    const input = organizationInput(name, description);
+    const demo = useMock();
+    const departments = demo ? mockDepartments : await api.listDepartments();
+    if (organizationNameExists(departments, String(companyId), input.name)) throw new Error(duplicateOrganizationNameMessage);
+    if (!demo) return request<{ id: number }>('/departments', { method: 'POST', body: JSON.stringify({ ...input, companyId }) });
+    const id = Date.now(); mockDepartments.push({ id: String(id), ...input, parentId: String(companyId) }); return { id };
   },
   async createTeam(name: string, departmentId: number, description?: string) {
     requireCapability('organization');
-    if (!useMock()) return request<{ id: number }>('/teams', { method: 'POST', body: JSON.stringify({ name, departmentId, description }) });
-    const id = Date.now(); mockTeams.push({ id: String(id), name, parentId: String(departmentId), description }); return { id };
+    const input = organizationInput(name, description);
+    const demo = useMock();
+    const teams = demo ? mockTeams : await api.listTeams();
+    if (organizationNameExists(teams, String(departmentId), input.name)) throw new Error(duplicateOrganizationNameMessage);
+    if (!demo) return request<{ id: number }>('/teams', { method: 'POST', body: JSON.stringify({ ...input, departmentId }) });
+    const id = Date.now(); mockTeams.push({ id: String(id), ...input, parentId: String(departmentId) }); return { id };
   },
   async deleteUnit(kind: 'departments' | 'teams', id: string) {
     requireCapability('organization');
@@ -280,7 +361,7 @@ export const api = {
   },
   async listMatters(page = 1, size = 20): Promise<PageData<CompanyMatter>> {
     if (!useMock()) {
-      const d = await requestPage<CompanyMatter>('/company-matters?page=' + page + '&size=' + size);
+      const d = await requestPage<CompanyMatter>('/company-matters?page=' + page + '&size=' + size, { cache: 'no-store' });
       return { ...d, items: d.items.map(x => ({ ...x, id: String(x.id) })) };
     }
     await sleep();
@@ -289,7 +370,13 @@ export const api = {
   async createMatter(m: CompanyMatterInput) {
     requireCapability('matterWrite');
     const value = matterInput(m);
-    if (!useMock()) return request<{ id: number }>('/company-matters', { method: 'POST', body: JSON.stringify(value) });
+    if (!useMock()) {
+      const { total, page, size, items } = await api.listMatters(1, 1);
+      if (total >= MATTER_LIMIT) throw new Error(MATTER_LIMIT_MESSAGE);
+      if (page !== 1 || items.length !== Math.min(total, size)) throw new Error('暂时无法核对事件数量，请刷新后重试');
+      return request<{ id: number }>('/company-matters', { method: 'POST', body: JSON.stringify(value) });
+    }
+    if (mockMatters.length >= MATTER_LIMIT) throw new Error(MATTER_LIMIT_MESSAGE);
     const id = Date.now(); mockMatters.push({ ...value, id: String(id) }); return { id };
   },
   async updateMatter(id: string, m: CompanyMatterInput) {
@@ -345,9 +432,19 @@ function toItems<T>(d: unknown): T[] {
   throw new Error('列表响应格式不正确');
 }
 function toUnits(d: unknown, parent: 'companyId' | 'departmentId'): OrgUnit[] {
-  return toItems<{ id: number; name: string; description?: string; companyId?: number; departmentId?: number }>(d)
-    .map(u => ({ id: String(u.id), name: u.name, description: u.description, parentId: u[parent] == null ? undefined : String(u[parent]) }));
+  return toItems<{ id: number; name: string; description?: string; companyId?: number; departmentId?: number; managerId?: number | string | null; leaderId?: number | string | null }>(d)
+    .map(u => ({ id: String(u.id), name: u.name, description: u.description, parentId: u[parent] == null ? undefined : String(u[parent]),
+      ...(parent === 'companyId' ? { managerId: u.managerId == null ? u.managerId : String(u.managerId) }
+        : { leaderId: u.leaderId == null ? u.leaderId : String(u.leaderId) }) }));
 }
+
+function organizationInput(name: string, description?: string) {
+  const errors = organizationTextErrors(name, description ?? '');
+  const error = errors.name || errors.description;
+  if (error) throw new Error(error);
+  return { name: name.trim(), description: description?.trim() };
+}
+
 interface RawUser {
   id: number | string; username: string; realName: string; role: string; status: unknown;
   departmentId?: number | null; teamId?: number | null; departmentName?: string; teamName?: string;
@@ -365,7 +462,8 @@ function mapUser(u: RawUser): UserRow {
 function matterInput(m: CompanyMatterInput): CompanyMatterInput {
   const title = m.title.trim(), content = m.content.trim();
   if (!title || !content) throw new Error('事件名称和备注不能为空');
-  if (!Number.isInteger(m.sortOrder)) throw new Error('排序必须为整数');
+  if (title.length > 200 || content.length > 100000) throw new Error('事件名称最多 200 字，备注最多 100000 字');
+  if (!isMatterSortOrder(m.sortOrder)) throw new Error('排序必须为 32 位整数');
   if (!isMatterHour(m.startDate) || !isMatterHour(m.deadline)) throw new Error('请填写有效的开始时间和截止时间（精确到小时）');
   if (m.deadline < m.startDate) throw new Error('截止时间不得早于开始时间');
   return { title, content, sortOrder: m.sortOrder, startDate: m.startDate, deadline: m.deadline };
