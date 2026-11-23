@@ -280,6 +280,10 @@ public class LogService {
         if (currentUser.id().equals(authorId)) {
             return true;
         }
+        if ("FOUNDER".equals(currentUser.roleCode())) {
+            // 创始人可查看并点评全公司任何人的日志。
+            return true;
+        }
         return isDirectSuperior(currentUser.id(), authorId);
     }
 

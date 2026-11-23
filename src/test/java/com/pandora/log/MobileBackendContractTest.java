@@ -124,6 +124,11 @@ class MobileBackendContractTest extends EmbeddedPostgresSupport {
         response(post("/api/logs/"+id+"/comments"),leader,Map.of("content","上级只能发起","parentId",comment),400);
         response(get("/api/logs/"+id+"/comments"),other,null,403);
         response(get("/api/logs/"+id+"/comments"),admin,null,403);
+        // 创始人可查看并点评全公司任何人的日志
+        user("boss","FOUNDER",null,null);
+        String founder=login("boss",PASSWORD).path("accessToken").asText();
+        ok(post("/api/logs/"+id+"/comments"),founder,Map.of("content","创始人点评"));
+        assertThat(ok(get("/api/logs/"+id+"/comments"),founder,null).size()).isEqualTo(3);
     }
     @Test void deadlineIsInclusiveAndSettlementIsIdempotent() throws Exception {
         long id=ok(post("/api/logs"),employee,Map.of("content","截止前草稿")).path("id").asLong();
