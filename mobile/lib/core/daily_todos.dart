@@ -25,12 +25,14 @@ class DailyTodo {
   final int colorValue;
   final String? startTime; // local HH:mm
   final String? endTime;   // local HH:mm
+  final int sortOrder;
 
   const DailyTodo({
     required this.id, required this.date, required this.title,
     this.note = '', this.completed = false,
     this.colorValue = DailyTodoColors.defaultColor,
     this.startTime, this.endTime,
+    this.sortOrder = 0,
   });
 
   static bool validTimeRange(String? start, String? end) {
@@ -60,6 +62,7 @@ class DailyTodo {
           ? decodedColor! : DailyTodoColors.defaultColor,
       startTime: validTimeRange(start, end) ? start : null,
       endTime: validTimeRange(start, end) ? end : null,
+      sortOrder: intOf(j['sortOrder']),
     );
   }
 
@@ -67,11 +70,13 @@ class DailyTodo {
     'id': id, 'date': date, 'title': title, 'note': note,
     'completed': completed, 'colorValue': colorValue,
     'startTime': startTime, 'endTime': endTime,
+    'sortOrder': sortOrder,
   };
 
   DailyTodo copyWith({
     String? date, String? title, String? note, bool? completed,
     int? colorValue, String? startTime, String? endTime,
+    int? sortOrder,
     bool clearTime = false,
   }) => DailyTodo(
     id: id, date: date ?? this.date, title: title ?? this.title,
@@ -79,6 +84,7 @@ class DailyTodo {
     colorValue: colorValue ?? this.colorValue,
     startTime: clearTime ? null : (startTime ?? this.startTime),
     endTime: clearTime ? null : (endTime ?? this.endTime),
+    sortOrder: sortOrder ?? this.sortOrder,
   );
 }
 

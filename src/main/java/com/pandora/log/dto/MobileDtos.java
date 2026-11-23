@@ -376,6 +376,10 @@ public final class MobileDtos {
             String title,
             String note,
             boolean completed,
+            long colorValue,
+            String startTime,
+            String endTime,
+            int sortOrder,
             OffsetDateTime updatedAt) {
     }
 
@@ -383,7 +387,11 @@ public final class MobileDtos {
             LocalDate date,
             String title,
             String note,
-            Boolean completed) {
+            Boolean completed,
+            Long colorValue,
+            String startTime,
+            String endTime,
+            Integer sortOrder) {
     }
 
     public record TaskMapDto(long total, int page, int size, List<TaskMapItemDto> items) {

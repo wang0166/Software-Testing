@@ -640,11 +640,16 @@ class MockRepository implements PandoraRepository {
     return all.where((e)=>(from==null||e.date.compareTo(from)>=0) &&
       (to==null||e.date.compareTo(to)<=0)).toList();
   }
-  @override Future<DailyTodo> createDailyItem({required String date,required String title,String note='',bool completed=false}) async {
+  @override Future<DailyTodo> createDailyItem({required String date,required String title,
+    String note='',bool completed=false,
+    int colorValue=DailyTodoColors.defaultColor,
+    String? startTime,String? endTime,int sortOrder=0}) async {
     if(title.trim().isEmpty) throw const AppFailure('请填写事项名称');
     final all=await _loadDaily();
     final item=DailyTodo(id:'${DateTime.now().microsecondsSinceEpoch}',
-      date:date,title:title.trim(),note:note.trim(),completed:completed);
+      date:date,title:title.trim(),note:note.trim(),completed:completed,
+      colorValue:colorValue,startTime:startTime,endTime:endTime,
+      sortOrder:sortOrder);
     all.add(item); await _saveDaily(all); return item;
   }
   @override Future<DailyTodo> updateDailyItem(DailyTodo item) async {

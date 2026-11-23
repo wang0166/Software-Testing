@@ -65,7 +65,9 @@ abstract class PandoraRepository {
   /// 每日待办云端同步：按日期区间拉取，服务端按登录用户隔离。
   Future<List<DailyTodo>> dailyItems({String? from, String? to});
   Future<DailyTodo> createDailyItem({required String date, required String title,
-    String note = '', bool completed = false});
+    String note = '', bool completed = false,
+    int colorValue = DailyTodoColors.defaultColor,
+    String? startTime, String? endTime, int sortOrder = 0});
   Future<DailyTodo> updateDailyItem(DailyTodo item);
   Future<void> deleteDailyItem(String id);
   Future<List<DispatchedTask>> dispatchedTasks();

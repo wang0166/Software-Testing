@@ -233,9 +233,13 @@ class ApiRepository implements PandoraRepository {
       .where((item)=>item.id.isNotEmpty).toList();
   }
   @override Future<DailyTodo> createDailyItem({required String date,
-    required String title,String note='',bool completed=false}) async {
+    required String title,String note='',bool completed=false,
+    int colorValue=DailyTodoColors.defaultColor,
+    String? startTime,String? endTime,int sortOrder=0}) async {
     final data=_data(await _request('POST','/daily-items',
-      body:{'date':date,'title':title,'note':note,'completed':completed}));
+      body:{'date':date,'title':title,'note':note,'completed':completed,
+        'colorValue':colorValue,'startTime':startTime ?? '',
+        'endTime':endTime ?? '','sortOrder':sortOrder}));
     final item=DailyTodo.fromJson(data);
     if(item.id.isEmpty) throw const AppFailure('服务器未返回每日事项编号');
     return item;
@@ -243,7 +247,9 @@ class ApiRepository implements PandoraRepository {
   @override Future<DailyTodo> updateDailyItem(DailyTodo item) async {
     final data=_data(await _request('PUT','/daily-items/${item.id}',
       body:{'date':item.date,'title':item.title,'note':item.note,
-        'completed':item.completed}));
+        'completed':item.completed,'colorValue':item.colorValue,
+        'startTime':item.startTime ?? '','endTime':item.endTime ?? '',
+        'sortOrder':item.sortOrder}));
     return DailyTodo.fromJson(data);
   }
   @override Future<void> deleteDailyItem(String id) async {

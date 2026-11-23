@@ -1,8 +1,10 @@
 package com.pandora.log.service;
 
 import java.time.LocalDate;
+import java.time.LocalTime;
 import java.time.OffsetDateTime;
 import java.util.List;
+import java.util.Set;
 
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
@@ -21,6 +23,11 @@ import com.pandora.log.dto.MobileDtos.DailyItemRequest;
 @Service
 public class DailyItemService {
 
+    private static final long DEFAULT_COLOR = 4294957543L;
+    private static final Set<Long> ALLOWED_COLORS = Set.of(
+            4294957543L, 4294959826L, 4294963398L,
+            4292408293L, 4292406271L, 4293517055L);
+
     private final JdbcTemplate jdbcTemplate;
     private final CurrentUserContext currentUserContext;
 
@@ -36,28 +43,28 @@ public class DailyItemService {
         }
         if (from != null && to != null) {
             return jdbcTemplate.query(
-                    "SELECT id, item_date, title, note, completed, updated_at FROM daily_items "
+                    "SELECT id, item_date, title, note, completed, color_value, start_time, end_time, sort_order, updated_at FROM daily_items "
                             + "WHERE user_id = ? AND item_date BETWEEN ? AND ? "
-                            + "ORDER BY item_date DESC, created_at DESC, id DESC",
+                            + "ORDER BY item_date DESC, sort_order, id",
                     (rs, index) -> toDto(rs), currentUser.id(), from, to);
         }
         if (from != null) {
             return jdbcTemplate.query(
-                    "SELECT id, item_date, title, note, completed, updated_at FROM daily_items "
+                    "SELECT id, item_date, title, note, completed, color_value, start_time, end_time, sort_order, updated_at FROM daily_items "
                             + "WHERE user_id = ? AND item_date >= ? "
-                            + "ORDER BY item_date DESC, created_at DESC, id DESC",
+                            + "ORDER BY item_date DESC, sort_order, id",
                     (rs, index) -> toDto(rs), currentUser.id(), from);
         }
         if (to != null) {
             return jdbcTemplate.query(
-                    "SELECT id, item_date, title, note, completed, updated_at FROM daily_items "
+                    "SELECT id, item_date, title, note, completed, color_value, start_time, end_time, sort_order, updated_at FROM daily_items "
                             + "WHERE user_id = ? AND item_date <= ? "
-                            + "ORDER BY item_date DESC, created_at DESC, id DESC",
+                            + "ORDER BY item_date DESC, sort_order, id",
                     (rs, index) -> toDto(rs), currentUser.id(), to);
         }
         return jdbcTemplate.query(
-                "SELECT id, item_date, title, note, completed, updated_at FROM daily_items "
-                        + "WHERE user_id = ? ORDER BY item_date DESC, created_at DESC, id DESC",
+                "SELECT id, item_date, title, note, completed, color_value, start_time, end_time, sort_order, updated_at FROM daily_items "
+                        + "WHERE user_id = ? ORDER BY item_date DESC, sort_order, id",
                 (rs, index) -> toDto(rs), currentUser.id());
     }
 
@@ -68,10 +75,15 @@ public class DailyItemService {
         String title = requireTitle(request);
         String note = note(request);
         boolean completed = request != null && Boolean.TRUE.equals(request.completed());
+        long colorValue = colorValue(request == null ? null : request.colorValue(), DEFAULT_COLOR);
+        TimeRange time = timeRange(request == null ? null : request.startTime(),
+                request == null ? null : request.endTime(), null, null);
+        int sortOrder = sortOrder(request == null ? null : request.sortOrder(), 0);
         Long id = jdbcTemplate.queryForObject(
-                "INSERT INTO daily_items (user_id, item_date, title, note, completed) "
-                        + "VALUES (?, ?, ?, ?, ?) RETURNING id",
-                Long.class, currentUser.id(), date, title, note, completed);
+                "INSERT INTO daily_items (user_id, item_date, title, note, completed, color_value, start_time, end_time, sort_order) "
+                        + "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id",
+                Long.class, currentUser.id(), date, title, note, completed,
+                colorValue, time.start(), time.end(), sortOrder);
         return require(id);
     }
 
@@ -87,10 +99,17 @@ public class DailyItemService {
         String note = request == null || request.note() == null ? existing.note() : note(request);
         boolean completed = request == null || request.completed() == null
                 ? existing.completed() : request.completed();
+        long colorValue = colorValue(request == null ? null : request.colorValue(), existing.colorValue());
+        TimeRange time = timeRange(request == null ? null : request.startTime(),
+                request == null ? null : request.endTime(),
+                parseStoredTime(existing.startTime()), parseStoredTime(existing.endTime()));
+        int sortOrder = sortOrder(request == null ? null : request.sortOrder(), existing.sortOrder());
         jdbcTemplate.update(
                 "UPDATE daily_items SET item_date = ?, title = ?, note = ?, completed = ?, "
+                        + "color_value = ?, start_time = ?, end_time = ?, sort_order = ?, "
                         + "updated_at = now() WHERE id = ? AND user_id = ?",
-                date, title, note, completed, id, currentUser.id());
+                date, title, note, completed, colorValue, time.start(), time.end(), sortOrder,
+                id, currentUser.id());
         return require(id);
     }
 
@@ -113,7 +132,8 @@ public class DailyItemService {
 
     private DailyItemDto require(Long id) {
         List<DailyItemDto> rows = jdbcTemplate.query(
-                "SELECT id, item_date, title, note, completed, updated_at FROM daily_items WHERE id = ?",
+                "SELECT id, item_date, title, note, completed, color_value, start_time, end_time, sort_order, updated_at "
+                        + "FROM daily_items WHERE id = ?",
                 (rs, index) -> toDto(rs), id);
         if (rows.isEmpty()) {
             throw new BusinessException(ErrorCode.TASK_NOT_FOUND);
@@ -128,6 +148,10 @@ public class DailyItemService {
                 rs.getString("title"),
                 rs.getString("note"),
                 rs.getBoolean("completed"),
+                rs.getLong("color_value"),
+                formatTime(rs.getObject("start_time", LocalTime.class)),
+                formatTime(rs.getObject("end_time", LocalTime.class)),
+                rs.getInt("sort_order"),
                 rs.getObject("updated_at", OffsetDateTime.class));
     }
 
@@ -156,5 +180,54 @@ public class DailyItemService {
 
     private String trim(String value) {
         return value == null ? "" : value.trim();
+    }
+
+    private long colorValue(Long requested, long fallback) {
+        long value = requested == null ? fallback : requested;
+        if (!ALLOWED_COLORS.contains(value)) {
+            throw new BusinessException(ErrorCode.VALIDATION_FAILED);
+        }
+        return value;
+    }
+
+    private int sortOrder(Integer requested, int fallback) {
+        int value = requested == null ? fallback : requested;
+        if (value < 0 || value > 10_000) {
+            throw new BusinessException(ErrorCode.VALIDATION_FAILED);
+        }
+        return value;
+    }
+
+    private TimeRange timeRange(String requestedStart, String requestedEnd,
+            LocalTime fallbackStart, LocalTime fallbackEnd) {
+        if (requestedStart == null && requestedEnd == null) {
+            return new TimeRange(fallbackStart, fallbackEnd);
+        }
+        String startText = trim(requestedStart);
+        String endText = trim(requestedEnd);
+        if (startText.isEmpty() && endText.isEmpty()) {
+            return new TimeRange(null, null);
+        }
+        try {
+            LocalTime start = LocalTime.parse(startText);
+            LocalTime end = LocalTime.parse(endText);
+            if (!end.isAfter(start)) {
+                throw new BusinessException(ErrorCode.VALIDATION_FAILED);
+            }
+            return new TimeRange(start, end);
+        } catch (java.time.format.DateTimeParseException ex) {
+            throw new BusinessException(ErrorCode.VALIDATION_FAILED);
+        }
+    }
+
+    private LocalTime parseStoredTime(String value) {
+        return value == null ? null : LocalTime.parse(value);
+    }
+
+    private String formatTime(LocalTime value) {
+        return value == null ? null : String.format("%02d:%02d", value.getHour(), value.getMinute());
+    }
+
+    private record TimeRange(LocalTime start, LocalTime end) {
     }
 }

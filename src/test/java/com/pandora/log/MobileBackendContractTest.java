@@ -397,14 +397,22 @@ class MobileBackendContractTest extends EmbeddedPostgresSupport {
         response(get("/api/tasks/"+taskId),leader,null,404);
 
         JsonNode daily=ok(post("/api/daily-items"),employee,Map.of(
-                "date",today.toString(),"title","整理移动端验收截图","note","下班前完成"));
+                "date",today.toString(),"title","整理移动端验收截图","note","下班前完成",
+                "colorValue",4292408293L,"startTime","09:30","endTime","10:45","sortOrder",2));
         assertThat(daily.path("completed").asBoolean()).isFalse();
+        assertThat(daily.path("colorValue").asLong()).isEqualTo(4292408293L);
+        assertThat(daily.path("startTime").asText()).isEqualTo("09:30");
+        assertThat(daily.path("endTime").asText()).isEqualTo("10:45");
+        assertThat(daily.path("sortOrder").asInt()).isEqualTo(2);
         assertThat(ok(get("/api/daily-items"),employee,null).path("items").get(0).path("title").asText())
                 .isEqualTo("整理移动端验收截图");
         assertThat(ok(get("/api/daily-items"),leader,null).path("items").size()).isZero();
         JsonNode updated=ok(put("/api/daily-items/"+daily.path("id").asLong()),employee,
-                Map.of("completed",true));
+                Map.of("completed",true,"startTime","","endTime","","sortOrder",0));
         assertThat(updated.path("completed").asBoolean()).isTrue();
+        assertThat(updated.path("startTime").isNull()).isTrue();
+        assertThat(updated.path("endTime").isNull()).isTrue();
+        assertThat(updated.path("sortOrder").asInt()).isZero();
         ok(delete("/api/daily-items/"+daily.path("id").asLong()),employee,null);
         assertThat(ok(get("/api/daily-items"),employee,null).path("items").size()).isZero();
     }
