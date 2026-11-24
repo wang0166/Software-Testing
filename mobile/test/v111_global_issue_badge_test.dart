@@ -16,7 +16,13 @@ void main() {
       app: app, subordinateIssueCount: 3,
     )));
     await tester.pump();
-    expect(find.widgetWithText(ChoiceChip, '日历视图'), findsOneWidget);
+    // The company navigation now uses keyed InkWell tabs instead of ChoiceChip.
+    // Keep checking the visible calendar tab and the separate team issue badge.
+    final calendarTab = find.byKey(const Key('company_tab_0'));
+    expect(calendarTab, findsOneWidget);
+    expect(find.descendant(
+      of: calendarTab, matching: find.text('日历视图'),
+    ), findsOneWidget);
     expect(find.byKey(const Key('team_tab_issue_badge')), findsOneWidget);
     expect(find.descendant(
       of: find.byKey(const Key('team_tab_issue_badge')),

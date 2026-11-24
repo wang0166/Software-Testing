@@ -9,9 +9,11 @@ import '../core/theme.dart';
 class TaskHandoverInbox extends StatefulWidget {
   final AppState app;
   final int? formerUserId;
+  /// null shows both status chips; true/false locks to a single status.
+  final bool? historyOnly;
   final VoidCallback? onChanged;
   const TaskHandoverInbox({super.key, required this.app,
-    this.formerUserId, this.onChanged});
+    this.formerUserId, this.historyOnly, this.onChanged});
 
   @override State<TaskHandoverInbox> createState() => _TaskHandoverInboxState();
 }
@@ -22,6 +24,7 @@ class _TaskHandoverInboxState extends State<TaskHandoverInbox> {
 
   @override void initState() {
     super.initState();
+    _history = widget.historyOnly ?? false;
     _load();
   }
   void _load() => _future = widget.app.repo.taskHandovers();
@@ -61,22 +64,27 @@ class _TaskHandoverInboxState extends State<TaskHandoverInbox> {
       final all = (snapshot.data ?? []).where((h) => widget.formerUserId == null ||
         h.originalUserId == widget.formerUserId).toList();
       final pending = all.where((h) => h.pending).toList();
-      final shown = all.where((h) => _history ? !h.pending : h.pending).toList();
+      final showingHistory = widget.historyOnly ?? _history;
+      final shown = all.where((h) => showingHistory ? !h.pending : h.pending).toList();
       return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
         Padding(padding: const EdgeInsets.fromLTRB(12, 8, 12, 6),
           child: Wrap(spacing: 8, runSpacing: 4, crossAxisAlignment: WrapCrossAlignment.center,
             children: [
-              ChoiceChip(label: Text('待交接 ${pending.length}'),
-                key: const Key('handover_pending_tab'), selected: !_history,
-                onSelected: (_) => setState(() => _history = false)),
-              ChoiceChip(label: Text('已交接 ${all.length - pending.length}'),
-                key: const Key('handover_completed_tab'), selected: _history,
-                onSelected: (_) => setState(() => _history = true)),
+              if (widget.historyOnly == null) ...[
+                ChoiceChip(label: Text('待交接 ${pending.length}'),
+                  key: const Key('handover_pending_tab'), selected: !_history,
+                  onSelected: (_) => setState(() => _history = false)),
+                ChoiceChip(label: Text('已交接 ${all.length - pending.length}'),
+                  key: const Key('handover_completed_tab'), selected: _history,
+                  onSelected: (_) => setState(() => _history = true)),
+              ] else
+                Text('共 ${shown.length} 项', style: const TextStyle(
+                  color: Palette.muted, fontSize: 12, fontWeight: FontWeight.w700)),
               TextButton.icon(onPressed: _refresh, icon: const Icon(Icons.refresh, size: 16),
                 label: const Text('刷新')),
             ])),
         Expanded(child: shown.isEmpty
-          ? Center(child: Text(_history ? '没有已交接的任务' : '暂无待交接任务',
+          ? Center(child: Text(showingHistory ? '没有已交接的任务' : '暂无待交接任务',
             style: const TextStyle(color: Palette.muted)))
           : ListView.separated(
             key: const Key('task_handover_list'),
@@ -191,10 +199,8 @@ class _TaskHandoverDetailPageState extends State<TaskHandoverDetailPage> {
         newAssigneeId: target.first.id, note: _note.text.trim(), deadline: _deadline);
       if (mounted) Navigator.pop(context, true);
     } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('交接失败：$e')));
-      }
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('交接失败：$e')));
     } finally {
       if (mounted) setState(() => _saving = false);
     }
