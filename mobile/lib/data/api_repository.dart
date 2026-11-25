@@ -269,7 +269,9 @@ class ApiRepository implements PandoraRepository {
       creating ? '/daily-items' : '/daily-items/${item.id}', body: body));
     final saved = DailyTodo.fromJson(data);
     if (saved.id.isEmpty) throw const AppFailure('服务器未返回每日事项编号');
-    if (saved.date != item.date || saved.endDate != item.endDate ||
+    // The current backend stores a single item date. Multi-day endDate stays
+    // in local presentation state until the server gains a range column.
+    if (saved.date != item.date ||
         saved.startTime != item.startTime || saved.endTime != item.endTime) {
       throw const AppFailure('服务器返回的事项日期或时间与所选范围不一致，请刷新确认');
     }

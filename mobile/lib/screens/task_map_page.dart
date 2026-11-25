@@ -295,23 +295,49 @@ class _TaskMapPageState extends State<TaskMapPage> {
 
   Widget _aiAnalysis() {
     final future = _aiFuture;
-    if (future == null) return _aiIntro();
-    return FutureBuilder<AiAnalysis>(future: future, builder: (context, snap) {
-      if (snap.connectionState != ConnectionState.done) return _aiLoading();
-      if (snap.hasError) {
-        return Column(children: [
-        _aiShell(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          _aiTitle(),
-          const SizedBox(height: 10),
-          const Text('服务端尚未完成分析。若提示未配置，请联系管理员在后端设置 DEEPSEEK_API_KEY 后重试。',
-            style: TextStyle(color: Palette.muted, height: 1.5, fontSize: 12)),
-        ])),
-        const SizedBox(height: 10),
-        ErrorPanel(error: snap.error!, onRetry: () => _loadAi(refresh: true)),
-      ]);
-      }
-      return _aiResult(snap.data!);
-    });
+    if (future == null) {
+      return _aiIntro();
+    }
+
+    return FutureBuilder<AiAnalysis>(
+      future: future,
+      builder: (context, snap) {
+        if (snap.connectionState != ConnectionState.done) {
+          return _aiLoading();
+        }
+
+        if (snap.hasError) {
+          return Column(
+            children: [
+              _aiShell(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _aiTitle(),
+                    const SizedBox(height: 10),
+                    const Text(
+                      '服务端尚未完成分析。若提示未配置，请联系管理员在后端设置 DEEPSEEK_API_KEY 后重试。',
+                      style: TextStyle(
+                        color: Palette.muted,
+                        height: 1.5,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 10),
+              ErrorPanel(
+                error: snap.error!,
+                onRetry: () => _loadAi(refresh: true),
+              ),
+            ],
+          );
+        }
+
+        return _aiResult(snap.data!);
+      },
+    );
   }
 
   Widget _aiIntro() => _aiShell(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -357,7 +383,7 @@ class _TaskMapPageState extends State<TaskMapPage> {
     Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(color: Palette.sage.withValues(alpha: .45),
-        borderRadius: BorderRadius.circular(9)),
+        borderRadius: BorderRadius.circular(23)),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Text('基于 ${a.logCount} 条日志 · ${a.taskCount} 项任务 · ${a.dispatchedTaskCount} 项派发任务（${a.range}）',
           style: const TextStyle(color: Palette.deep, fontSize: 11.5,
@@ -377,7 +403,7 @@ class _TaskMapPageState extends State<TaskMapPage> {
     padding: const EdgeInsets.all(18),
     decoration: BoxDecoration(
       color: Colors.white, border: Border.all(color: Palette.divider),
-      borderRadius: BorderRadius.circular(9)),
+      borderRadius: BorderRadius.circular(23)),
     child: child);
 
   Widget _aiTitle() => const Row(children: [
@@ -391,7 +417,7 @@ class _TaskMapPageState extends State<TaskMapPage> {
     Container(
       padding: const EdgeInsets.fromLTRB(16, 14, 16, 12),
       decoration: BoxDecoration(color: Colors.white,
-        border: Border.all(color: Palette.divider), borderRadius: BorderRadius.circular(9)),
+        border: Border.all(color: Palette.divider), borderRadius: BorderRadius.circular(23)),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Row(children: [
           Icon(icon, color: color, size: 18),

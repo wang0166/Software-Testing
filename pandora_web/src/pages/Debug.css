@@ -1,0 +1,26 @@
+.pd-debug code { font-family: Consolas, monospace; font-size: 14px; overflow-wrap: anywhere; }
+.pd-debug-impact { padding: 16px; background: #f5f8ff; border: 1px solid #dbe6ff; border-radius: 8px; line-height: 1.7; }
+.pd-debug-impact p { margin: 6px 0 0; color: var(--sub); font-size: 14px; }
+.pd-debug-counts { display: flex; flex-wrap: wrap; gap: 12px 28px; margin: 22px 0 12px; font-size: 16px; }
+.pd-debug-counts .success { color: #196345; }
+.pd-debug-counts .failure { color: #a22929; }
+.pd-debug-progress { display: block; width: 100%; height: 10px; accent-color: #245bf4; border: 0; border-radius: 6px; }
+.pd-debug-table { min-width: 1030px; }
+.pd-debug-table td { vertical-align: top; }
+.pd-debug-table th:nth-child(1) { width: 17%; }
+.pd-debug-table th:nth-child(2) { width: 25%; }
+.pd-debug-table th:nth-child(3) { width: 28%; }
+.pd-debug-table th:nth-child(4) { width: 10%; }
+.pd-debug-table th:nth-child(5) { width: 20%; }
+.pd-debug-method { font-family: Consolas, monospace; font-size: 14px; font-weight: 600; color: #315780; white-space: nowrap; }
+.pd-debug-method.get { color: #17654c; }
+.pd-debug-method.post { color: #2456b4; }
+.pd-debug-method.put, .pd-debug-method.patch { color: #946116; }
+.pd-debug-method.delete { color: #b13c3c; }
+.pd-debug-status { display: inline-block; padding: 4px 10px; border-radius: 6px; font-size: 14px; white-space: nowrap; background: #f0f3f7; color: #59677a; }
+.pd-debug-status.passed { background: #eaf7f0; color: #196345; }
+.pd-debug-status.failed { background: #fff0f0; color: #a22929; }
+.pd-debug-status.running { background: #edf3ff; color: #2456b4; }
+.pd-debug-message { margin: 8px 0 0; max-width: 320px; font-size: 14px; line-height: 1.6; overflow-wrap: anywhere; color: var(--sub); }
+.pd-debug-json { padding: 12px; margin-top: 10px; background: #f5f7fb; border: 1px solid var(--line); border-radius: 8px; max-height: 300px; max-width: 340px; overflow: auto; font: 14px/1.65 Consolas, monospace; white-space: pre-wrap; overflow-wrap: anywhere; }
+@media (max-width: 760px) { .pd-debug .pd-actions { flex-wrap: wrap; } .pd-debug .pd-card-head { align-items: flex-start; } }

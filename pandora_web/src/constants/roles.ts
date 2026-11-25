@@ -67,7 +67,7 @@ export const PERMISSION_CODES = [
   { code: 'task:dispatch', label: '任务派发', desc: '查询直接下级、派发、编辑任务内容、查看派发列表、检查接收人', defaults: 'TEAM_LEADER、DEPT_MANAGER、FOUNDER' },
   { code: 'task:execute', label: '任务接收', desc: '查看本人接收任务、更新本人进度、发起检查邀约', defaults: 'EMPLOYEE、TEAM_LEADER、DEPT_MANAGER、FOUNDER' },
   { code: 'task:self', label: '自建任务', desc: '新增、查看、编辑本人自建任务', defaults: 'EMPLOYEE、TEAM_LEADER、DEPT_MANAGER、FOUNDER' },
-  { code: 'content:read', label: '读取展示内容', desc: '读取公司十大重要事项与公司十大重要任务', defaults: '全部角色' },
-  { code: 'company-matter:manage', label: '维护重要事项', desc: '维护公司十大重要事项', defaults: 'ADMIN' },
+  { code: 'content:read', label: '读取展示内容', desc: '读取事件纪与公司十大重要任务', defaults: '全部角色' },
+  { code: 'company-matter:manage', label: '维护事件纪', desc: '维护事件纪中的公司重要事件', defaults: 'ADMIN' },
   { code: 'company-task:manage', label: '维护重要任务', desc: '维护公司十大重要任务', defaults: 'FOUNDER' },
 ];
