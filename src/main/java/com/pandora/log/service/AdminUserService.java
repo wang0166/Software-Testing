@@ -27,9 +27,12 @@ public class AdminUserService {
     private final JdbcTemplate jdbc;
     private final AdminSupport support;
     private final PasswordService passwords;
+    private final TaskHandoverService handovers;
 
-    public AdminUserService(JdbcTemplate jdbc, AdminSupport support, PasswordService passwords) {
+    public AdminUserService(JdbcTemplate jdbc, AdminSupport support, PasswordService passwords,
+            TaskHandoverService handovers) {
         this.jdbc = jdbc; this.support = support; this.passwords = passwords;
+        this.handovers = handovers;
     }
 
     public PageResult<UserDto> list(String keyword, String role, String status, Long departmentId, Long teamId,
@@ -108,6 +111,9 @@ public class AdminUserService {
         protectLastAdmin(old, old.role(), status);
         jdbc.update("UPDATE users SET status=?, failed_attempts=0, locked_until=NULL, "
                 + "auth_version=auth_version+1, updated_at=now() WHERE id=?", status, id);
+        if ("DISABLED".equals(status) && !"DISABLED".equals(old.status())) {
+            handovers.generateForDisabledUser(id);
+        }
         revokeRefresh(id);
         support.audit(request.status() == 1 ? "启用账号" : "停用账号", "USER", id);
     }

@@ -305,8 +305,8 @@ class MobileBackendContractTest extends EmbeddedPostgresSupport {
         assertThat(ok(get("/api/tasks/dispatch-requests/reviewable"),manager,null)
                 .path("items").get(0).path("requestId").asLong()).isEqualTo(requestId);
 
-        JsonNode approved=ok(post("/api/tasks/dispatch-requests/"+requestId+"/approve"),manager,
-                Map.of("comment","同意派发"));
+        JsonNode approved=ok(post("/api/tasks/dispatch-requests/"+requestId+"/review"),manager,
+                Map.of("result","APPROVED","comment","同意派发"));
         assertThat(approved.path("status").asText()).isEqualTo("APPROVED");
         assertThat(approved.path("taskId").asLong()).isPositive();
         assertThat(ok(get("/api/tasks/dispatch-requests/mine"),leader,null)
@@ -439,6 +439,104 @@ class MobileBackendContractTest extends EmbeddedPostgresSupport {
                 .isEqualTo("APPROVED");
         assertThat(ok(get("/api/audits").param("objectType","TASK").param("action","修改任务"),admin,null)
                 .path("total").asInt()).isEqualTo(1);
+    }
+
+    @Test void crmScopesTransactionalBenefitsActivitiesAndRevenueMatchMobileContract() throws Exception {
+        long founderId=jdbc.queryForObject("INSERT INTO users(username,password_hash,real_name,role_code) " +
+                "VALUES ('crm_boss',?,'CRM负责人','FOUNDER') RETURNING id",Long.class,passwords.encode(PASSWORD));
+        jdbc.update("UPDATE companies SET founder_id=? WHERE id=(SELECT company_id FROM departments WHERE id=?)",
+                founderId,departmentId);
+        String founder=login("crm_boss",PASSWORD).path("accessToken").asText();
+
+        JsonNode customer=ok(post("/api/crm/customers"),manager,Map.of(
+                "name","星河会员","category","PERSON","business","PERFORMANCE",
+                "memberTier","演出年卡","remark","仅保存业务备注"));
+        long customerId=customer.path("id").asLong();
+        assertThat(customer.path("departmentId").asLong()).isEqualTo(departmentId);
+        assertThat(ok(get("/api/crm/customers"),manager,null).path("total").asInt()).isEqualTo(1);
+        assertThat(ok(get("/api/crm/customers"),employee,null).path("total").asInt()).isZero();
+        assertThat(ok(get("/api/crm/customers"),other,null).path("total").asInt()).isZero();
+
+        long benefit=jdbc.queryForObject("INSERT INTO crm_benefits(customer_id,title,total_count,annual_card) " +
+                "VALUES (?,'年卡观演次数',2,true) RETURNING id",Long.class,customerId);
+        response(post("/api/crm/benefits/"+benefit+"/redeem"),employee,Map.of(),403);
+        assertThat(ok(post("/api/crm/benefits/"+benefit+"/redeem"),manager,Map.of())
+                .path("used").asInt()).isEqualTo(1);
+        assertThat(ok(post("/api/crm/benefits/"+benefit+"/redeem"),manager,Map.of())
+                .path("serviceStatus").asText()).isEqualTo("COMPLETED");
+        response(post("/api/crm/benefits/"+benefit+"/redeem"),manager,Map.of(),409);
+
+        JsonNode activity=ok(post("/api/crm/activities"),manager,Map.of(
+                "customerId",customerId,"kind","PERFORMANCE","title","会员专场",
+                "date",today.toString(),"status","COMPLETED",
+                "participantIds",List.of(employeeId,employeeId),"revenueAmountFen",128800L));
+        assertThat(activity.path("participantIds").size()).isEqualTo(1);
+        assertThat(ok(get("/api/hr/employees/"+employeeId+"/activities"),manager,null).size()).isEqualTo(1);
+        response(get("/api/crm/revenue/summary?month="+YearMonth.from(today)),manager,null,403);
+        JsonNode revenue=ok(get("/api/crm/revenue/summary?month="+YearMonth.from(today)),founder,null);
+        assertThat(revenue.path("totalAmountFen").asLong()).isEqualTo(128800L);
+        assertThat(revenue.path("byBusinessFen").path("PERFORMANCE").asLong()).isEqualTo(128800L);
+    }
+
+    @Test void hrProfilesAreBoundToExistingAccountsAndContractFieldsArePermissionScoped() throws Exception {
+        long founderId=jdbc.queryForObject("INSERT INTO users(username,password_hash,real_name,role_code) " +
+                "VALUES ('hr_boss',?,'HR负责人','FOUNDER') RETURNING id",Long.class,passwords.encode(PASSWORD));
+        jdbc.update("UPDATE companies SET founder_id=? WHERE id=(SELECT company_id FROM departments WHERE id=?)",
+                founderId,departmentId);
+        String founder=login("hr_boss",PASSWORD).path("accessToken").asText();
+        LocalDate contractEnd=today.plusDays(7);
+
+        response(post("/api/hr/employees"),manager,Map.of(
+                "userId",employeeId,"duty","客户服务","contractEnd",contractEnd.toString()),403);
+        JsonNode archive=ok(post("/api/hr/employees"),founder,Map.of(
+                "userId",employeeId,"duty","客户服务","contractEnd",contractEnd.toString(),
+                "contractArchiveStatus","ARCHIVED"));
+        assertThat(archive.path("id").asLong()).isEqualTo(employeeId);
+        assertThat(archive.path("contractArchiveStatus").asText()).isEqualTo("ARCHIVED");
+
+        JsonNode managerView=ok(get("/api/hr/employees?contractExpiringDays=30"),manager,null);
+        assertThat(managerView.path("items").size()).isEqualTo(1);
+        assertThat(managerView.path("items").get(0).path("contractEnd").asText())
+                .isEqualTo(contractEnd.toString());
+        assertThat(managerView.path("items").get(0).path("contractArchiveStatus").asText())
+                .isEqualTo("RESTRICTED");
+        response(get("/api/hr/employees"),employee,null,403);
+    }
+
+    @Test void disablingEmployeeCreatesOneHandoverAndSupervisorCanConfirmOnlyOnce() throws Exception {
+        long successor=user("successor","EMPLOYEE",departmentId,teamId);
+        String successorToken=login("successor",PASSWORD).path("accessToken").asText();
+        long taskId=ok(post("/api/tasks"),leader,
+                task(today.plusDays(1)+"T09:00:00",today.plusDays(2)+"T18:00:00",employeeId))
+                .path("taskId").asLong();
+        long assignment=ok(get("/api/tasks/received"),employee,null).path("items").get(0)
+                .path("assignmentId").asLong();
+        ok(post("/api/tasks/assignments/"+assignment+"/progress-updates"),employee,
+                Map.of("status","IN_PROGRESS","progressPercent",45,"note","已完成资料核对"));
+
+        ok(patch("/api/users/"+employeeId+"/status"),admin,Map.of("status",0));
+        JsonNode inbox=ok(get("/api/tasks/handovers"),leader,null);
+        assertThat(inbox.path("total").asInt()).isEqualTo(1);
+        JsonNode handover=inbox.path("items").get(0);
+        assertThat(handover.path("originalAssignmentId").asLong()).isEqualTo(assignment);
+        assertThat(handover.path("progressPercent").asInt()).isEqualTo(45);
+        String handoverId=handover.path("id").asText();
+        assertThat(ok(get("/api/tasks/handovers/"+handoverId+"/candidates"),leader,null)
+                .path("items").findValuesAsText("id")).contains(String.valueOf(successor));
+
+        JsonNode completed=ok(post("/api/tasks/handovers/"+handoverId+"/confirm"),leader,Map.of(
+                "newAssigneeId",successor,"note","资料已交接，继续执行"));
+        assertThat(completed.path("status").asText()).isEqualTo("COMPLETED");
+        assertThat(completed.path("newAssignmentId").asLong()).isPositive();
+        response(post("/api/tasks/handovers/"+handoverId+"/confirm"),leader,Map.of(
+                "newAssigneeId",successor,"note","重复交接"),409);
+        JsonNode received=ok(get("/api/tasks/received"),successorToken,null).path("items").get(0);
+        assertThat(received.path("taskId").asLong()).isEqualTo(taskId);
+        assertThat(received.path("executionStatus").asText()).isEqualTo("IN_PROGRESS");
+        assertThat(received.path("progressPercent").asInt()).isEqualTo(45);
+        assertThat(ok(get("/api/tasks/handovers"),successorToken,null).path("total").asInt()).isZero();
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM task_handovers WHERE original_assignment_id=?",
+                Long.class,assignment)).isEqualTo(1L);
     }
 
     private void at(LocalDateTime time) { instant=time.atZone(ZONE).toInstant(); }
