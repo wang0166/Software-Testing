@@ -45,6 +45,7 @@ class _TasksPageState extends State<TasksPage> {
     .contains(widget.app.user?.role);
   final _horizontal = ScrollController();
   String _source = '全部来源';
+  String _handoverStatus = '交接状态';
   String _state = '全部状态';
   String _type = '全部类型';
   String _urgency = '全部优先级';
@@ -101,7 +102,6 @@ class _TasksPageState extends State<TasksPage> {
         final visible = items.where((entry) {
           if (_source == '收到的任务' && entry.isIssued) return false;
           if (_source == '我发布的' && !entry.isIssued) return false;
-          if (_source == '待交接') return false;
           if (_state != '全部状态' && entry.state != _state) return false;
           if (_type != '全部类型' && entry.taskType != _type) return false;
           if (_urgency != '全部优先级' && entry.urgency != _urgency) return false;
@@ -131,7 +131,7 @@ class _TasksPageState extends State<TasksPage> {
                 const SizedBox(width: 7),
                 const Expanded(child: Text('任务执行台账', style: TextStyle(
                   color: Palette.deep, fontSize: 20, fontWeight: FontWeight.w900))),
-                Text(_source == '待交接' ? '待确认交接' : '共 ${visible.length} 项', style: const TextStyle(
+                Text(_handoverStatus == '交接状态' ? '共 ${visible.length} 项' : _handoverStatus, style: const TextStyle(
                   color: Palette.primary, fontWeight: FontWeight.w800)),
                 IconButton(onPressed: _refresh, tooltip: '刷新任务',
                   icon: const Icon(Icons.refresh, size: 21)),
@@ -146,18 +146,30 @@ class _TasksPageState extends State<TasksPage> {
                   contentPadding: EdgeInsets.symmetric(vertical: 8)))),
               const SizedBox(height: 8),
               Wrap(spacing: 7, runSpacing: 7, children: [
-                _select(_source, ['全部来源', '收到的任务', '我发布的',
-                    if (_manager) '待交接'],
-                  (v) => setState(() => _source = v), width: 117),
-                if (_manager) FilterChip(
-                  key: const Key('task_handover_filter'),
-                  label: const Text('待交接'),
-                  selected: _source == '待交接', showCheckmark: false,
-                  onSelected: (v) => setState(() =>
-                    _source = v ? '待交接' : '全部来源')),
+                _select(_source, ['全部来源', '收到的任务', '我发布的'],
+                  (v) => setState(() {
+                    _source = v;
+                    _handoverStatus = '交接状态';
+                  }), width: 104),
+                if (_manager) KeyedSubtree(
+                  key: ValueKey('handover_select_$_handoverStatus'),
+                  child: _select(_handoverStatus,
+                    ['交接状态', '待交接', '已交接'],
+                    (v) => setState(() {
+                      _handoverStatus = v;
+                      if (v != '交接状态') {
+                        _source = '全部来源';
+                        _state = '全部状态';
+                      }
+                    }), width: 104,
+                    controlKey: const Key('task_handover_filter')),
+                ),
                 _select(_state, ['全部状态', '进行中', '已完成',
                     ...issuedStates],
-                  (v) => setState(() => _state = v), width: 114),
+                  (v) => setState(() {
+                    _state = v;
+                    _handoverStatus = '交接状态';
+                  }), width: 104),
                 FilterChip(label: Text(_type != '全部类型' ||
                   _urgency != '全部优先级' || _dateRange != null
                     ? '高级筛选 · 已生效' : '高级筛选'),
@@ -179,10 +191,12 @@ class _TasksPageState extends State<TasksPage> {
                   style: OutlinedButton.styleFrom(visualDensity: VisualDensity.compact),
                 ),
                 if (_dateRange != null || _source != '全部来源' ||
+                  _handoverStatus != '交接状态' ||
                   _state != '全部状态' || _type != '全部类型' ||
                   _urgency != '全部优先级' || _search.text.isNotEmpty)
                   TextButton(onPressed: () => setState(() {
-                    _source = '全部来源'; _state = '全部状态'; _type = '全部类型';
+                    _source = '全部来源'; _handoverStatus = '交接状态';
+                    _state = '全部状态'; _type = '全部类型';
                     _urgency = '全部优先级'; _dateRange = null; _search.clear();
                   }), child: const Text('清空筛选')),
               ]),
@@ -191,8 +205,12 @@ class _TasksPageState extends State<TasksPage> {
                 '发布记录暂不可用，当前仅显示已加载的接收任务',
                 style: TextStyle(color: Palette.coral, fontSize: 11))),
             ])),
-          Expanded(child: _source == '待交接'
-            ? TaskHandoverInbox(app: widget.app, onChanged: _refresh)
+          Expanded(child: _handoverStatus != '交接状态'
+            ? TaskHandoverInbox(
+                key: ValueKey('handover_view_$_handoverStatus'),
+                app: widget.app,
+                historyOnly: _handoverStatus == '已交接',
+                onChanged: _refresh)
             : waiting ? const Center(child: CircularProgressIndicator())
             : receivedSnap.hasError && issuedSnap.hasError
               ? ErrorPanel(error: receivedSnap.error!, onRetry: _refresh)
@@ -204,9 +222,10 @@ class _TasksPageState extends State<TasksPage> {
   );
 
   Widget _select(String value, List<String> options, ValueChanged<String> changed,
-    {required double width, String Function(String)? labels}) =>
+    {required double width, String Function(String)? labels, Key? controlKey}) =>
     SizedBox(width: width, height: 39,
-      child: DropdownButtonFormField<String>(key: ValueKey('${options.first}_$value'),
+      child: DropdownButtonFormField<String>(
+        key: controlKey ?? ValueKey('${options.first}_$value'),
         initialValue: value, isExpanded: true,
         decoration: const InputDecoration(contentPadding:
           EdgeInsets.symmetric(horizontal: 8, vertical: 5)),

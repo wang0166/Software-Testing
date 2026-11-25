@@ -10,6 +10,9 @@ import 'stats_page.dart';
 import 'subordinates_page.dart';
 import 'dispatch_page.dart';
 import 'dispatch_review_page.dart';
+import 'crm_customers_page.dart';
+import 'employee_archive_page.dart';
+import '../crm/crm_models.dart';
 
 /// 默认日历；任务列表、下属动态、统计为同级视图。
 class ViewPage extends StatefulWidget {
@@ -32,7 +35,7 @@ class _ViewPageState extends State<ViewPage> {
   int revision = 0;
   bool openingCreate = false;
   bool focusIssuedAfterCreate = false;
-  static const tabs = ['日历视图', '任务清单', '下属动态', '统计看板'];
+  static const tabs = ['日历视图', '任务清单', '下属动态', '统计看板', '客户CRM', '人员档案'];
 
   Future<void> _createTask() async {
     if (openingCreate) return;
@@ -65,6 +68,72 @@ class _ViewPageState extends State<ViewPage> {
     setState(() => revision++);
   }
 
+  Widget _companyTab(int i) {
+    final active = selected == i;
+    return Stack(clipBehavior: Clip.none, children: [
+      Material(
+        color: active ? Palette.primary : Colors.white,
+        borderRadius: BorderRadius.circular(18),
+        child: InkWell(
+          key: ValueKey('company_tab_$i'),
+          borderRadius: BorderRadius.circular(18),
+          onTap: () {
+            setState(() {
+              selected = i;
+              focusIssuedAfterCreate = false;
+            });
+            if (i == 2) widget.onRefreshIssues?.call();
+            if (i == 1) widget.onRefreshTasks?.call();
+          },
+          child: Container(
+            height: 42,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              border: Border.all(color: active ? Palette.primary : Palette.divider),
+              borderRadius: BorderRadius.circular(18),
+            ),
+            padding: const EdgeInsets.symmetric(horizontal: 3),
+            child: FittedBox(fit: BoxFit.scaleDown,
+              child: Text(tabs[i], maxLines: 1,
+                style: TextStyle(
+                  color: active ? Colors.white : Palette.deep,
+                  fontWeight: FontWeight.w800, fontSize: 12),
+              ),
+            ),
+          ),
+        ),
+      ),
+      // Keep the existing task and subordinate badges when tabs change layout.
+      if (i == 1 && widget.unreadTaskIds.isNotEmpty)
+        Positioned(top: -7, right: -5,
+          child: IgnorePointer(child: TaskUnreadBadge(
+            badgeKey: const Key('task_tab_unread_badge'),
+            count: widget.unreadTaskIds.length,
+          )),
+        ),
+      if (i == 2 && canViewTeam && widget.subordinateIssueCount > 0)
+        Positioned(top: -7, right: -5,
+          child: IgnorePointer(child: IssueCountBadge(
+            badgeKey: const Key('team_tab_issue_badge'),
+            count: widget.subordinateIssueCount,
+          )),
+        ),
+      if (i == 2 && canViewTeam && widget.issueCountUnavailable &&
+          widget.subordinateIssueCount == 0)
+        const Positioned(top: -7, right: -5,
+          child: Tooltip(
+            message: '下属问题数量暂无法更新，请进入下属动态重试',
+            child: CircleAvatar(
+              key: Key('team_tab_issue_unavailable'),
+              radius: 10, backgroundColor: Color(0xFFC48626),
+              child: Text('!', style: TextStyle(
+                color: Colors.white, fontSize: 11, fontWeight: FontWeight.w900)),
+            ),
+          ),
+        ),
+    ]);
+  }
+
   @override
   Widget build(BuildContext context) => Scaffold(
     backgroundColor: Palette.paper,
@@ -95,69 +164,28 @@ class _ViewPageState extends State<ViewPage> {
           child: const Text('甘特图'),
         ) : null,
       )),
-      SizedBox(height: 47, child: ListView(
+      // All company sections remain discoverable without horizontal swiping.
+      Padding(
         padding: const EdgeInsets.symmetric(horizontal: 16),
-        scrollDirection: Axis.horizontal,
-        children: [
-          for (var i = 0; i < tabs.length; i++) Padding(
-            padding: const EdgeInsets.fromLTRB(0, 6, 10, 0),
-            child: Stack(clipBehavior: Clip.none, children: [
-              ChoiceChip(
-                label: Text(tabs[i]),
-                selected: selected == i,
-                showCheckmark: false,
-                selectedColor: Palette.primary, backgroundColor: Colors.white,
-                labelStyle: TextStyle(
-                  color: selected == i ? Colors.white : Palette.deep,
-                  fontWeight: FontWeight.w700, fontSize: 12),
-                side: BorderSide(color: selected == i ? Palette.primary : Palette.divider),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
-                onSelected: (_) {
-                  setState(() {
-                    selected = i;
-                    focusIssuedAfterCreate = false;
-                  });
-                  if (i == 2) widget.onRefreshIssues?.call();
-                  if (i == 1) widget.onRefreshTasks?.call();
-                },
-              ),
-              // 子页标签分别显示独立角标；底部五大导航绝不显示数字。
-              if (i == 1 && widget.unreadTaskIds.isNotEmpty)
-                Positioned(
-                  top: -5, right: -6,
-                  child: IgnorePointer(child: TaskUnreadBadge(
-                    badgeKey: const Key('task_tab_unread_badge'),
-                    count: widget.unreadTaskIds.length,
-                  )),
-                ),
-              if (i == 2 && canViewTeam && widget.subordinateIssueCount > 0)
-                Positioned(
-                  top: -5, right: -6,
-                  child: IgnorePointer(child: IssueCountBadge(
-                    badgeKey: const Key('team_tab_issue_badge'),
-                    count: widget.subordinateIssueCount,
-                  )),
-                ),
-              // If the server cannot calculate the count, display a warning,
-              // never a false red "0" and never a fabricated issue number.
-              if (i == 2 && canViewTeam && widget.issueCountUnavailable &&
-                  widget.subordinateIssueCount == 0)
-                const Positioned(
-                  top: -5, right: -6,
-                  child: Tooltip(
-                    message: '下属问题数量暂无法更新，请进入下属动态重试',
-                    child: CircleAvatar(
-                      key: Key('team_tab_issue_unavailable'),
-                      radius: 10, backgroundColor: Color(0xFFC48626),
-                      child: Text('!', style: TextStyle(
-                        color: Colors.white, fontSize: 11, fontWeight: FontWeight.w900)),
-                    ),
-                  ),
-                ),
-            ]),
-          ),
-        ],
-      )),
+        child: Column(children: [
+          Row(children: [
+            for (var i = 0; i < 4; i++)
+              Expanded(child: Padding(
+                padding: EdgeInsets.only(right: i == 3 ? 0 : 7),
+                child: _companyTab(i),
+              )),
+          ]),
+          const SizedBox(height: 8),
+          Row(children: [
+            Expanded(child: Padding(
+              padding: const EdgeInsets.only(right: 7),
+              child: _companyTab(4),
+            )),
+            if (CrmAccess.forUser(widget.app.user).employees)
+              Expanded(child: _companyTab(5)),
+          ]),
+        ]),
+      ),
       const SizedBox(height: 8),
       Expanded(child: switch (selected) {
         0 => CalendarPage(key: ValueKey('calendar_$revision'),
@@ -169,7 +197,9 @@ class _ViewPageState extends State<ViewPage> {
               onTaskViewed: widget.onTaskViewed),
         2 => SubordinatesPage(key: ValueKey('team_$revision'), app: widget.app,
               onIssueChanged: widget.onRefreshIssues),
-        _ => StatsPage(key: ValueKey('stats_$revision'), app: widget.app),
+        3 => StatsPage(key: ValueKey('stats_$revision'), app: widget.app),
+        4 => CrmCustomersPage(app: widget.app),
+        _ => EmployeeArchivePage(app: widget.app),
       }),
     ]),
   );
