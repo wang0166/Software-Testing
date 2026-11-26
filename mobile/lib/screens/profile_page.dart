@@ -50,7 +50,7 @@ class _ProfilePageState extends State<ProfilePage> {
       ])),
       const SizedBox(height: 20), const Text('个人设置', style: TextStyle(color: Palette.deep, fontWeight: FontWeight.w900, fontSize: 18)), const SizedBox(height: 9),
       Material(color: Colors.white, borderRadius: BorderRadius.circular(24), child: Column(children: [
-        ListTile(leading: const Icon(Icons.settings_outlined, color: Palette.primary), title: const Text('设置', style: TextStyle(fontWeight: FontWeight.w800)), subtitle: const Text('更换头像 · 密码审核 · 账号安全'), trailing: const Icon(Icons.chevron_right_rounded), onTap: () async {
+        ListTile(leading: const Icon(Icons.settings_outlined, color: Palette.primary), title: const Text('设置', style: TextStyle(fontWeight: FontWeight.w800)), subtitle: const Text('更换头像 · 修改密码 · 账号安全'), trailing: const Icon(Icons.chevron_right_rounded), onTap: () async {
           await Navigator.push(context, MaterialPageRoute<void>(builder: (_) => SettingsPage(app: widget.app)));
           _loadAvatar();
         }),
@@ -58,7 +58,7 @@ class _ProfilePageState extends State<ProfilePage> {
         ListTile(leading: const Icon(Icons.shield_outlined, color: Palette.primary), title: const Text('数据与权限', style: TextStyle(fontWeight: FontWeight.w800)), subtitle: const Text('当前账号可访问的组织范围'), trailing: const Icon(Icons.chevron_right_rounded), onTap: () => showAboutDialog(context: context, applicationName: '智能掌上日志系统（潘多拉 Pandora）', children: [Text('角色：${me.roleLabel}\n部门：${me.departmentId ?? '公司级'}\n团队：${me.teamId ?? '部门级'}\n服务端负责校验所有数据访问权限。')]))
       ])),
       const SizedBox(height: 17),
-      Material(color: Palette.mutedBlue, borderRadius: BorderRadius.circular(23), child: const Padding(padding: EdgeInsets.all(15), child: Text('日志与点评遵循组织权限；任务派发申请需经审核，修改密码也需管理员批准。', style: TextStyle(color: Palette.deep, height: 1.5, fontSize: 12)))),
+      Material(color: Palette.mutedBlue, borderRadius: BorderRadius.circular(23), child: const Padding(padding: EdgeInsets.all(15), child: Text('日志与点评遵循组织权限；任务派发申请需经审核，修改密码可自行办理。', style: TextStyle(color: Palette.deep, height: 1.5, fontSize: 12)))),
       const SizedBox(height: 19),
       OutlinedButton.icon(onPressed: () async {
         final ok = await showDialog<bool>(context: context, builder: (ctx) => AlertDialog(title: const Text('退出当前账号？'), actions: [TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('取消')), FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('退出'))]));

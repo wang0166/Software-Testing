@@ -5,6 +5,7 @@ import '../core/daily_todos.dart';
 import '../core/models.dart';
 import '../core/holiday_calendar.dart';
 import '../core/task_issue_utils.dart';
+import '../core/password_policy.dart';
 import 'repository.dart';
 
 class MockRepository implements PandoraRepository {
@@ -25,6 +26,9 @@ class MockRepository implements PandoraRepository {
   bool _isEnabled(UserProfile user) => user.isActive && !disabledUserIds.contains(user.id);
 
   static const demoPassword='demo123456';
+  // Demo-only in-memory overrides; never write passwords to preferences.
+  final Map<int, String> _demoPasswords = {};
+  bool hasChangedDemoPassword(int userId) => _demoPasswords.containsKey(userId);
   UserProfile? _current;
   Future<SharedPreferences> get _prefs => SharedPreferences.getInstance();
   Future<void> _wait() => Future<void>.delayed(const Duration(milliseconds:220));
@@ -44,7 +48,7 @@ class MockRepository implements PandoraRepository {
   @override Future<UserProfile> login(String username,String password) async {
     await _wait();
     for(final u in users) {
-      if(u.username==username.trim() && password==demoPassword) {
+      if(u.username==username.trim() && password==(_demoPasswords[u.id] ?? demoPassword)) {
         if (!_isEnabled(u)) throw const AppFailure('该账号已停用');
         _current=u;
         (await _prefs).setString('pandora_mock_user',u.username);
@@ -58,18 +62,18 @@ class MockRepository implements PandoraRepository {
     // Local demo only; no real admin Web service receives this request.
     (await _prefs).setString('pandora_demo_reset_${username.trim()}', 'PENDING');
   }
-  @override Future<void> requestPasswordChange() async {
-    final pref = await _prefs;
-    final key = 'pandora_demo_password_request_${_user.id}';
-    if (pref.getString(key) == 'PENDING') throw const AppFailure('申请正在等待管理员审核');
-    await pref.setString(key, 'PENDING');
-  }
-  @override Future<String> passwordChangeStatus() async {
-    return (await _prefs).getString('pandora_demo_password_request_${_user.id}') ?? 'NONE';
-  }
-  @override Future<void> completePasswordChange(String newPassword) async {
-    // The demo deliberately cannot approve itself; approval belongs to the Web administrator.
-    throw const AppFailure('演示模式无管理员审批服务，请连接后端完成修改');
+  @override Future<void> changePassword({required String currentPassword,
+    required String newPassword}) async {
+    final user = _user;
+    if (currentPassword != (_demoPasswords[user.id] ?? demoPassword)) {
+      throw const AppFailure('原密码错误');
+    }
+    if (newPassword == currentPassword) {
+      throw const AppFailure('新密码不能与原密码相同');
+    }
+    final error = PasswordPolicy(newPassword).error;
+    if (error != null) throw AppFailure(error);
+    _demoPasswords[user.id] = newPassword;
   }
   @override Future<void> logout() async {_current=null;(await _prefs).remove('pandora_mock_user');}
 

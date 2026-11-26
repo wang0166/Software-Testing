@@ -13,9 +13,8 @@ abstract class PandoraRepository {
   Future<UserProfile> login(String username,String password);
   Future<void> logout();
   Future<void> requestPasswordReset(String username);
-  Future<void> requestPasswordChange();
-  Future<String> passwordChangeStatus();
-  Future<void> completePasswordChange(String newPassword);
+  /// Authenticated self-service change; server verifies the current password.
+  Future<void> changePassword({required String currentPassword, required String newPassword});
   Future<List<WorkLog>> logs({String? date,String? status});
   Future<WorkLog> saveLog(String content,{int? id, String? date});
   Future<WorkLog> submitLog(int id);
