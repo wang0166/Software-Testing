@@ -30,13 +30,35 @@ void main() {
     final logs = await repo.logs();
     expect(logs.map((l) => l.departmentName).toSet(), containsAll(['技术研发部', '产品设计部']));
   });
-  test('密码修改必须先提交审核申请', () async {
+  test('自主修改密码验证原密码、强度和账号隔离，无需审批', () async {
     final repo = MockRepository();
+    const next = 'Cloud!Orbit7River';
     await repo.login('demo001', 'demo123456');
-    expect(await repo.passwordChangeStatus(), 'NONE');
-    await repo.requestPasswordChange();
-    expect(await repo.passwordChangeStatus(), 'PENDING');
-    expect(() => repo.completePasswordChange('newSecurePassword123'), throwsA(isA<AppFailure>()));
+    await expectLater(repo.changePassword(currentPassword: 'wrong', newPassword: next),
+      throwsA(isA<AppFailure>()));
+    await expectLater(repo.changePassword(currentPassword: 'demo123456', newPassword: 'weak'),
+      throwsA(isA<AppFailure>()));
+    await repo.changePassword(currentPassword: 'demo123456', newPassword: next);
+    await expectLater(repo.changePassword(currentPassword: next, newPassword: next),
+      throwsA(isA<AppFailure>()));
+    await repo.logout();
+    await expectLater(repo.login('demo001', 'demo123456'), throwsA(isA<AppFailure>()));
+    expect((await repo.login('demo001', next)).username, 'demo001');
+    await repo.logout();
+    expect((await repo.login('demo002', 'demo123456')).username, 'demo002');
+    final prefs = await SharedPreferences.getInstance();
+    expect(prefs.getKeys().any((key) => prefs.get(key) == next), isFalse);
+  });
+  test('未登录和已停用员工不能修改密码', () async {
+    final disabled = <int>{};
+    final repo = MockRepository(disabledUserIds: disabled);
+    const next = 'Cloud!Orbit7River';
+    await expectLater(repo.changePassword(currentPassword: 'demo123456', newPassword: next),
+      throwsA(isA<AppFailure>()));
+    await repo.login('demo001', 'demo123456');
+    disabled.add(12);
+    await expectLater(repo.changePassword(currentPassword: 'demo123456', newPassword: next),
+      throwsA(isA<AppFailure>()));
   });
   test('管理员不可写日志',() async {
     final repo=MockRepository();

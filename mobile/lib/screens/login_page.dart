@@ -72,7 +72,7 @@ class _LoginPageState extends State<LoginPage> {
       if (pandoraDemo) ...[const SizedBox(height: 17), Material(color: Palette.pastel, borderRadius: BorderRadius.circular(24), child: ExpansionTile(
         leading: const Icon(Icons.science_rounded, color: Palette.primary), title: const Text('演示账号', style: TextStyle(fontWeight: FontWeight.w800, color: Palette.deep)),
         subtitle: const Text('本机演示 · 无需后端', style: TextStyle(fontSize: 11)), childrenPadding: const EdgeInsets.fromLTRB(13, 0, 13, 12), children: [
-          Wrap(spacing: 6, runSpacing: 5, children: [for (final u in MockRepository.users) ActionChip(label: Text('${u.name} · ${u.roleLabel}', style: const TextStyle(fontSize: 11)), onPressed: () {username.text = u.username; password.text = MockRepository.demoPassword; setState(() {});})]),
+          Wrap(spacing: 6, runSpacing: 5, children: [for (final u in MockRepository.users) ActionChip(label: Text('${u.name} · ${u.roleLabel}', style: const TextStyle(fontSize: 11)), onPressed: () {username.text = u.username; final repo = widget.app.repo; password.text = repo is MockRepository && repo.hasChangedDemoPassword(u.id) ? '' : MockRepository.demoPassword; setState(() {});})]),
         ],
       ))],
       const SizedBox(height: 19), const Center(child: Text('安全登录 · 分级授权 · 每日记录', style: TextStyle(color: Palette.muted, fontSize: 11))),

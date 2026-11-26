@@ -5,6 +5,7 @@ import 'package:http/http.dart' as http;
 import '../core/daily_todos.dart';
 import '../core/models.dart';
 import '../core/holiday_calendar.dart';
+import '../core/password_policy.dart';
 import 'repository.dart';
 
 /// 与 documents/后端接口文档.md 的统一响应 {code,message,data} 对齐。
@@ -114,20 +115,33 @@ class ApiRepository implements PandoraRepository {
     await _saveTokens(access,refresh);
     return user;
   }
-  // The following endpoints require backend implementation and Web-admin approval.
-  // Never treat HTTP 404/500 as a successful password change.
+  // Forgotten-password recovery is a separate flow. Never treat an
+  // unconfirmed password change as successful.
   @override Future<void> requestPasswordReset(String username) async {
     await _request('POST','/auth/password-reset-requests',authenticated:false,body:{'username':username.trim()});
   }
-  @override Future<void> requestPasswordChange() async {
-    await _request('POST','/account/password-change-requests',body:{});
-  }
-  @override Future<String> passwordChangeStatus() async {
-    final data=mapOf(_data(await _request('GET','/account/password-change-requests/me')));
-    return textOf(data['status'],'NONE');
-  }
-  @override Future<void> completePasswordChange(String newPassword) async {
-    await _request('POST','/account/password-change',body:{'newPassword':newPassword});
+  @override Future<void> changePassword({required String currentPassword,
+    required String newPassword}) async {
+    if (_accessToken == null || _accessToken!.isEmpty) {
+      throw const AppFailure('请先登录');
+    }
+    if (currentPassword.isEmpty || currentPassword == newPassword) {
+      throw const AppFailure('请输入原密码，且新密码不能与原密码相同');
+    }
+    final error = PasswordPolicy(newPassword).error;
+    if (error != null) throw AppFailure(error);
+    final uri = _uri('/account/password-change');
+    const localHosts = {'localhost', '127.0.0.1', '::1', '10.0.2.2'};
+    if (uri.scheme != 'https' &&
+        !(uri.scheme == 'http' && localHosts.contains(uri.host))) {
+      throw const AppFailure('修改密码需要 HTTPS 安全连接');
+    }
+    final data = mapOf(_data(await _request('POST', '/account/password-change',
+      body: {'currentPassword': currentPassword, 'newPassword': newPassword},
+      retry: false)));
+    if (data['status'] != 'CHANGED') {
+      throw const AppFailure('服务器未明确确认密码已修改');
+    }
   }
   @override Future<void> logout() async {
     try {
