@@ -20,7 +20,10 @@ export function nameError(value: string): string {
   const name = value.trim();
   if (!name) return '请填写姓名';
   if (name.length > 64) return '姓名最多 64 个字符';
-  if (!/\p{L}/u.test(name) || /[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/u.test(value)) return '姓名须包含文字，且不能含控制字符';
+  // 允许文字和组合音标，连接符只出现在两段文字之间。
+  if (/[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/u.test(value) || !/^\p{L}[\p{L}\p{M}]*(?:[ ·・-]\p{L}[\p{L}\p{M}]*)*$/u.test(name)) {
+    return '姓名只能包含文字，空格、中点和连字符只能用在姓名中间';
+  }
   return '';
 }
 

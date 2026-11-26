@@ -218,7 +218,7 @@ function UsersContent() {
         <div className="pd-pagination"><span>第 {page} / {pages} 页 · 共 {total} 人</span><div className="pd-actions"><button className="pd-btn" disabled={page <= 1} onClick={() => setPage(p => p - 1)}>上一页</button><button className="pd-btn" disabled={page >= pages} onClick={() => setPage(p => p + 1)}>下一页</button></div></div>
       </>}
     </div>
-    {showAdd && <Modal title={editing ? '编辑用户' : '新增用户'} onClose={closeUser} footer={<><button className="pd-btn" disabled={saving} onClick={closeUser}>取消</button><button className="pd-btn primary" type="submit" form="user-form" disabled={saving}>{saving ? '保存中…' : '保存'}</button></>}>
+    {showAdd && <Modal title={editing ? '编辑用户' : '新增用户'} footer={<><button className="pd-btn" disabled={saving} onClick={closeUser}>取消</button><button className="pd-btn primary" type="submit" form="user-form" disabled={saving}>{saving ? '保存中…' : '保存'}</button></>}>
       <form id="user-form" className="pd-form" noValidate onSubmit={e => { e.preventDefault(); saveUser(); }}>
         <p className="pd-field-hint">带 <span className="pd-required">*</span> 的信息为必填项，请核对员工资料后保存。</p>
         <fieldset className="pd-form-section" disabled={saving}><legend>账号与身份</legend>

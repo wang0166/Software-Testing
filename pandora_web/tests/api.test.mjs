@@ -6,9 +6,9 @@ import { createDebugBackend } from './debug-fixture.mjs';
 
 // 将浏览器模块打包为独立测试入口，不依赖新增测试框架。
 const outfile = resolve('dist/tests/api-bundle.mjs');
-await build({ stdin: { contents: "export * from './src/api/client'; export * from './src/api/http'; export * from './src/api/capabilities'; export * from './src/api/debug'; export * from './src/api/debugAutomation'; export * from './src/utils/matterTime'; export * from './src/utils/identity';", resolveDir: process.cwd() },
+await build({ stdin: { contents: "export * from './src/api/client'; export * from './src/api/http'; export * from './src/api/capabilities'; export * from './src/api/debug'; export * from './src/api/debugAutomation'; export * from './src/utils/matterTime'; export * from './src/utils/identity'; export { nameError } from './src/utils/userValidation';", resolveDir: process.cwd() },
   bundle: true, platform: 'node', format: 'esm', outfile, define: { 'import.meta.env': '{"DEV":true,"VITE_API_BASE":"/api","VITE_USE_MOCK":"false"}' } });
-const { api, request, requestPage, setTokens, getToken, setMockMode, supports, BACKEND_CAPABILITIES, mockTeams, mockUsers, formatMatterTime, splitMatterTime, DEBUG_ENDPOINTS, redactDebugData, runAutomaticDebug } = await import(new URL('../dist/tests/api-bundle.mjs', import.meta.url));
+const { api, request, requestPage, setTokens, getToken, setMockMode, supports, BACKEND_CAPABILITIES, mockTeams, mockUsers, formatMatterTime, splitMatterTime, nameError, DEBUG_ENDPOINTS, redactDebugData, runAutomaticDebug } = await import(new URL('../dist/tests/api-bundle.mjs', import.meta.url));
 const memory = new Map();
 globalThis.localStorage = { getItem: key => memory.get(key) ?? null, setItem: (key, value) => memory.set(key, String(value)), removeItem: key => memory.delete(key) };
 globalThis.window = new EventTarget();
@@ -261,6 +261,38 @@ test('事项只接受上海时区整点；拒绝缺失小时、非法日期、�
     };
     await api.updateMatter('50', { ...input, deadline: '2026-10-30T00:00:00+08:00' });
   } finally { BACKEND_CAPABILITIES.matterWrite = false; }
+});
+
+test('事件纪历史负排序可读取，新增及编辑只提交范围内的正整数', async () => {
+  const writes = [];
+  const input = { title: ' 排序边界 ', content: '备注', startDate: '2026-11-26T09:00:00+08:00', deadline: '2026-11-26T09:00:00+08:00' };
+  globalThis.fetch = async (url, options) => {
+    if (options.method === 'POST' || options.method === 'PUT') {
+      writes.push({ method: options.method, value: JSON.parse(options.body).sortOrder });
+      return response({ id: 2 });
+    }
+    const size = Number(new URL(url, 'http://test').searchParams.get('size'));
+    return response({ items: [{ id: 1, ...input, sortOrder: -2 }], page: 1, size, total: 1 });
+  };
+  assert.equal((await api.listMatters()).items[0].sortOrder, -2);
+  for (const sortOrder of [-2, -1, 0, 3.5, NaN, 2147483648]) {
+    await assert.rejects(api.createMatter({ ...input, sortOrder }), /请输入 1 到 2147483647/);
+    await assert.rejects(api.updateMatter('1', { ...input, sortOrder }), /请输入 1 到 2147483647/);
+  }
+  assert.deepEqual(writes, []);
+  await api.createMatter({ ...input, sortOrder: 1 });
+  await api.updateMatter('1', { ...input, sortOrder: 2 });
+  await api.updateMatter('1', { ...input, sortOrder: 2147483647 });
+  assert.deepEqual(writes, [{ method: 'POST', value: 1 }, { method: 'PUT', value: 2 }, { method: 'PUT', value: 2147483647 }]);
+});
+
+test('姓名校验拦截夹杂符号、数字或表情的值，允许文字和合法连接符', () => {
+  for (const name of ['张三', '欧阳娜娜', '阿不都·艾力', '山田・太郎', 'Ana María', 'Jean-Luc', 'Jose\u0301', ' 张三 ']) {
+    assert.equal(nameError(name), '');
+  }
+  for (const name of ['&ww', '张&三', '张3', '张😀', '   ', '·张三', '张三-', '张··三', '张\t三']) {
+    assert.notEqual(nameError(name), '');
+  }
 });
 
 test('达到事件纪上限时重新核对服务端总数，阻止新增但保留原有记录的编辑', async () => {

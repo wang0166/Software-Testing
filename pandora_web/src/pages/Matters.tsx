@@ -5,7 +5,7 @@ import { isMock } from '../api/http';
 import { useAsync } from '../hooks/hooks';
 import { useFormValidation } from '../hooks/formValidation';
 import { Empty, Modal, Skeleton, useToast } from '../components/ui';
-import { formatMatterTime, isMatterHour, isMatterSortOrder, joinMatterTime, splitMatterTime } from '../utils/matterTime';
+import { formatMatterTime, isMatterHour, isMatterSortOrder, joinMatterTime, MATTER_SORT_ORDER_ERROR, splitMatterTime } from '../utils/matterTime';
 
 const HOURS = Array.from({ length: 24 }, (_, hour) => String(hour).padStart(2, '0'));
 const PAGE_SIZE = MATTER_LIMIT;
@@ -42,7 +42,7 @@ export function Matters() {
     deadline: isMatterHour(joinMatterTime(draft.deadline, '00')) ? '' : '请选择有效截止日期',
     deadlineHour: !HOURS.includes(draft.deadlineHour) ? '请选择截止小时'
       : isMatterHour(start) && isMatterHour(deadline) && deadline < start ? '截止时间不得早于开始时间' : '',
-    sortOrder: /^-?\d+$/.test(draft.sortOrder.trim()) && isMatterSortOrder(sortOrder) ? '' : '请输入 -2147483648 到 2147483647 之间的整数',
+    sortOrder: /^\d+$/.test(draft.sortOrder.trim()) && isMatterSortOrder(sortOrder) ? '' : MATTER_SORT_ORDER_ERROR,
   };
   const validation = useFormValidation('matter-form', errors);
   const feedback = (field: MatterField) => validation.error(field) && <small id={validation.errorId(field)} className="pd-field-error" role="alert">{validation.error(field)}</small>;
@@ -102,7 +102,7 @@ export function Matters() {
           <select className="pd-select" {...validation.field('deadlineHour')} aria-label="截止小时" required value={draft.deadlineHour} onChange={e => changeDraft('deadlineHour', e.target.value)}><option value="">选择小时</option>{HOURS.map(hour => <option key={hour} value={hour}>{hour} 时</option>)}</select>
         </div>{feedback('deadline')}{feedback('deadlineHour')}</fieldset>
         <p className="pd-field-hint">北京时间，仅支持整点。旧记录只有日期时，保存前需补选小时。</p>
-        <label>显示顺序（越小越靠前）<input className="pd-input" {...validation.field('sortOrder')} aria-label="事件排序" required inputMode="numeric" value={draft.sortOrder} onChange={e => changeDraft('sortOrder', e.target.value)} />{feedback('sortOrder')}</label>
+        <label>显示顺序（从 1 开始，越小越靠前）<input className="pd-input" {...validation.field('sortOrder')} aria-label="事件排序" required inputMode="numeric" value={draft.sortOrder} onChange={e => changeDraft('sortOrder', e.target.value)} />{feedback('sortOrder')}</label>
         {isMock() && <p className="pd-hint">演示改动仅在当前会话有效；刷新后恢复演示数据。</p>}
         {error && <p className="pd-inline-error" role="alert">{error}</p>}
         </fieldset>
