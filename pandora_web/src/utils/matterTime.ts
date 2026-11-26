@@ -1,8 +1,10 @@
 // 事项按上海时区整点记录，避免浏览器所在时区改变用户选择的小时。
 const HOUR_PATTERN = /^(\d{4}-\d{2}-\d{2})T([01]\d|2[0-3]):00:00\+08:00$/;
+const MAX_MATTER_SORT_ORDER = 2147483647;
+export const MATTER_SORT_ORDER_ERROR = '请输入 1 到 ' + MAX_MATTER_SORT_ORDER + ' 之间的整数';
 
 export function isMatterSortOrder(value: number): boolean {
-  return Number.isInteger(value) && value >= -2147483648 && value <= 2147483647;
+  return Number.isInteger(value) && value >= 1 && value <= MAX_MATTER_SORT_ORDER;
 }
 
 export function isMatterHour(value: string): boolean {

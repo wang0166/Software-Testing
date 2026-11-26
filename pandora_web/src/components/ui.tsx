@@ -34,7 +34,7 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
 const modalStack: HTMLElement[] = [];
 let originalOverflow = '';
 let originalInert = false;
-export function Modal({ title, onClose, children, footer }: { title: string; onClose: () => void; children: React.ReactNode; footer?: React.ReactNode }) {
+export function Modal({ title, onClose, children, footer }: { title: string; onClose?: () => void; children: React.ReactNode; footer?: React.ReactNode }) {
   const titleId = useId();
   const dialog = useRef<HTMLDivElement>(null);
   const close = useRef(onClose);
@@ -55,7 +55,7 @@ export function Modal({ title, onClose, children, footer }: { title: string; onC
     initial.focus();
     const onKey = (event: KeyboardEvent) => {
       if (modalStack[modalStack.length - 1] !== node) return;
-      if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); close.current(); }
+      if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); close.current?.(); }
       if (event.key === 'Tab') {
         const items = controls(), first = items[0] ?? node, last = items[items.length - 1] ?? node;
         if (event.shiftKey && (document.activeElement === first || !node.contains(document.activeElement))) { event.preventDefault(); last.focus(); }
@@ -79,7 +79,7 @@ export function Modal({ title, onClose, children, footer }: { title: string; onC
       <div className="pd-modal" role="dialog" aria-modal="true" aria-labelledby={titleId} tabIndex={-1} ref={dialog} onClick={(e) => e.stopPropagation()}>
         <div className="pd-modal-head">
           <span id={titleId}>{title}</span>
-          <button className="pd-btn ghost" type="button" onClick={onClose} aria-label="关闭">×</button>
+          {onClose && <button className="pd-btn ghost" type="button" onClick={onClose} aria-label="关闭">×</button>}
         </div>
         <div className="pd-modal-body">{children}</div>
         {footer && <div className="pd-modal-foot">{footer}</div>}

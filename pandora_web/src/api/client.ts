@@ -3,7 +3,7 @@
 import { request, requestPage, clearTokens, getToken, getRefreshToken, isMock, setTokens, sleep, type PageData } from './http';
 import { requireCapability } from './capabilities';
 import { labelToCode, codeToLabel, statusLabel, statusValue } from '../constants/roles';
-import { isMatterHour, isMatterSortOrder } from '../utils/matterTime';
+import { isMatterHour, isMatterSortOrder, MATTER_SORT_ORDER_ERROR } from '../utils/matterTime';
 import { identityError, normalizeIdentity } from '../utils/identity';
 import { duplicateUserFields, duplicateUserMessages } from '../utils/userValidation';
 import { duplicateOrganizationNameMessage, organizationNameExists, organizationTextErrors } from '../utils/organizationValidation';
@@ -463,7 +463,7 @@ function matterInput(m: CompanyMatterInput): CompanyMatterInput {
   const title = m.title.trim(), content = m.content.trim();
   if (!title || !content) throw new Error('事件名称和备注不能为空');
   if (title.length > 200 || content.length > 100000) throw new Error('事件名称最多 200 字，备注最多 100000 字');
-  if (!isMatterSortOrder(m.sortOrder)) throw new Error('排序必须为 32 位整数');
+  if (!isMatterSortOrder(m.sortOrder)) throw new Error(MATTER_SORT_ORDER_ERROR);
   if (!isMatterHour(m.startDate) || !isMatterHour(m.deadline)) throw new Error('请填写有效的开始时间和截止时间（精确到小时）');
   if (m.deadline < m.startDate) throw new Error('截止时间不得早于开始时间');
   return { title, content, sortOrder: m.sortOrder, startDate: m.startDate, deadline: m.deadline };
