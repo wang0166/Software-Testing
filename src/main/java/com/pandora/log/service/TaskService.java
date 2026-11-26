@@ -553,6 +553,10 @@ public class TaskService {
                             + "reviewed_at = now(), updated_at = now() WHERE id = ? AND status = 'PENDING'",
                     currentUser.id(), trim(request == null ? null : request.comment()), requestId);
             ChangeRequestViewDto approved = requireChangeRequest(requestId);
+            // 交接记录引用任务接收记录且使用 RESTRICT；审批删除任务时先清理该任务的交接记录。
+            jdbcTemplate.update("DELETE FROM task_handovers WHERE original_assignment_id IN " +
+                    "(SELECT id FROM task_assignments WHERE task_id=?) OR new_assignment_id IN " +
+                    "(SELECT id FROM task_assignments WHERE task_id=?)",existing.taskId(),existing.taskId());
             jdbcTemplate.update("DELETE FROM tasks WHERE id = ?", existing.taskId());
             auditTrail.success("通过删除申请", "TASK", requestId, AuditTrail.USER,
                     "通过删除申请 #" + requestId + "，任务 #" + existing.taskId(),

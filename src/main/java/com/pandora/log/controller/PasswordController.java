@@ -22,13 +22,10 @@ public class PasswordController {
     public ApiResponse<Void> reset(@Valid @RequestBody ResetCompletion r,HttpServletRequest request) {
         service.completeReset(r.token(),r.newPassword(),request.getRemoteAddr()); return ApiResponse.success();
     }
-    @PostMapping("/account/password-change-requests")
-    public ApiResponse<StatusDto> requestChange() { return ApiResponse.success(service.requestChange()); }
-    @GetMapping("/account/password-change-requests/me")
-    public ApiResponse<StatusDto> status() { return ApiResponse.success(service.changeStatus()); }
     @PostMapping("/account/password-change")
-    public ApiResponse<Void> change(@Valid @RequestBody ChangeRequest r) {
-        service.completeChange(r.newPassword()); return ApiResponse.success();
+    public ApiResponse<ChangeResult> change(@Valid @RequestBody ChangeRequest r, HttpServletRequest request) {
+        service.completeChange(r.currentPassword(),r.newPassword(),request.getRemoteAddr());
+        return ApiResponse.success("密码修改成功",new ChangeResult("CHANGED"));
     }
     @GetMapping("/password-requests")
     public ApiResponse<PageResult<RequestDto>> list(@RequestParam(required=false) String status,

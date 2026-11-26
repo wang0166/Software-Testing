@@ -16,6 +16,7 @@ import org.springframework.test.context.*;
 import org.springframework.test.web.servlet.*;
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 import com.fasterxml.jackson.databind.*;
+import com.pandora.log.security.PasswordService;
 import com.pandora.log.support.EmbeddedPostgresSupport;
 
 /** 在独立 PostgreSQL 数据库内验证 SQL、事务、权限与前端契约，不接触业务数据库。 */
@@ -35,6 +36,7 @@ class AdminApiContractTest extends EmbeddedPostgresSupport {
     @Autowired ObjectMapper json;
     @Autowired JdbcTemplate jdbc;
     @Autowired PasswordEncoder passwords;
+    @Autowired PasswordService passwordService;
     private long admin, company, department, otherDepartment, team, otherTeam;
     private String token;
 
@@ -57,7 +59,7 @@ class AdminApiContractTest extends EmbeddedPostgresSupport {
         body.put("gender", "女"); body.put("idNumber", "110101200001010010");
         long id = ok(post("/api/users"), body).path("data").path("id").asLong();
         String hash = jdbc.queryForObject("SELECT password_hash FROM users WHERE id=?", String.class, id);
-        assertThat(hash).isNotEqualTo(PASSWORD); assertThat(passwords.matches(PASSWORD, hash)).isTrue();
+        assertThat(hash).isNotEqualTo(PASSWORD); assertThat(passwordService.matches(PASSWORD, hash)).isTrue();
         JsonNode profile = ok(get("/api/users/" + id), null).path("data");
         assertThat(profile.path("username").asText()).isEqualTo("custom_account");
         assertThat(profile.path("phone").asText()).isEqualTo("13000000001");

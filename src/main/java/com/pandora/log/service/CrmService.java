@@ -60,10 +60,11 @@ public class CrmService {
         StringBuilder where = new StringBuilder(" WHERE ").append(scope.sql());
         List<Object> args = new ArrayList<>(scope.args());
         if (keyword != null && !keyword.isBlank()) {
-            where.append(" AND (c.name ILIKE ? OR CAST(c.id AS TEXT)=? OR c.remark ILIKE ?)");
+            where.append(" AND (c.name ILIKE ? OR CAST(c.id AS TEXT)=? OR c.remark ILIKE ? OR c.member_tier ILIKE ?)");
             String pattern = "%" + keyword.trim() + "%";
             args.add(pattern);
             args.add(keyword.trim());
+            args.add(pattern);
             args.add(pattern);
         }
         if (category != null && !category.isBlank()) {
@@ -73,8 +74,11 @@ public class CrmService {
             args.add(value);
         }
         if (business != null && !business.isBlank()) {
-            where.append(" AND c.business=?");
-            args.add(business.trim());
+            String selected=business.trim();
+            String code=businessCode(selected);
+            where.append(code.equals(selected) ? " AND c.business=?" : " AND c.business IN (?,?)");
+            args.add(selected);
+            if (!code.equals(selected)) args.add(code);
         }
         Long total = jdbc.queryForObject("SELECT COUNT(*) FROM crm_customers c" + where,
                 Long.class, args.toArray());
@@ -353,6 +357,19 @@ public class CrmService {
 
     private static String upper(String value) {
         return value == null ? "" : value.trim().toUpperCase();
+    }
+
+    private static String businessCode(String value) {
+        return switch (value) {
+            case "线上商城" -> "MALL";
+            case "演出活动" -> "PERFORMANCE";
+            case "高端私宴" -> "BANQUET";
+            case "企业参访" -> "VISIT";
+            case "线下沙龙" -> "SALON";
+            case "会员服务" -> "SERVICE";
+            case "其他业务" -> "OTHER";
+            default -> value;
+        };
     }
 
     private static String blank(String value) {

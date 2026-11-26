@@ -1,7 +1,9 @@
 package com.pandora.log.service;
 
 import java.time.LocalDateTime;
+import java.time.LocalDate;
 import java.time.OffsetDateTime;
+import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -102,6 +104,7 @@ public class TaskHandoverService {
                 request.note().isBlank() || request.note().trim().length() > 1000) {
             throw new BusinessException(ErrorCode.VALIDATION_FAILED);
         }
+        LocalDateTime deadline = parseDeadline(request.deadline());
         HandoverRow row = requireVisible(handoverId, user, true);
         if (!"PENDING".equals(row.status())) {
             throw new BusinessException(ErrorCode.HANDOVER_ALREADY_COMPLETED);
@@ -134,12 +137,16 @@ public class TaskHandoverService {
         if (row.progressNote() != null && !row.progressNote().isBlank()) {
             progressNote += "；原进度说明：" + row.progressNote();
         }
+        if (progressNote.length() > 1000) progressNote = progressNote.substring(0, 1000);
         jdbc.update("INSERT INTO task_progress_updates(assignment_id,author_id,execution_status,progress_percent,note) " +
                 "VALUES (?,?,?,?,?)", assignmentId, user.id(), row.executionStatus(), progress, progressNote);
+        if (deadline != null) {
+            jdbc.update("UPDATE tasks SET deadline=?,updated_at=now() WHERE id=?",deadline,row.taskId());
+        }
         int changed = jdbc.update("UPDATE task_handovers SET status='COMPLETED',new_assignee_id=?," +
                 "new_assignment_id=?,note=?,deadline=?,completed_by=?,completed_at=now() " +
                 "WHERE id=? AND status='PENDING'", request.newAssigneeId(), assignmentId,
-                request.note().trim(), request.deadline(), user.id(), handoverId);
+                request.note().trim(), deadline, user.id(), handoverId);
         if (changed != 1) throw new BusinessException(ErrorCode.HANDOVER_ALREADY_COMPLETED);
         audit.success("确认任务交接", "TASK_HANDOVER", handoverId, AuditTrail.USER,
                 "任务已交接给新的在职负责人", List.of());
@@ -220,6 +227,18 @@ public class TaskHandoverService {
 
     private static Long nullableLong(java.sql.ResultSet rs, String column) throws java.sql.SQLException {
         return rs.getObject(column) == null ? null : rs.getLong(column);
+    }
+
+    private static LocalDateTime parseDeadline(String value) {
+        if (value == null || value.isBlank()) return null;
+        String clean = value.trim();
+        try {
+            return clean.length() == 10 ? LocalDate.parse(clean).atTime(23, 59)
+                    : LocalDateTime.parse(clean);
+        } catch (DateTimeParseException exception) {
+            throw new BusinessException(ErrorCode.VALIDATION_FAILED,
+                    "截止日期须为 YYYY-MM-DD 或本地日期时间");
+        }
     }
 
     private record Scope(String sql, Object[] args) {

@@ -15,9 +15,10 @@ import com.pandora.log.dto.PasswordDtos.*;
 import com.pandora.log.mapper.UserMapper;
 import com.pandora.log.security.CurrentUserContext;
 import com.pandora.log.security.PasswordService;
+import com.pandora.log.security.PasswordPolicy;
 import com.pandora.log.security.TokenHashService;
 
-/** 密码审批只授权一次操作，不保存申请人的新密码；恢复凭据只保存摘要。 */
+/** 已登录用户自主改密；忘记密码审批只授权一次恢复操作，恢复凭据只保存摘要。 */
 @Service
 public class PasswordRequestService {
     private static final Set<String> STATUSES = Set.of("PENDING","APPROVED","REJECTED","CONSUMED","EXPIRED","CANCELLED");
@@ -28,14 +29,16 @@ public class PasswordRequestService {
     private final AdminSupport support;
     private final CurrentUserContext context;
     private final PasswordService passwords;
+    private final PasswordPolicy passwordPolicy;
     private final PasswordRequestLimiter limiter;
     private final UserMapper users;
     private final Clock clock;
 
     public PasswordRequestService(JdbcTemplate jdbc, AdminSupport support, CurrentUserContext context,
-            PasswordService passwords, PasswordRequestLimiter limiter, UserMapper users, Clock clock) {
+            PasswordService passwords, PasswordPolicy passwordPolicy, PasswordRequestLimiter limiter,
+            UserMapper users, Clock clock) {
         this.jdbc=jdbc; this.support=support; this.context=context; this.passwords=passwords;
-        this.limiter=limiter; this.users=users; this.clock=clock;
+        this.passwordPolicy=passwordPolicy; this.limiter=limiter; this.users=users; this.clock=clock;
     }
 
     @Transactional
@@ -53,42 +56,17 @@ public class PasswordRequestService {
         return new Accepted("如果账号可用，申请已受理，请联系管理员完成身份核验。");
     }
 
-    @Transactional
-    public StatusDto requestChange() {
-        CurrentUser user = context.require(); support.lock(); expire();
-        if (support.exists("SELECT EXISTS(SELECT 1 FROM password_requests WHERE user_id=? AND kind='CHANGE' "
-                + "AND status IN ('PENDING','APPROVED'))", user.id())) {
-            throw new BusinessException(ErrorCode.PASSWORD_REQUEST_CONFLICT);
-        }
-        OffsetDateTime expiry = now().plusHours(24);
-        Long id = jdbc.queryForObject("INSERT INTO password_requests(user_id,kind,auth_version,created_at,expires_at) "
-                + "SELECT id,'CHANGE',auth_version,?,? FROM users WHERE id=? RETURNING id",Long.class,now(),expiry,user.id());
-        audit(user.id(),"申请修改密码",id);
-        return new StatusDto("PENDING",expiry);
-    }
-
-    public StatusDto changeStatus() {
-        Long user = context.require().id();
-        List<RequestRow> rows = jdbc.query("SELECT * FROM password_requests WHERE user_id=? AND kind='CHANGE' "
-                + "ORDER BY id DESC LIMIT 1",MAPPER,user);
-        if (rows.isEmpty()) return new StatusDto("NONE",null);
-        RequestRow row=rows.get(0);
-        String status = effective(row);
-        return Set.of("PENDING","APPROVED","REJECTED").contains(status)
-                ? new StatusDto(status,row.expiresAt()) : new StatusDto("NONE",null);
-    }
-
     public PageResult<RequestDto> list(String status, String kind, Integer page, Integer size) {
         support.require("user:manage");
         if (status!=null && !STATUSES.contains(status)) AdminSupport.invalid("申请状态非法");
-        if (kind!=null && !Set.of("CHANGE","RESET").contains(kind)) AdminSupport.invalid("申请类型非法");
+        if (kind!=null && !"RESET".equals(kind)) AdminSupport.invalid("仅支持找回密码申请");
         PageQuery pq=PageQuery.of(page,size);
         String table=" FROM (SELECT r.*,u.username,u.real_name,CASE WHEN r.status IN ('PENDING','APPROVED') "
                 + "AND (r.expires_at<=? OR r.auth_version<>u.auth_version) THEN 'EXPIRED' "
                 + "ELSE r.status END AS effective_status FROM password_requests r JOIN users u ON u.id=r.user_id) p WHERE 1=1";
         List<Object> args=new ArrayList<>(List.of(now()));
         if (status!=null) { table+=" AND effective_status=?"; args.add(status); }
-        if (kind!=null) { table+=" AND kind=?"; args.add(kind); }
+        table+=" AND kind='RESET'";
         Long total=jdbc.queryForObject("SELECT count(*)"+table,Long.class,args.toArray());
         args.add(pq.size());args.add(pq.offset());
         return new PageResult<>(total,pq.page(),pq.size(),jdbc.query("SELECT id,user_id,username,real_name,kind,"
@@ -115,6 +93,7 @@ public class PasswordRequestService {
             throw new BusinessException(ErrorCode.INVALID_CREDENTIALS);
         }
         RequestRow row=find(id);
+        if (!"RESET".equals(row.kind())) throw new BusinessException(ErrorCode.NOT_FOUND);
         if (row.userId().equals(actor.id())) throw new BusinessException(ErrorCode.FORBIDDEN,"不能审批自己的密码申请");
         if (!"PENDING".equals(effective(row))) throw new BusinessException(ErrorCode.PASSWORD_REQUEST_CONFLICT);
         if (users.findById(row.userId()).isDisabled()) throw new BusinessException(ErrorCode.PASSWORD_REQUEST_CONFLICT);
@@ -131,13 +110,32 @@ public class PasswordRequestService {
     }
 
     @Transactional
-    public void completeChange(String newPassword) {
-        CurrentUser user=context.require(); support.lock();
-        RequestRow row=jdbc.query("SELECT * FROM password_requests WHERE user_id=? AND kind='CHANGE' "
-                + "AND status='APPROVED' ORDER BY id DESC LIMIT 1",MAPPER,user.id()).stream().findFirst()
-                .orElseThrow(()->new BusinessException(ErrorCode.PASSWORD_APPROVAL_REQUIRED));
-        if (!"APPROVED".equals(effective(row))) throw new BusinessException(ErrorCode.PASSWORD_APPROVAL_REQUIRED);
-        consume(row,newPassword,user.id());
+    public void completeChange(String currentPassword, String newPassword, String ip) {
+        CurrentUser actor=context.require();
+        if (!limiter.allow("password-change",String.valueOf(actor.id()),ip)) {
+            throw new BusinessException(ErrorCode.TOO_MANY_REQUESTS);
+        }
+        support.lock();
+        var user=users.findById(actor.id());
+        if (user==null || !"ACTIVE".equals(user.getStatus())) {
+            throw new BusinessException(ErrorCode.ACCOUNT_DISABLED);
+        }
+        if (user.isLockedAt(now())) throw new BusinessException(ErrorCode.ACCOUNT_LOCKED);
+        if (!passwords.matches(currentPassword,user.getPasswordHash())) {
+            throw new BusinessException(ErrorCode.INVALID_CREDENTIALS,"原密码错误");
+        }
+        passwordPolicy.validate(newPassword);
+        if (passwords.matches(newPassword,user.getPasswordHash())) {
+            AdminSupport.invalid("新密码不能与原密码相同");
+        }
+        int changed=jdbc.update("UPDATE users SET password_hash=?,auth_version=auth_version+1,failed_attempts=0," +
+                "locked_until=NULL,updated_at=? WHERE id=? AND auth_version=? AND status='ACTIVE'",
+                passwords.encode(newPassword),now(),user.getId(),user.getAuthVersion());
+        if (changed!=1) throw new BusinessException(ErrorCode.DATA_CONFLICT);
+        jdbc.update("UPDATE refresh_tokens SET revoked_at=? WHERE user_id=? AND revoked_at IS NULL",now(),user.getId());
+        jdbc.update("UPDATE password_requests SET status='CANCELLED',token_hash=NULL WHERE user_id=? " +
+                "AND kind='CHANGE' AND status IN ('PENDING','APPROVED')",user.getId());
+        audit(user.getId(),"用户自主修改密码",user.getId());
     }
 
     @Transactional

@@ -45,8 +45,9 @@ public class HrService {
         StringBuilder where = new StringBuilder(" WHERE u.role_code<>'ADMIN' AND ").append(scope.sql());
         List<Object> args = new ArrayList<>(scope.args());
         if (keyword != null && !keyword.isBlank()) {
-            where.append(" AND (u.real_name ILIKE ? OR u.username ILIKE ? OR COALESCE(p.duty,'') ILIKE ?)");
+            where.append(" AND (u.real_name ILIKE ? OR u.username ILIKE ? OR COALESCE(p.duty,'') ILIKE ? OR COALESCE(d.name,'') ILIKE ?)");
             String pattern = "%" + keyword.trim() + "%";
+            args.add(pattern);
             args.add(pattern);
             args.add(pattern);
             args.add(pattern);

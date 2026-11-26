@@ -37,7 +37,6 @@ public enum ErrorCode {
     HANDOVER_ALREADY_COMPLETED(40931, 409, "任务交接已完成，不能重复处理"),
     HANDOVER_ASSIGNEE_CONFLICT(40932, 409, "交接接收人无效、已停用或已持有该任务"),
     PASSWORD_REQUEST_CONFLICT(40920, 409, "密码申请已存在、过期或已处理"),
-    PASSWORD_APPROVAL_REQUIRED(40320, 403, "需要有效的密码修改批准"),
     PASSWORD_RESET_INVALID(40020, 400, "恢复凭据无效或已过期"),
     TOO_MANY_REQUESTS(42901, 429, "请求过于频繁，请稍后重试"),
     INTERNAL_ERROR(50000, 500, "服务内部错误"),

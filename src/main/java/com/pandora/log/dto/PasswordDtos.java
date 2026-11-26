@@ -7,9 +7,12 @@ import jakarta.validation.constraints.*;
 public final class PasswordDtos {
     private PasswordDtos() { }
     public record ResetRequest(@NotBlank @Size(max=100) String username) implements StrictRequest { }
-    public record ChangeRequest(@NotBlank @Size(min=8,max=72) String newPassword) implements StrictRequest {
+    public record ChangeRequest(
+            @NotBlank @Size(max=128) String currentPassword,
+            @NotBlank @Size(min=12,max=128) String newPassword) implements StrictRequest {
         @Override public String toString() { return "ChangeRequest[凭据已隐藏]"; }
     }
+    public record ChangeResult(String status) { }
     public record ResetCompletion(@NotBlank @Size(max=100) String token,
             @NotBlank @Size(min=8,max=72) String newPassword) implements StrictRequest {
         @Override public String toString() { return "ResetCompletion[凭据已隐藏]"; }

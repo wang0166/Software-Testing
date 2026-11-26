@@ -166,48 +166,43 @@ class MobileBackendContractTest extends EmbeddedPostgresSupport {
         assertThat(changes.get(0).path("before").asText()).isEqualTo("原内容");
         response(get("/api/audits").param("objectType","USER"),admin,null,400);
     }
-    @Test void approvedChangeIsSingleUseAndRevokesAllSessions() throws Exception {
+    @Test void authenticatedUserChangesPasswordDirectlyAndRevokesAllSessions() throws Exception {
         String refresh=login("member",PASSWORD).path("refreshToken").asText();
-        response(post("/api/account/password-change"),employee,Map.of("newPassword","new-member-pass"),403);
-        long id=changeRequest();
-        response(post("/api/account/password-change-requests"),employee,Map.of(),409);
-        response(get("/api/password-requests"),employee,null,403);
-        response(post("/api/password-requests/"+id+"/review"),employee,review("APPROVED"),403);
-        ok(post("/api/password-requests/"+id+"/review"),admin,review("APPROVED"));
-        assertThat(ok(get("/api/account/password-change-requests/me"),employee,null).path("status").asText()).isEqualTo("APPROVED");
-        response(post("/api/account/password-change"),employee,Map.of("newPassword","密".repeat(30)),400);
-        ok(post("/api/account/password-change"),employee,Map.of("newPassword","new-member-pass"));
+        JsonNode changed=response(post("/api/account/password-change"),employee,
+                Map.of("currentPassword",PASSWORD,"newPassword","New!MemberPass123"),200);
+        assertThat(changed.path("message").asText()).isEqualTo("密码修改成功");
+        assertThat(changed.path("data").path("status").asText()).isEqualTo("CHANGED");
         response(get("/api/auth/me"),employee,null,401);
         response(post("/api/auth/refresh"),null,Map.of("refreshToken",refresh),401);
-        String fresh=login("member","new-member-pass").path("accessToken").asText();
-        response(post("/api/account/password-change"),fresh,Map.of("newPassword","another-pass"),403);
-        assertThat(ok(get("/api/account/password-change-requests/me"),fresh,null).path("status").asText()).isEqualTo("NONE");
-        assertThat(jdbc.queryForObject("SELECT status FROM password_requests WHERE id=?",String.class,id)).isEqualTo("CONSUMED");
-        assertNoSecretInAudit("new-member-pass",refresh);
+        login("member","New!MemberPass123");
+        assertThat(jdbc.queryForObject("SELECT password_hash FROM users WHERE id=?",String.class,employeeId))
+                .startsWith("{bcrypt-sha256}$2").doesNotContain("New!MemberPass123");
+        assertNoSecretInAudit("New!MemberPass123",PASSWORD,refresh);
     }
-    @Test void reviewsRequireIdentityCheckReauthenticationAndDifferentAdmin() throws Exception {
-        long id=changeRequest();
-        response(post("/api/password-requests/"+id+"/review"),admin,Map.of("decision","APPROVED","currentPassword",PASSWORD),400);
-        response(post("/api/password-requests/"+id+"/review"),admin,Map.of("decision","APPROVED","identityVerified",true,"currentPassword","x".repeat(73)),400);
-        response(post("/api/password-requests/"+id+"/review"),admin,Map.of("decision","APPROVED","identityVerified",true,"currentPassword","wrong-password"),401);
-        ok(post("/api/account/password-change-requests"),admin,Map.of());
-        long self=jdbc.queryForObject("SELECT id FROM password_requests WHERE user_id=?",Long.class,adminId);
-        response(post("/api/password-requests/"+self+"/review"),admin,review("APPROVED"),403);
-        assertNoSecretInAudit(PASSWORD,"wrong-password");
+    @Test void passwordChangeRequiresOriginalPasswordAndStrongDifferentPassword() throws Exception {
+        response(post("/api/account/password-change"),employee,
+                Map.of("currentPassword","wrong-password","newPassword","New!MemberPass123"),401);
+        response(post("/api/account/password-change"),employee,
+                Map.of("currentPassword",PASSWORD,"newPassword",PASSWORD),400);
+        response(post("/api/account/password-change"),employee,
+                Map.of("currentPassword",PASSWORD,"newPassword","Password123!"),400);
+        response(post("/api/account/password-change"),employee,
+                Map.of("currentPassword",PASSWORD,"newPassword","only-lowercase-password"),400);
+        assertThat(login("member",PASSWORD).path("accessToken").asText()).isNotBlank();
     }
-    @Test void rejectedAndExpiredApplicationsCanBeRequestedAgain() throws Exception {
-        long id=changeRequest();ok(post("/api/password-requests/"+id+"/review"),admin,review("REJECTED"));
-        assertThat(ok(get("/api/account/password-change-requests/me"),employee,null).path("status").asText()).isEqualTo("REJECTED");
-        long next=changeRequest();at(today.plusDays(2).atTime(9,0));
-        assertThat(ok(get("/api/account/password-change-requests/me"),employee,null).path("status").asText()).isEqualTo("NONE");
-        response(post("/api/password-requests/"+next+"/review"),admin,review("APPROVED"),409);
-        changeRequest();
+    @Test void passwordChangeFailuresAreRateLimited() throws Exception {
+        for(int i=0;i<5;i++) response(post("/api/account/password-change"),employee,
+                Map.of("currentPassword","wrong-"+i,"newPassword","New!MemberPass123"),401);
+        response(post("/api/account/password-change"),employee,
+                Map.of("currentPassword",PASSWORD,"newPassword","New!MemberPass123"),429);
     }
-    @Test void approvedApplicationExpiresAfterFifteenMinutes() throws Exception {
-        long id=changeRequest();ok(post("/api/password-requests/"+id+"/review"),admin,review("APPROVED"));
-        at(today.atTime(22,15));
-        response(post("/api/account/password-change"),employee,Map.of("newPassword","new-member-pass"),403);
-        assertThat(ok(get("/api/password-requests?status=EXPIRED"),admin,null).path("total").asLong()).isEqualTo(1);
+    @Test void adminReviewOnlyExposesForgottenPasswordRecovery() throws Exception {
+        jdbc.update("INSERT INTO password_requests(user_id,kind,auth_version,created_at,expires_at) " +
+                "VALUES (?,'CHANGE',0,now(),now()+interval '1 hour')",employeeId);
+        assertThat(ok(get("/api/password-requests"),admin,null).path("total").asLong()).isZero();
+        response(get("/api/password-requests?kind=CHANGE"),admin,null,400);
+        long legacy=jdbc.queryForObject("SELECT id FROM password_requests WHERE kind='CHANGE'",Long.class);
+        response(post("/api/password-requests/"+legacy+"/review"),admin,review("APPROVED"),404);
     }
     @Test void anonymousResetResponseIsUniformAndRequestsAreLimited() throws Exception {
         JsonNode expected=response(post("/api/auth/password-reset-requests"),null,Map.of("username","missing-account"),200);
@@ -454,6 +449,8 @@ class MobileBackendContractTest extends EmbeddedPostgresSupport {
         long customerId=customer.path("id").asLong();
         assertThat(customer.path("departmentId").asLong()).isEqualTo(departmentId);
         assertThat(ok(get("/api/crm/customers"),manager,null).path("total").asInt()).isEqualTo(1);
+        assertThat(ok(get("/api/crm/customers?keyword=演出年卡"),manager,null).path("total").asInt()).isEqualTo(1);
+        assertThat(ok(get("/api/crm/customers?business=演出活动"),manager,null).path("total").asInt()).isEqualTo(1);
         assertThat(ok(get("/api/crm/customers"),employee,null).path("total").asInt()).isZero();
         assertThat(ok(get("/api/crm/customers"),other,null).path("total").asInt()).isZero();
 
@@ -500,6 +497,7 @@ class MobileBackendContractTest extends EmbeddedPostgresSupport {
                 .isEqualTo(contractEnd.toString());
         assertThat(managerView.path("items").get(0).path("contractArchiveStatus").asText())
                 .isEqualTo("RESTRICTED");
+        assertThat(ok(get("/api/hr/employees?keyword=研发部"),manager,null).path("total").asInt()).isEqualTo(3);
         response(get("/api/hr/employees"),employee,null,403);
     }
 
@@ -524,8 +522,9 @@ class MobileBackendContractTest extends EmbeddedPostgresSupport {
         assertThat(ok(get("/api/tasks/handovers/"+handoverId+"/candidates"),leader,null)
                 .path("items").findValuesAsText("id")).contains(String.valueOf(successor));
 
+        String changedDeadline=today.plusDays(4).toString();
         JsonNode completed=ok(post("/api/tasks/handovers/"+handoverId+"/confirm"),leader,Map.of(
-                "newAssigneeId",successor,"note","资料已交接，继续执行"));
+                "newAssigneeId",successor,"note","交".repeat(1000),"deadline",changedDeadline));
         assertThat(completed.path("status").asText()).isEqualTo("COMPLETED");
         assertThat(completed.path("newAssignmentId").asLong()).isPositive();
         response(post("/api/tasks/handovers/"+handoverId+"/confirm"),leader,Map.of(
@@ -534,9 +533,17 @@ class MobileBackendContractTest extends EmbeddedPostgresSupport {
         assertThat(received.path("taskId").asLong()).isEqualTo(taskId);
         assertThat(received.path("executionStatus").asText()).isEqualTo("IN_PROGRESS");
         assertThat(received.path("progressPercent").asInt()).isEqualTo(45);
+        assertThat(received.path("deadline").asText()).startsWith(changedDeadline+"T23:59");
+        assertThat(jdbc.queryForObject("SELECT length(note) FROM task_progress_updates WHERE assignment_id=?",
+                Integer.class,completed.path("newAssignmentId").asLong())).isEqualTo(1000);
         assertThat(ok(get("/api/tasks/handovers"),successorToken,null).path("total").asInt()).isZero();
         assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM task_handovers WHERE original_assignment_id=?",
                 Long.class,assignment)).isEqualTo(1L);
+        JsonNode deleteRequest=ok(post("/api/tasks/"+taskId+"/change-requests"),leader,Map.of("action","DELETE"));
+        ok(post("/api/tasks/change-requests/"+deleteRequest.path("id").asLong()+"/approve"),manager,Map.of());
+        response(get("/api/tasks/"+taskId),leader,null,404);
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM task_handovers WHERE original_assignment_id=?",
+                Long.class,assignment)).isZero();
     }
 
     private void at(LocalDateTime time) { instant=time.atZone(ZONE).toInstant(); }
@@ -546,10 +553,6 @@ class MobileBackendContractTest extends EmbeddedPostgresSupport {
     }
     private Map<String,Object> task(String start,String end,long user) {return Map.of("name","分钟任务","details","完整说明","startDate",start,"deadline",end,"urgency","NOT_URGENT","assigneeIds",List.of(user));}
     private Map<String,Object> review(String decision) {return Map.of("decision",decision,"identityVerified",true,"currentPassword",PASSWORD);}
-    private long changeRequest() throws Exception {
-        ok(post("/api/account/password-change-requests"),employee,Map.of());
-        return jdbc.queryForObject("SELECT max(id) FROM password_requests WHERE user_id=? AND kind='CHANGE'",Long.class,employeeId);
-    }
     private long resetRequest() throws Exception {
         ok(post("/api/auth/password-reset-requests"),null,Map.of("username","member"));
         return jdbc.queryForObject("SELECT max(id) FROM password_requests WHERE user_id=? AND kind='RESET'",Long.class,employeeId);

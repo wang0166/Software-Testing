@@ -10,11 +10,11 @@ class PasswordServiceTest {
     private final PasswordService passwordService = new PasswordService(new BCryptPasswordEncoder());
 
     @Test
-    void encodesPasswordWithBcryptAndMatchesIt() {
+    void encodesPasswordWithBcryptSha256AndMatchesIt() {
         String hash = passwordService.encode("secret-123");
 
         assertThat(hash).isNotEqualTo("secret-123");
-        assertThat(hash).startsWith("$2");
+        assertThat(hash).startsWith("{bcrypt-sha256}$2");
         assertThat(passwordService.matches("secret-123", hash)).isTrue();
     }
 
@@ -33,5 +33,19 @@ class PasswordServiceTest {
     @Test
     void producesDifferentHashesForSamePassword() {
         assertThat(passwordService.encode("secret-123")).isNotEqualTo(passwordService.encode("secret-123"));
+    }
+
+    @Test
+    void stillMatchesLegacyBcryptHashes() {
+        String hash = new BCryptPasswordEncoder().encode("legacy-password");
+        assertThat(passwordService.matches("legacy-password", hash)).isTrue();
+    }
+
+    @Test
+    void supportsPasswordsLongerThanBcryptsNativeLimit() {
+        String password = "Aa1!" + "very-long-password".repeat(8);
+        String hash = passwordService.encode(password);
+        assertThat(passwordService.matches(password, hash)).isTrue();
+        assertThat(passwordService.matches(password + "x", hash)).isFalse();
     }
 }

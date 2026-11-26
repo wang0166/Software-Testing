@@ -18,6 +18,6 @@ public final class TaskHandoverDtos {
     }
 
     public record ConfirmHandoverRequest(
-            Long newAssigneeId, String note, LocalDateTime deadline) {
+            Long newAssigneeId, String note, String deadline) {
     }
 }
