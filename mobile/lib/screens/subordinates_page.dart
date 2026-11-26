@@ -6,6 +6,7 @@ import '../widgets/business.dart';
 import '../widgets/subordinate_task_row.dart';
 import 'subordinate_detail_page.dart';
 import 'subordinate_task_detail_page.dart';
+import 'task_handover_page.dart';
 
 /// All manager-visible subordinates; each issue badge shows unresolved problems,
 /// rather than all historical reports or all overdue tasks.
@@ -18,6 +19,7 @@ class SubordinatesPage extends StatefulWidget {
 
 class _SubordinatesPageState extends State<SubordinatesPage> {
   late Future<List<SubordinateTaskSummary>> _future;
+  late Future<List<TaskHandover>> _handoverFuture;
   final _search = TextEditingController();
   String _department = '全部部门';
   String _team = '全部团队';
@@ -25,7 +27,18 @@ class _SubordinatesPageState extends State<SubordinatesPage> {
   int _shown = 20;
   @override void dispose() { _search.dispose(); super.dispose(); }
   @override void initState(){super.initState();_load();}
-  void _load(){_future=widget.app.repo.subordinatesTaskOverview();}
+  void _load(){
+    _future=widget.app.repo.subordinatesTaskOverview();
+    _handoverFuture=_future.then((members) {
+      if (!members.any((m) => !m.isActive && _isDirectReport(m))) {
+        return <TaskHandover>[];
+      }
+      return widget.app.repo.taskHandovers();
+    });
+    // Avoid an unhandled asynchronous failure before the card builds. The
+    // original Future retains its error for the status panel to display.
+    _handoverFuture.ignore();
+  }
   Future<void> _refresh() async {
     setState(_load);
     try {
@@ -43,6 +56,16 @@ class _SubordinatesPageState extends State<SubordinatesPage> {
       SubordinateTaskDetailPage(app:widget.app,memberId:member.userId,
         memberName:member.name,task:task)));
     if(mounted) await _refresh();
+  }
+  bool _isDirectReport(SubordinateTaskSummary member) {
+    final me = widget.app.user;
+    if (me == null) return false;
+    return switch (me.role) {
+      'TEAM_LEADER' => member.role == 'EMPLOYEE',
+      'DEPT_MANAGER' => member.role == 'TEAM_LEADER',
+      'FOUNDER' => member.role == 'DEPT_MANAGER',
+      _ => false,
+    };
   }
   Widget _badge(int count){
     return Container(
@@ -72,7 +95,8 @@ class _SubordinatesPageState extends State<SubordinatesPage> {
           (keyword.isEmpty || '${m.name} ${m.username} ${m.departmentName} ${m.teamName}'
             .toLowerCase().contains(keyword))).toList();
         return RefreshIndicator(onRefresh: _refresh,
-          child: ListView(padding: const EdgeInsets.fromLTRB(16, 10, 16, 110), children: [
+          child: ListView(physics: const AlwaysScrollableScrollPhysics(),
+            padding: const EdgeInsets.fromLTRB(16, 10, 16, 110), children: [
         const BusinessHeading(title:'下属工作动态',
           subtitle:'点开人员查看完整任务，红色数字表示待解决问题'),
         const SizedBox(height:15),
@@ -111,7 +135,11 @@ class _SubordinatesPageState extends State<SubordinatesPage> {
         for (final member in visible.take(_shown)) Padding(
 
           padding:const EdgeInsets.only(bottom:11),
-          child:BusinessPanel(
+          child:Opacity(
+            // Only dim the presentation: historical records remain tappable.
+            key:ValueKey('subordinate_panel_${member.userId}'),
+            opacity:member.isActive ? 1.0 : 0.72,
+            child:BusinessPanel(
             title:member.name,kicker:member.departmentName,
             trailing:member.visibleIssueCount>0?_badge(member.visibleIssueCount):null,
             child:Column(crossAxisAlignment:CrossAxisAlignment.stretch,children:[
@@ -129,8 +157,12 @@ class _SubordinatesPageState extends State<SubordinatesPage> {
                 Expanded(child:InkWell(onTap:()=>_openMember(member),
                   child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[
                     Text(member.name,style:const TextStyle(color:Palette.deep,fontWeight:FontWeight.w800)),
-                    const Text('点击头像查看人员与全部任务',
-                      style:TextStyle(color:Palette.muted,fontSize:11)),
+                    if (!member.isActive)
+                      Text('账号已停用 · 历史记录', key: Key('subordinate_disabled_${member.userId}'),
+                        style: const TextStyle(color: Palette.coral, fontSize: 12,
+                          fontWeight: FontWeight.w800)),
+                    Text(member.isActive ? '点击头像查看人员与全部任务' : '点击查看历史任务与日志',
+                      style:const TextStyle(color:Palette.muted,fontSize:11)),
                   ]))),
                 const Icon(Icons.chevron_right,color:Palette.muted,size:17),
               ])),
@@ -139,11 +171,45 @@ class _SubordinatesPageState extends State<SubordinatesPage> {
                   Text('${member.total} 项任务',style:const TextStyle(color:Palette.deep,fontWeight:FontWeight.w800)),
                   Text('进行中 ${member.inProgress}',style:const TextStyle(color:Palette.primary,fontSize:11)),
                   Text('已完成 ${member.completed}',style:const TextStyle(color:Palette.muted,fontSize:11)),
-                  Text('受阻 ${member.tasks.where((t)=>t.status=='BLOCKED').length}',
+                  Text('受阻 ${member.tasks.where((t)=>t.status=='BLOCKED' && t.handoverStatus!='COMPLETED').length}',
                     style:const TextStyle(color:Palette.coral,fontSize:11)),
                   Text('逾期 ${member.tasks.where((t)=>t.isOverdue).length}',
                     style:const TextStyle(color:Palette.coral,fontSize:11)),
                 ])),
+              if (!member.isActive && !_isDirectReport(member))
+                const Padding(padding: EdgeInsets.symmetric(vertical: 4),
+                  child: Text('账号已停用 · 交接由直属主管负责',
+                    style: TextStyle(color: Palette.muted, fontSize: 11))),
+              if (!member.isActive && _isDirectReport(member))
+                FutureBuilder<List<TaskHandover>>(
+                future: _handoverFuture,
+                builder: (context, handovers) {
+                  if (handovers.connectionState != ConnectionState.done) {
+                    return const Text('交接状态加载中…',
+                      style: TextStyle(fontSize: 11, color: Palette.muted));
+                  }
+                  if (handovers.hasError) {
+                    return const Text('交接状态暂不可用，请进入任务清单核对',
+                      style: TextStyle(fontSize: 11, color: Palette.coral));
+                  }
+                  final memberRows = (handovers.data ?? [])
+                      .where((h) => h.originalUserId == member.userId).toList();
+                  final count = memberRows.where((h) => h.pending).length;
+                  return Row(children: [
+                    Expanded(child: Text('待交接 $count 项 · 已交接 ${memberRows.length - count} 项',
+                      key: Key('subordinate_handover_${member.userId}'),
+                      style: const TextStyle(fontSize: 12, color: Palette.muted,
+                        fontWeight: FontWeight.w800))),
+                    TextButton.icon(
+                      onPressed: () async {
+                        await Navigator.push<void>(context,
+                          MaterialPageRoute(builder: (_) => TaskHandoverInboxPage(
+                            app: widget.app, formerUserId: member.userId)));
+                        if (mounted) await _refresh();
+                      }, icon: const Icon(Icons.swap_horiz, size: 17),
+                      label: const Text('查看交接')),
+                  ]);
+                }),
               for(var i=0;i<member.tasks.take(3).length;i++) ...[
                 const Divider(height:1,color:Palette.divider),
                 SubordinateTaskRow(task:member.tasks[i],index:i+1,
@@ -153,6 +219,7 @@ class _SubordinatesPageState extends State<SubordinatesPage> {
                 child:TextButton(onPressed:()=>_openMember(member),
                   child:Text('查看全部 ${member.tasks.length} 项任务'))),
             ]),
+            ),
           ),
         ),
         if (visible.length > _shown)

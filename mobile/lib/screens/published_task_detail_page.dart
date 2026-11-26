@@ -98,9 +98,12 @@ class _PublishedTaskDetailPageState extends State<PublishedTaskDetailPage> {
                 if(task.changePending) const Padding(padding:EdgeInsets.only(top:10),
                   child:Text('修改或删除申请正在等待管理员审核，已生效任务暂不变更。',
                     style:TextStyle(color:Palette.coral,fontSize:12))),
-                if(task.isRequest) const Padding(padding:EdgeInsets.only(top:10),
-                  child:Text('派发申请尚未通过审核，未生成接收人执行任务。',
-                    style:TextStyle(color:Palette.muted,fontSize:12))),
+                if (task.isRequest && task.reviewerName.isNotEmpty)
+                  Text('审核人：${task.reviewerName}',
+                    style: const TextStyle(color: Palette.muted, fontSize: 12)),
+                if (task.isWaiting) const Padding(padding: EdgeInsets.only(top: 10),
+                  child: Text('等待直属上级审核，通过后任务将发送给接收人。',
+                    style: TextStyle(color: Palette.muted, fontSize: 12))),
               ]))),
           if(!task.isRequest) ...[
             const SizedBox(height:12),

@@ -148,9 +148,13 @@ public class TaskService {
                         + "s.id AS sender_id, s.real_name AS sender_name, u.real_name AS assignee_name, a.updated_at, "
                         + "latest.progress_percent, latest.note AS progress_note, "
                         + "latest.created_at AS progress_updated_at, "
-                        + "CASE WHEN latest.execution_status = 'BLOCKED' THEN 1 ELSE 0 END AS open_issue_count "
+                        + "CASE WHEN h.status = 'COMPLETED' THEN 0 "
+                        + "WHEN latest.execution_status = 'BLOCKED' THEN 1 ELSE 0 END AS open_issue_count, "
+                        + "COALESCE(h.status, 'NONE') AS handover_status, successor.real_name AS handover_to_name "
                         + "FROM task_assignments a JOIN tasks t ON t.id = a.task_id "
                         + "JOIN users s ON s.id = t.sender_id JOIN users u ON u.id = a.assignee_id "
+                        + "LEFT JOIN task_handovers h ON h.original_assignment_id = a.id "
+                        + "LEFT JOIN users successor ON successor.id = h.new_assignee_id "
                         + "LEFT JOIN LATERAL (SELECT pu.execution_status, pu.progress_percent, pu.note, pu.created_at "
                         + "FROM task_progress_updates pu WHERE pu.assignment_id = a.id "
                         + "ORDER BY pu.created_at DESC, pu.id DESC LIMIT 1) latest ON true "
@@ -175,7 +179,9 @@ public class TaskService {
                         rs.getObject("progress_percent", Integer.class),
                         rs.getString("progress_note"),
                         rs.getObject("progress_updated_at", OffsetDateTime.class),
-                        rs.getInt("open_issue_count")),
+                        rs.getInt("open_issue_count"),
+                        rs.getString("handover_status"),
+                        rs.getString("handover_to_name")),
                 userIds.toArray());
 
         Map<Long, List<SubordinateTaskItemDto>> tasksByUser = taskRows.stream()
@@ -184,8 +190,10 @@ public class TaskService {
         List<SubordinateSummaryDto> items = rows.stream().map(row -> {
             List<SubordinateTaskItemDto> tasks = tasksByUser.getOrDefault(row.userId(), List.of());
             int inProgress = (int) tasks.stream()
+                    .filter(task -> !"COMPLETED".equals(task.handoverStatus()))
                     .filter(task -> "IN_PROGRESS".equals(task.executionStatus())).count();
             int completed = (int) tasks.stream()
+                    .filter(task -> !"COMPLETED".equals(task.handoverStatus()))
                     .filter(task -> "COMPLETED".equals(task.executionStatus())).count();
             int openIssues = tasks.stream().mapToInt(SubordinateTaskItemDto::openIssueCount).sum();
             return new SubordinateSummaryDto(row.userId(), row.username(), row.realName(), row.roleCode(),
@@ -1565,13 +1573,14 @@ public class TaskService {
             String details, LocalDateTime startDate, LocalDateTime deadline, String urgency,
             String taskType, String executionStatus, String reviewStatus, Long senderId, String senderName,
             String assigneeName, OffsetDateTime updatedAt, Integer progressPercent, String progressNote,
-            OffsetDateTime progressUpdatedAt, int openIssueCount) {
+            OffsetDateTime progressUpdatedAt, int openIssueCount, String handoverStatus,
+            String handoverToName) {
 
         private SubordinateTaskItemDto toItem() {
             return new SubordinateTaskItemDto(assignmentId, taskId, name, details, startDate, deadline,
                     urgency, executionStatus, reviewStatus, new AssigneeDto(senderId, senderName),
                     new AssigneeDto(assigneeId, assigneeName), updatedAt, taskType, progressPercent,
-                    progressNote, progressUpdatedAt, openIssueCount);
+                    progressNote, progressUpdatedAt, openIssueCount, handoverStatus, handoverToName);
         }
     }
 

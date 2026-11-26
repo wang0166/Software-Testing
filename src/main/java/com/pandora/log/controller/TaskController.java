@@ -35,6 +35,9 @@ import com.pandora.log.dto.MobileDtos.SubordinateSummaryDto;
 import com.pandora.log.dto.MobileDtos.TaskDetailDto;
 import com.pandora.log.dto.MobileDtos.TaskProgressRequest;
 import com.pandora.log.dto.MobileDtos.TaskProgressUpdateDto;
+import com.pandora.log.dto.TaskHandoverDtos.ConfirmHandoverRequest;
+import com.pandora.log.dto.TaskHandoverDtos.HandoverDto;
+import com.pandora.log.service.TaskHandoverService;
 import com.pandora.log.service.TaskService;
 
 @RestController
@@ -42,9 +45,11 @@ import com.pandora.log.service.TaskService;
 public class TaskController {
 
     private final TaskService taskService;
+    private final TaskHandoverService handovers;
 
-    public TaskController(TaskService taskService) {
+    public TaskController(TaskService taskService, TaskHandoverService handovers) {
         this.taskService = taskService;
+        this.handovers = handovers;
     }
 
     @GetMapping("/recipients")
@@ -107,6 +112,44 @@ public class TaskController {
     public ApiResponse<DispatchRequestViewDto> rejectDispatchRequest(@PathVariable Long requestId,
             @RequestBody(required = false) ApprovalRequest request) {
         return ApiResponse.success(taskService.rejectDispatchRequest(requestId, request));
+    }
+
+    /** Mobile V2 uses one decision endpoint; the existing approve/reject routes remain compatible. */
+    @PostMapping("/dispatch-requests/{requestId}/review")
+    public ApiResponse<DispatchRequestViewDto> reviewDispatchRequest(@PathVariable Long requestId,
+            @RequestBody DispatchReviewDecision request) {
+        String result = request == null || request.result() == null
+                ? "" : request.result().trim().toUpperCase();
+        ApprovalRequest approval = new ApprovalRequest(request == null ? null : request.comment());
+        return switch (result) {
+            case "APPROVED" -> ApiResponse.success(taskService.approveDispatchRequest(requestId, approval));
+            case "REJECTED" -> ApiResponse.success(taskService.rejectDispatchRequest(requestId, approval));
+            default -> throw new com.pandora.log.common.BusinessException(
+                    com.pandora.log.common.ErrorCode.VALIDATION_FAILED);
+        };
+    }
+
+    @GetMapping("/handovers")
+    public ApiResponse<PageResult<HandoverDto>> handovers(
+            @RequestParam(required = false) Integer page,
+            @RequestParam(required = false) Integer size) {
+        return ApiResponse.success(handovers.handovers(page, size));
+    }
+
+    @GetMapping("/handovers/{id}/candidates")
+    public ApiResponse<PageResult<RecipientDto>> handoverCandidates(@PathVariable Long id,
+            @RequestParam(required = false) Integer page,
+            @RequestParam(required = false) Integer size) {
+        return ApiResponse.success(handovers.candidates(id, page, size));
+    }
+
+    @PostMapping("/handovers/{id}/confirm")
+    public ApiResponse<HandoverDto> confirmHandover(@PathVariable Long id,
+            @RequestBody ConfirmHandoverRequest request) {
+        return ApiResponse.success(handovers.confirm(id, request));
+    }
+
+    public record DispatchReviewDecision(String result, String comment) {
     }
 
     @PostMapping

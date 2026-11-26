@@ -487,7 +487,7 @@ class _CalendarPageState extends State<CalendarPage> {
     final todaySpans = buildGanttSpans(tasks, _selected, _selected);
     return SoftCard(
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           _dayInfo(tasks, holidays),
           if (todaySpans.isNotEmpty) ...[
@@ -649,10 +649,14 @@ class _CalendarPageState extends State<CalendarPage> {
         ],
         const SizedBox(height: 11),
         if (taskCount == 0)
-          const EmptyPanel(
-            title: '当天暂无任务',
-            subtitle: '可以通过右下角「创建任务」发起新的派发申请',
-            icon: Icons.event_available_outlined,
+          const SizedBox(
+            key: Key('calendar_empty_centered'),
+            width: double.infinity,
+            child: EmptyPanel(
+              title: '当天暂无任务',
+              subtitle: '可以通过右下角「创建任务」发起新的派发申请',
+              icon: Icons.event_available_outlined,
+            ),
           )
         else
           Container(

@@ -122,7 +122,9 @@ public final class MobileDtos {
             Integer progressPercent,
             String progressNote,
             OffsetDateTime progressUpdatedAt,
-            int openIssueCount) {
+            int openIssueCount,
+            String handoverStatus,
+            String handoverToName) {
     }
 
     public record SubordinateSummaryDto(

@@ -34,6 +34,11 @@ class SubordinateTaskRow extends StatelessWidget {
                 ' · 截止 ${task.deadline ?? '未设置'}',
                 maxLines:1,overflow:TextOverflow.ellipsis,
                 style:const TextStyle(color:Palette.muted,fontSize:11)),
+              if (task.handoverStatus == 'COMPLETED')
+                Padding(padding: const EdgeInsets.only(top: 3),
+                  child: Text('已交接给 ${task.handoverToName} · 原记录保留',
+                    key: Key('subordinate_task_transferred_${task.id}'),
+                    style: const TextStyle(color: Palette.muted, fontSize: 11))),
               if (attention && task.progressNote.trim().isNotEmpty)
                 Padding(padding:const EdgeInsets.only(top:4),
                   child:Text('问题反馈：${task.progressNote}',maxLines:1,

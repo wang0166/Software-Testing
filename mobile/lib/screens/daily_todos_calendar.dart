@@ -30,6 +30,13 @@ class _DailyTodosCalendarState extends State<DailyTodosCalendar> {
   int _holidayRequestId = 0;
   Timer? _monthDragHoverTimer;
   int? _hoveringMonthArrow;
+  // Keep the original draggable mounted even after the visible month changes.
+  // Otherwise Flutter cancels a drag started from a calendar day when that
+  // day's widget disappears on the next page.
+  String? _draggingTodoId;
+  DateTime? _dragOriginMonth;
+  final GlobalKey _monthGridViewportKey = GlobalKey();
+  double _monthSwipeDistance = 0;
 
   @override
   void dispose() {
@@ -85,19 +92,25 @@ class _DailyTodosCalendarState extends State<DailyTodosCalendar> {
   DailyTodo _withLocalPresentation(DailyTodo cloud, DailyTodo local) => DailyTodo(
     id: cloud.id,
     date: cloud.date,
+    endDate: local.endDate,
     title: cloud.title,
     note: cloud.note,
     completed: cloud.completed,
-    colorValue: local.colorValue,
-    startTime: local.startTime,
-    endTime: local.endTime,
+    colorValue: cloud.colorValue,
+    startTime: cloud.startTime,
+    endTime: cloud.endTime,
+    sortOrder: cloud.sortOrder,
   );
 
-  bool _coreChanged(DailyTodo before, DailyTodo after) =>
+  bool _cloudChanged(DailyTodo before, DailyTodo after) =>
       before.date != after.date ||
       before.title != after.title ||
       before.note != after.note ||
-      before.completed != after.completed;
+      before.completed != after.completed ||
+      before.colorValue != after.colorValue ||
+      before.startTime != after.startTime ||
+      before.endTime != after.endTime ||
+      before.sortOrder != after.sortOrder;
 
   Future<void> _loadItems() async {
     final local = await _storage.read();
@@ -189,25 +202,92 @@ class _DailyTodosCalendarState extends State<DailyTodosCalendar> {
   }
 
   void _scheduleMonthHover(int delta) {
-    if (_hoveringMonthArrow == delta || _saving) return;
-    _cancelMonthHover();
-    _hoveringMonthArrow = delta;
-    _monthDragHoverTimer = Timer(const Duration(milliseconds: 750), () {
-      if (mounted && _hoveringMonthArrow == delta) {
-        _changeMonthWhileDragging(delta);
-      }
+    if (_saving) return;
+    if (_hoveringMonthArrow != delta) {
+      _cancelMonthHover();
+      _hoveringMonthArrow = delta;
+    }
+    if (_monthDragHoverTimer?.isActive == true) return;
+    _monthDragHoverTimer = Timer(const Duration(milliseconds: 650), () {
+      _monthDragHoverTimer = null;
+      if (!mounted || _saving || _hoveringMonthArrow != delta) return;
+      _changeMonthWhileDragging(delta);
+      // The finger can remain stationary at the edge. Every timer tick must
+      // keep paging without requiring another pointer-move event.
+      _scheduleMonthHover(delta);
     });
   }
 
-  /// Long-press a task, hover a month arrow to navigate, then drop on a date.
+  void _startTodoDrag(String itemId) {
+    _cancelMonthHover();
+    setState(() {
+      _draggingTodoId = itemId;
+      _dragOriginMonth = DateTime(_month.year, _month.month);
+    });
+  }
+
+  void _updateTodoDrag(DragUpdateDetails details) {
+    if (_draggingTodoId == null) return;
+    final context = _monthGridViewportKey.currentContext;
+    final render = context?.findRenderObject();
+    if (render is! RenderBox || !render.hasSize) return;
+    final position = render.globalToLocal(details.globalPosition);
+    final width = render.size.width;
+    final height = render.size.height;
+    // A generous vertical zone includes the month header and its arrows.
+    // Horizontal edge paging also works for tasks dragged from the day list.
+    if (position.dy < -85 || position.dy > height + 15 ||
+        position.dx < -45 || position.dx > width + 45) {
+      _cancelMonthHover();
+      return;
+    }
+    final edgeWidth = (width * 0.13).clamp(32.0, 56.0).toDouble();
+    if (position.dx >= width - edgeWidth) {
+      _scheduleMonthHover(1); // Right edge: as many future months as needed.
+    } else if (position.dx <= edgeWidth) {
+      _scheduleMonthHover(-1);
+    } else {
+      _cancelMonthHover(); // Stop immediately when moving back into the grid.
+    }
+  }
+
+  void _endTodoDrag() {
+    _cancelMonthHover();
+    if (!mounted) return;
+    setState(() {
+      _draggingTodoId = null;
+      _dragOriginMonth = null;
+    });
+  }
+
+  void _endMonthSwipe(DragEndDetails details) {
+    if (_draggingTodoId != null) return;
+    final velocity = details.primaryVelocity ?? 0;
+    final delta = _monthSwipeDistance;
+    _monthSwipeDistance = 0;
+    // Ordinary horizontal swipes flip the month as on a phone home screen.
+    if (delta < -45 || (delta < -10 && velocity < -220)) {
+      _moveMonth(1);
+    } else if (delta > 45 || (delta > 10 && velocity > 220)) {
+      _moveMonth(-1);
+    }
+  }
+
+  /// Long-press a task, hover any calendar edge or month arrow to page.
   Widget _monthDragArrow(int delta) => DragTarget<String>(
     key: Key(delta < 0 ? 'daily_todo_drag_prev_month'
       : 'daily_todo_drag_next_month'),
     onWillAcceptWithDetails: (details) => !_saving &&
       _items.any((item) => item.id == details.data),
     onMove: (_) => _scheduleMonthHover(delta),
-    onLeave: (_) => _cancelMonthHover(),
-    onAcceptWithDetails: (_) => _cancelMonthHover(),
+    onLeave: (_) {
+      // Switching the month rebuilds the arrows; their old DragTarget emits
+      // onLeave even though the user's finger remains at the same edge.
+      if (_draggingTodoId == null) _cancelMonthHover();
+    },
+    onAcceptWithDetails: (_) {
+      if (_draggingTodoId == null) _cancelMonthHover();
+    },
     builder: (context, candidates, rejected) => Container(
       decoration: BoxDecoration(
         color: candidates.isNotEmpty ? Palette.rose : Colors.transparent,
@@ -215,7 +295,7 @@ class _DailyTodosCalendarState extends State<DailyTodosCalendar> {
       ),
       child: IconButton(
         onPressed: () => _moveMonth(delta),
-        tooltip: delta < 0 ? '上个月 · 拖动时悬停可切换月份' : '下个月 · 拖动时悬停可切换月份',
+        tooltip: delta < 0 ? '上个月 · 长按事项靠左边缘连续翻月' : '下个月 · 长按事项靠右边缘连续翻月',
         padding: EdgeInsets.zero,
         constraints: const BoxConstraints.tightFor(width: 34, height: 34),
         style: IconButton.styleFrom(
@@ -259,21 +339,23 @@ class _DailyTodosCalendarState extends State<DailyTodosCalendar> {
   }
 
   List<DailyTodo> get _selectedItems => _items
-      .where((item) => item.date == dayString(_selected)).toList();
+      .where((item) => item.overlaps(from: dayString(_selected),
+        to: dayString(_selected))).toList();
 
   Future<bool> _save(List<DailyTodo> updated) async {
     if (_saving) return false;
     setState(() => _saving = true);
     try {
+      final normalized = _withSortOrder(updated);
       final repo = widget.repo;
-      var savedItems = [...updated];
+      var savedItems = [...normalized];
 
       if (repo != null) {
         final oldById = <String, DailyTodo>{
           for (final item in _items)
             if (item.id.isNotEmpty) item.id: item,
         };
-        final updatedIds = updated
+        final updatedIds = normalized
             .where((item) => item.id.isNotEmpty)
             .map((item) => item.id)
             .toSet();
@@ -284,25 +366,28 @@ class _DailyTodosCalendarState extends State<DailyTodosCalendar> {
             await repo.deleteDailyItem(old.id);
           }
         }
-
         final cloudSaved = <DailyTodo>[];
-        for (final item in updated) {
+        for (final item in normalized) {
           final before = item.id.isEmpty ? null : oldById[item.id];
 
           if (before == null) {
             final cloud = await repo.createDailyItem(
               date: item.date,
+              endDate: item.endDate,
               title: item.title,
               note: item.note,
               completed: item.completed,
+              colorValue: item.colorValue,
+              startTime: item.startTime,
+              endTime: item.endTime,
+              sortOrder: item.sortOrder,
             );
             cloudSaved.add(_withLocalPresentation(cloud, item));
-          } else if (_coreChanged(before, item)) {
+          } else if (_cloudChanged(before, item)) {
             final cloud = await repo.updateDailyItem(item);
             cloudSaved.add(_withLocalPresentation(cloud, item));
           } else {
-            // Pure v2 metadata/order changes stay local because the current
-            // daily_items schema has no color/time/order columns.
+            // endDate remains local until the backend schema supports ranges.
             cloudSaved.add(item);
           }
         }
@@ -327,11 +412,19 @@ class _DailyTodosCalendarState extends State<DailyTodosCalendar> {
     }
   }
 
+  List<DailyTodo> _withSortOrder(List<DailyTodo> items) {
+    final perDay = <String, int>{};
+    return [for (final item in items)
+      item.copyWith(sortOrder: perDay.update(item.date, (value) => value + 1,
+        ifAbsent: () => 0))];
+  }
+
   Future<void> _edit([DailyTodo? item]) async {
     var draftTitle = item?.title ?? '';
     var draftNote = item?.note ?? '';
     var draftColor = item?.colorValue ?? DailyTodoColors.defaultColor;
     var draftDate = item?.date ?? dayString(_selected);
+    var draftEndDate = item?.endDate ?? draftDate;
     TimeOfDay? start = _parseTime(item?.startTime);
     TimeOfDay? end = _parseTime(item?.endTime);
     String? errorText;
@@ -348,7 +441,34 @@ class _DailyTodosCalendarState extends State<DailyTodosCalendar> {
               helpText: '选择事项的目标日期',
             );
             if (picked != null && dialogContext.mounted) {
-              setDialogState(() => draftDate = dayString(picked));
+              setDialogState(() {
+                final nextDate = dayString(picked);
+                // Shift an existing multi-day item as a whole when moving its start.
+                final oldStart = DateTime.tryParse(draftDate);
+                final oldEnd = DateTime.tryParse(draftEndDate);
+                if (oldStart != null && oldEnd != null) {
+                  final oldStartUtc = DateTime.utc(oldStart.year, oldStart.month, oldStart.day);
+                  final nextStartUtc = DateTime.utc(picked.year, picked.month, picked.day);
+                  final oldEndUtc = DateTime.utc(oldEnd.year, oldEnd.month, oldEnd.day);
+                  final delta = nextStartUtc.difference(oldStartUtc).inDays;
+                  draftEndDate = dayString(oldEndUtc.add(Duration(days: delta)));
+                }
+                draftDate = nextDate;
+                timeError = null;
+              });
+            }
+          }
+
+          Future<void> pickEndDate() async {
+            final picked = await showDatePicker(
+              context: ctx,
+              initialDate: DateTime.tryParse(draftEndDate) ?? _selected,
+              firstDate: DateTime.tryParse(draftDate) ?? DateTime(2000),
+              lastDate: DateTime(2100),
+              helpText: '选择事项结束日期',
+            );
+            if (picked != null && dialogContext.mounted) {
+              setDialogState(() { draftEndDate = dayString(picked); timeError = null; });
             }
           }
 
@@ -394,7 +514,14 @@ class _DailyTodosCalendarState extends State<DailyTodosCalendar> {
                       minimumSize: const Size(0, 42)),
                   ),
                   const SizedBox(height: 6),
-                  const Text('也可以长按事项，拖到月历中的目标日期',
+                  OutlinedButton.icon(
+                    key: const Key('daily_todo_end_date'),
+                    onPressed: pickEndDate,
+                    icon: const Icon(Icons.event_available_rounded, size: 18),
+                    label: Text('结束日期：$draftEndDate'),
+                  ),
+                  const SizedBox(height: 6),
+                  const Text('长按事项拖至日历右边缘，可连续翻到任意未来月份再放下',
                     style: TextStyle(color: Palette.muted, fontSize: 11)),
                   const SizedBox(height: 12),
                   TextFormField(
@@ -500,8 +627,10 @@ class _DailyTodosCalendarState extends State<DailyTodosCalendar> {
                   }
                   final startText = start == null ? null : _formatTime(start!);
                   final endText = end == null ? null : _formatTime(end!);
-                  if (!DailyTodo.validTimeRange(startText, endText)) {
-                    setDialogState(() => timeError = '请设置完整时间段，结束时间必须晚于开始时间');
+                  if (!DailyTodo.validTimeRange(startText, endText,
+                      acrossDays: draftDate != draftEndDate) ||
+                      draftEndDate.compareTo(draftDate) < 0) {
+                    setDialogState(() => timeError = '请确认起止日期及时间范围有效');
                     return;
                   }
                   final id = item?.id ??
@@ -509,7 +638,7 @@ class _DailyTodosCalendarState extends State<DailyTodosCalendar> {
                         ? DateTime.now().microsecondsSinceEpoch.toString()
                         : '');
                   Navigator.pop(dialogContext, DailyTodo(
-                    id: id, date: draftDate,
+                    id: id, date: draftDate, endDate: draftEndDate,
                     title: draftTitle.trim(), note: draftNote.trim(),
                     completed: item?.completed ?? false,
                     colorValue: draftColor, startTime: startText, endTime: endText,
@@ -609,14 +738,35 @@ class _DailyTodosCalendarState extends State<DailyTodosCalendar> {
   // 与「工作 → 视图 → 日历」保持相同的月视图布局：
   // 每周是一整行、周之间用横线分隔，日期不绘制独立的圆角方框。
   // 仅复用日历呈现方式；个人每日事项与工作任务的数据仍完全隔离。
+  // Keep the original month grid in the widget tree while a drag is active.
+  // Replacing the source grid would dispose the LongPressDraggable and abort
+  // the drag after the first month. Offstage retains the source and its gesture
+  // recognizer; the visible overlay receives the destination drop.
   Widget _calendar() => LayoutBuilder(builder: (context, bounds) {
-    final first = DateTime(_month.year, _month.month, 1);
+    final origin = _dragOriginMonth ?? _month;
+    final showingAnotherMonth = _dragOriginMonth != null &&
+        (origin.year != _month.year || origin.month != _month.month);
+    return Stack(
+      key: _monthGridViewportKey,
+      fit: StackFit.expand,
+      children: [
+        Offstage(
+          offstage: showingAnotherMonth,
+          child: _calendarMonth(origin, bounds.maxHeight),
+        ),
+        if (showingAnotherMonth)
+          _calendarMonth(_month, bounds.maxHeight),
+      ],
+    );
+  });
+
+  Widget _calendarMonth(DateTime visibleMonth, double availableHeight) {
+    final first = DateTime(visibleMonth.year, visibleMonth.month, 1);
     final weekStart = first.subtract(Duration(days: first.weekday - 1));
-    final last = DateTime(_month.year, _month.month + 1, 0);
-    // 同时保留相邻月份日期格，方便直接把事项拖到下个月。
+    final last = DateTime(visibleMonth.year, visibleMonth.month + 1, 0);
     final rowCount = ((first.weekday - 1 + last.day + 7) ~/ 7)
         .clamp(5, 6).toInt();
-    final weekHeight = bounds.maxHeight / rowCount;
+    final weekHeight = availableHeight / rowCount;
 
     return Column(
       key: const Key('daily_todo_month_grid'),
@@ -637,6 +787,7 @@ class _DailyTodosCalendarState extends State<DailyTodosCalendar> {
                       child: _calendarDateCell(
                         weekStart.add(Duration(days: week * 7 + weekday)),
                         (weekHeight - 4).clamp(0.0, double.infinity).toDouble(),
+                        visibleMonth,
                       ),
                     ),
                 ],
@@ -645,20 +796,28 @@ class _DailyTodosCalendarState extends State<DailyTodosCalendar> {
           ),
       ],
     );
-  });
+  }
 
-  Widget _calendarDateCell(DateTime date, double height) {
+  Widget _calendarDateCell(DateTime date, double height,
+      DateTime visibleMonth) {
     final day = dayString(date);
-    final outsideMonth = date.month != _month.month ||
-        date.year != _month.year;
-    final dayItems = _items.where((item) => item.date == day).toList();
+    final outsideMonth = date.month != visibleMonth.month ||
+        date.year != visibleMonth.year;
+    final dayItems = _items.where((item) =>
+      item.overlaps(from: day, to: day)).toList();
     final holiday = _holidayView?.on(date);
     final selected = DateUtils.isSameDay(date, _selected);
     final today = DateUtils.isSameDay(date, chinaNow);
     // 日期和事项共享周行高度，但绝不为了显示 +N 而隐藏最后一个
     // 可长按的事项标签。较窄手机仍然优先保留拖动入口。
-    final dateHeight = height < 28 ? height.clamp(0.0, 20.0).toDouble()
+    // 小屏首页中整个月历可能被压到每周不足 20px。先扣除内边距，
+    // 再计算日期高度，确保 Column 的子元素永远不会超过可用高度。
+    final cellVerticalPadding = height < 24 ? 0.0 : 3.0;
+    final innerHeight = (height - cellVerticalPadding * 2)
+        .clamp(0.0, double.infinity).toDouble();
+    final preferredDateHeight = height < 28 ? height.clamp(0.0, 20.0).toDouble()
         : height < 45 ? 21.0 : height < 85 ? 23.0 : 26.0;
+    final dateHeight = preferredDateHeight.clamp(0.0, innerHeight).toDouble();
     final showLabels = height >= 43;
     const chipHeight = 15.0;
     const chipGap = 2.0;
@@ -672,9 +831,9 @@ class _DailyTodosCalendarState extends State<DailyTodosCalendar> {
     final showFestival = !outsideMonth &&
         holiday?.festivalLabel.isNotEmpty == true && height >= 85 &&
         (!showLabels || dayItems.isEmpty ||
-          height - 7 - dateHeight - labelTopGap - 13 >= plannedHeight);
+          innerHeight - 1 - dateHeight - labelTopGap - 13 >= plannedHeight);
     // 留出额外 1px 安全余量，避免不同平台字体的小数像素溢出。
-    final labelSpace = height - 7 - dateHeight -
+    final labelSpace = innerHeight - 1 - dateHeight -
         (showLabels ? labelTopGap : 0) - (showFestival ? 13 : 0);
     var visible = showLabels ? (dayItems.length < 2 ? dayItems.length : 2) : 0;
     while (visible > 0 && visible * chipStride > labelSpace) {
@@ -699,14 +858,52 @@ class _DailyTodosCalendarState extends State<DailyTodosCalendar> {
           child: Container(
             key: Key('daily_todo_cell_$day'),
             height: height,
-            padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 3),
+            padding: EdgeInsets.symmetric(horizontal: 2, vertical: cellVerticalPadding),
             decoration: BoxDecoration(
               color: hovering ? Palette.rose
                   : selected ? const Color(0xFFF0F7FA)
                   : Colors.transparent,
               borderRadius: BorderRadius.circular(22),
             ),
-            child: Column(
+            // Very short calendar rows (e.g. a 310px home panel) cannot
+            // accommodate a Column with a text line and a holiday badge.
+            // Render a single, tightly constrained layer instead. Keep the
+            // drag target and day-tap behavior unchanged.
+            child: !showLabels
+              ? Stack(
+                  fit: StackFit.expand,
+                  clipBehavior: Clip.hardEdge,
+                  children: [
+                    Center(child: SizedBox(
+                      width: dateHeight,
+                      height: dateHeight,
+                      child: DecoratedBox(
+                        decoration: BoxDecoration(
+                          color: selected ? Palette.primary
+                              : today ? Palette.sage : Colors.transparent,
+                          borderRadius: BorderRadius.circular(13),
+                        ),
+                        child: FittedBox(
+                          fit: BoxFit.scaleDown,
+                          child: Text('${date.day}', style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w800,
+                            color: selected ? Colors.white
+                                : outsideMonth ? Palette.muted : Palette.deep,
+                          )),
+                        ),
+                      ),
+                    )),
+                    if (!outsideMonth && dateHeight >= 14 &&
+                        holiday?.dayTypeLabel.isNotEmpty == true)
+                      Positioned(
+                        right: 0,
+                        top: 0,
+                        child: HolidayDayBadge(day: holiday),
+                      ),
+                  ],
+                )
+              : Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
@@ -723,7 +920,9 @@ class _DailyTodosCalendarState extends State<DailyTodosCalendar> {
                         borderRadius: BorderRadius.circular(13),
                       ),
                       child: Text('${date.day}', style: TextStyle(
-                        fontSize: 12,
+                        fontSize: dateHeight < 16
+                            ? (dateHeight * 0.72).clamp(3.0, 12.0).toDouble()
+                            : 12,
                         fontWeight: FontWeight.w800,
                         color: selected ? Colors.white
                             : outsideMonth ? Palette.muted : Palette.deep,
@@ -751,6 +950,9 @@ class _DailyTodosCalendarState extends State<DailyTodosCalendar> {
                       key: Key('daily_todo_drag_calendar_${item.id}'),
                       data: item.id,
                       maxSimultaneousDrags: _saving ? 0 : 1,
+                      onDragStarted: () => _startTodoDrag(item.id),
+                      onDragUpdate: _updateTodoDrag,
+                      onDragEnd: (_) => _endTodoDrag(),
                       feedback: _dragFeedback(item),
                       childWhenDragging: const SizedBox(height: chipHeight),
                       child: Container(
@@ -921,7 +1123,19 @@ class _DailyTodosCalendarState extends State<DailyTodosCalendar> {
             const SizedBox(height: gapHeight),
             Expanded(child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 8),
-              child: _calendar(),
+              child: GestureDetector(
+                key: const Key('daily_todo_month_swipe'),
+                behavior: HitTestBehavior.translucent,
+                onHorizontalDragStart: (_) => _monthSwipeDistance = 0,
+                onHorizontalDragUpdate: (details) {
+                  if (_draggingTodoId == null) {
+                    _monthSwipeDistance += details.primaryDelta ?? 0;
+                  }
+                },
+                onHorizontalDragEnd: _endMonthSwipe,
+                onHorizontalDragCancel: () => _monthSwipeDistance = 0,
+                child: _calendar(),
+              ),
             )),
             const Divider(height: separatorHeight,
               color: Color(0xFFF0DFE8)),
@@ -957,7 +1171,7 @@ class _DailyTodosCalendarState extends State<DailyTodosCalendar> {
                         )),
                       if (_holidayView?.on(_selected) == null &&
                           _holidayView?.notice.isNotEmpty != true && entries.isNotEmpty)
-                        const Flexible(child: Text('长按拖到日期格可改日期 · 悬停月份箭头可跨月',
+                        const Flexible(child: Text('长按拖到左右边缘可连续翻月 · 松开放到目标日',
                           maxLines: 1, overflow: TextOverflow.ellipsis,
                           style: TextStyle(fontSize: 9, color: Palette.muted))),
                     ],
@@ -1024,6 +1238,9 @@ class _DailyTodosCalendarState extends State<DailyTodosCalendar> {
                               key: Key('daily_todo_drag_day_${item.id}'),
                               data: item.id,
                               maxSimultaneousDrags: _saving ? 0 : 1,
+                              onDragStarted: () => _startTodoDrag(item.id),
+                              onDragUpdate: _updateTodoDrag,
+                              onDragEnd: (_) => _endTodoDrag(),
                               feedback: _dragFeedback(item),
                               childWhenDragging: const Opacity(
                                 opacity: 0.35, child: Text('拖动中…')),
@@ -1041,11 +1258,12 @@ class _DailyTodosCalendarState extends State<DailyTodosCalendar> {
                                         decoration: item.completed
                                           ? TextDecoration.lineThrough : null,
                                         fontWeight: FontWeight.w800)),
-                                    Text(item.startTime == null
-                                        ? (item.note.isEmpty ? '全天' : '全天 · ${item.note}')
-                                        : (item.note.isEmpty
-                                          ? item.timeLabel
-                                          : '${item.timeLabel} · ${item.note}'),
+                                    Text([
+                                      if (item.date != item.endDate)
+                                        '${item.date} 至 ${item.endDate}',
+                                      item.timeLabel,
+                                      if (item.note.isNotEmpty) item.note,
+                                    ].join(' · '),
                                       maxLines: 1,
                                       overflow: TextOverflow.ellipsis,
                                       style: const TextStyle(

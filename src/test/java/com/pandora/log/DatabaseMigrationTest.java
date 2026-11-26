@@ -39,13 +39,13 @@ class DatabaseMigrationTest extends EmbeddedPostgresSupport {
 
     @Test
     void migratesEmptyDatabaseToLatestVersion() {
-        assertThat(firstRun.migrationsExecuted).isEqualTo(14);
+        assertThat(firstRun.migrationsExecuted).isEqualTo(15);
 
         Flyway flyway = flyway(jdbcUrl);
         MigrationInfo current = flyway.info().current();
 
         assertThat(current).isNotNull();
-        assertThat(current.getVersion().getVersion()).isEqualTo("14");
+        assertThat(current.getVersion().getVersion()).isEqualTo("15");
         assertThat(current.getState().isApplied()).isTrue();
         assertThat(flyway.info().pending()).isEmpty();
         assertThat(count("task_progress_updates")).isZero();
@@ -57,8 +57,8 @@ class DatabaseMigrationTest extends EmbeddedPostgresSupport {
     @Test
     void seedsRolesPermissionsAndSystemConfigs() {
         assertThat(count("roles")).isEqualTo(5);
-        assertThat(count("permissions")).isEqualTo(15);
-        assertThat(count("role_permissions")).isEqualTo(41);
+        assertThat(count("permissions")).isEqualTo(23);
+        assertThat(count("role_permissions")).isEqualTo(55);
         assertThat(count("system_configs")).isEqualTo(5);
 
         assertThat(count(
@@ -114,7 +114,7 @@ class DatabaseMigrationTest extends EmbeddedPostgresSupport {
                 flyway(upgradeUrl)
                         .migrate()
                         .migrationsExecuted)
-                .isEqualTo(9);
+                .isEqualTo(10);
 
         try (Connection connection = DriverManager.getConnection(upgradeUrl);
              Statement statement = connection.createStatement()) {
@@ -239,7 +239,7 @@ class DatabaseMigrationTest extends EmbeddedPostgresSupport {
                         .load()
                         .migrate()
                         .migrationsExecuted)
-                .isEqualTo(7);
+                .isEqualTo(8);
 
         /*
          * V8 将旧的 DATE 语义转换为一天的开始与结束时间。

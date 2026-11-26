@@ -52,14 +52,25 @@ class ApiRepository implements PandoraRepository {
   }
   dynamic _data(Map<String,dynamic> response)=>response['data'];
   List<dynamic> _items(dynamic data) { if(data is List) return data; final j=mapOf(data);return listOf(j['items']); }
-  Future<List<dynamic>> _allPages(String path,{Map<String,String>? query}) async {
+  Future<List<dynamic>> _allPages(String path, {Map<String,String>? query,
+    bool fetchAll = false}) async {
     const pageSize=50;
     final out=<dynamic>[];
-    for(var page=1;page<=10;page++) {
+    String? previousPage;
+    for (var page = 1; page <= (fetchAll ? 100 : 10); page++) {
       final data=_data(await _request('GET',path,query:{...?query,'page':'$page','size':'$pageSize'}));
       final items=_items(data);
+      if (fetchAll) {
+        final signature = jsonEncode(items);
+        if (signature == previousPage) break;
+        previousPage = signature;
+      }
       out.addAll(items);
-      if(items.length<pageSize || (mapOf(data)['total']!=null && out.length>=intOf(mapOf(data)['total']))) break;
+      final total = mapOf(data)['total'];
+      if (items.isEmpty || (total == null
+        ? items.length < pageSize : out.length >= intOf(total))) {
+        break;
+      }
     }
     return out;
   }
@@ -85,13 +96,21 @@ class ApiRepository implements PandoraRepository {
     _accessToken=await _store.read(key:'pandora_access_token');
     _refreshToken=await _store.read(key:'pandora_refresh_token');
     if(_accessToken==null||_accessToken!.isEmpty) return null;
-    try {return UserProfile.fromJson(_data(await _request('GET','/auth/me')));}catch(_){await _clearTokens();return null;}
+    try {
+      final user = UserProfile.fromJson(_data(await _request('GET', '/auth/me')));
+      if (user.isActive) return user;
+    } catch (_) {
+      // An expired or disabled session cannot be restored.
+    }
+    await _clearTokens();
+    return null;
   }
   @override Future<UserProfile> login(String username,String password) async {
     final data=mapOf(_data(await _request('POST','/auth/login',authenticated:false,body:{'username':username,'password':password})));
     final access=textOf(data['accessToken']),refresh=textOf(data['refreshToken']);
     if(access.isEmpty||refresh.isEmpty) throw const AppFailure('服务端没有返回完整令牌');
     final user=UserProfile.fromJson(data['user']);
+    if (!user.isActive) throw const AppFailure('该账号已停用');
     await _saveTokens(access,refresh);
     return user;
   }
@@ -225,32 +244,38 @@ class ApiRepository implements PandoraRepository {
   }
   // 每日待办：云端为准，服务端按登录用户隔离，客户端不再自行编造 AI/统计数据。
   @override Future<List<DailyTodo>> dailyItems({String? from,String? to}) async {
-    final query=<String,String?>{'from':from,'to':to}
-      ..removeWhere((_,value)=>value==null);
-    final data=_data(await _request('GET','/daily-items',
-      query:query.isEmpty?null:query.cast<String,String>()));
-    return _items(data).map(DailyTodo.fromJson)
-      .where((item)=>item.id.isNotEmpty).toList();
+    final rows = await _allPages('/daily-items', fetchAll: true, query: {
+      if (from != null) 'from': from,
+      if (to != null) 'to': to,
+    });
+    return rows.map(DailyTodo.fromJson)
+      .where((item) => item.id.isNotEmpty && item.overlaps(from: from, to: to)).toList();
   }
   @override Future<DailyTodo> createDailyItem({required String date,
-    required String title,String note='',bool completed=false,
-    int colorValue=DailyTodoColors.defaultColor,
-    String? startTime,String? endTime,int sortOrder=0}) async {
-    final data=_data(await _request('POST','/daily-items',
-      body:{'date':date,'title':title,'note':note,'completed':completed,
-        'colorValue':colorValue,'startTime':startTime ?? '',
-        'endTime':endTime ?? '','sortOrder':sortOrder}));
-    final item=DailyTodo.fromJson(data);
-    if(item.id.isEmpty) throw const AppFailure('服务器未返回每日事项编号');
-    return item;
-  }
-  @override Future<DailyTodo> updateDailyItem(DailyTodo item) async {
-    final data=_data(await _request('PUT','/daily-items/${item.id}',
-      body:{'date':item.date,'title':item.title,'note':item.note,
-        'completed':item.completed,'colorValue':item.colorValue,
-        'startTime':item.startTime ?? '','endTime':item.endTime ?? '',
-        'sortOrder':item.sortOrder}));
-    return DailyTodo.fromJson(data);
+    required String title, String note = '', bool completed = false,
+    int colorValue = DailyTodoColors.defaultColor, int sortOrder = 0,
+    String? endDate, String? startTime, String? endTime}) =>
+    _saveDailyItem(DailyTodo(id: '', date: date, endDate: endDate,
+      title: title, note: note, completed: completed, colorValue: colorValue,
+      sortOrder: sortOrder, startTime: startTime, endTime: endTime));
+
+  @override Future<DailyTodo> updateDailyItem(DailyTodo item) => _saveDailyItem(item);
+
+  Future<DailyTodo> _saveDailyItem(DailyTodo item) async {
+    if (!item.hasValidRange) throw const AppFailure('事项起止日期或时间无效');
+    final creating = item.id.isEmpty;
+    final body = item.toJson()..remove('id');
+    final data = _data(await _request(creating ? 'POST' : 'PUT',
+      creating ? '/daily-items' : '/daily-items/${item.id}', body: body));
+    final saved = DailyTodo.fromJson(data);
+    if (saved.id.isEmpty) throw const AppFailure('服务器未返回每日事项编号');
+    // The current backend stores a single item date. Multi-day endDate stays
+    // in local presentation state until the server gains a range column.
+    if (saved.date != item.date ||
+        saved.startTime != item.startTime || saved.endTime != item.endTime) {
+      throw const AppFailure('服务器返回的事项日期或时间与所选范围不一致，请刷新确认');
+    }
+    return saved;
   }
   @override Future<void> deleteDailyItem(String id) async {
     await _request('DELETE','/daily-items/$id');
@@ -260,7 +285,8 @@ class ApiRepository implements PandoraRepository {
     return _items(data).map(UserProfile.fromJson).toList();
   }
   @override Future<List<UserProfile>> companyMembers() async =>
-    (await _allPages('/tasks/recipients/all')).map(UserProfile.fromJson).toList();
+    (await _allPages('/tasks/recipients/all', fetchAll: true))
+        .map(UserProfile.fromJson).where((user) => user.id > 0 && user.canUseTasks).toList();
   @override Future<String> submitDispatchRequest({required String name,required String details,
     required String startDate, required String deadline, required String urgency,
     required String taskType, required List<int> assigneeIds}) async {
@@ -272,8 +298,51 @@ class ApiRepository implements PandoraRepository {
     if(status!='PENDING' && status!='APPROVED') throw const AppFailure('服务器未确认任务审核状态');
     return status;
   }
+  @override Future<List<DispatchReview>> dispatchReviewInbox() async =>
+    (await _allPages('/tasks/dispatch-requests/inbox', fetchAll: true))
+      .map(DispatchReview.fromJson).where((item) => item.request.isWaiting).toList();
+
+  @override Future<void> reviewDispatchRequest(int requestId, {required bool approve}) async {
+    final result = approve ? 'APPROVED' : 'REJECTED';
+    final data = mapOf(_data(await _request('POST', '/tasks/dispatch-requests/$requestId/review',
+      body: {'result': result})));
+    if (textOf(data['status']) != result) {
+      throw const AppFailure('服务器未确认审核结果，请刷新后核对');
+    }
+  }
+
+
+  // Backend endpoints described in HANDOVER_BACKEND_CONTRACT.md. Requests never
+  // change ownership locally; success requires an explicit completed record.
+  @override Future<List<TaskHandover>> taskHandovers() async =>
+    (await _allPages('/tasks/handovers', fetchAll: true))
+        .map(TaskHandover.fromJson).toList();
+
+  @override Future<List<UserProfile>> handoverCandidates(String handoverId) async =>
+    (await _allPages('/tasks/handovers/${Uri.encodeComponent(handoverId)}/candidates',
+      fetchAll: true)).map(UserProfile.fromJson)
+      .where((u) => u.id > 0 && u.isActive).toList();
+
+  @override Future<TaskHandover> confirmTaskHandover(String handoverId, {
+    required int newAssigneeId, required String note, String? deadline}) async {
+    if (note.trim().isEmpty) throw const AppFailure('请填写交接说明');
+    final data = _data(await _request('POST',
+      '/tasks/handovers/${Uri.encodeComponent(handoverId)}/confirm', body: {
+        'newAssigneeId': newAssigneeId,
+        'note': note.trim(),
+        if (deadline != null && deadline.isNotEmpty) 'deadline': deadline,
+      }));
+    final confirmed = TaskHandover.fromJson(data);
+    if (confirmed.id != handoverId || confirmed.status != 'COMPLETED' ||
+        confirmed.newAssigneeId != newAssigneeId ||
+        confirmed.newAssignmentId == null || confirmed.newAssignmentId! <= 0) {
+      throw const AppFailure('服务器未确认任务交接成功，请刷新交接清单核对');
+    }
+    return confirmed;
+  }
+
   @override Future<List<SubordinateTaskSummary>> subordinatesTaskOverview() async =>
-    (await _allPages('/tasks/subordinates/overview')).map(SubordinateTaskSummary.fromJson).toList();
+    (await _allPages('/tasks/subordinates/overview', fetchAll: true)).map(SubordinateTaskSummary.fromJson).toList();
   @override Future<IssuedTasksResult> issuedTasks() async {
     // Existing API supplies live tasks. The request-history endpoint is a new
     // backend contract; report unsupported history rather than inventing it.

@@ -25,7 +25,10 @@ void main() {
     expect(find.text('个人10大信息'), findsNothing);
     expect(find.text('日志展示'), findsNothing);
     expect(find.byKey(const Key('daily_todo_month_grid')), findsOneWidget);
-    expect(find.byType(ListView), findsNWidgets(2));
+    // 两个面板始终存在；其中的 ListView 只有在有记录时才创建。
+    // 因此不能根据演示账号的数据量断言内部 ListView 的数量或 Key。
+    expect(find.byKey(const Key('event_history_panel')), findsOneWidget);
+    expect(find.byKey(const Key('task_board_panel')), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 }

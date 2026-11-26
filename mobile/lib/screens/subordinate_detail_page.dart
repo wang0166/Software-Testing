@@ -105,6 +105,9 @@ class _SubordinateDetailPageState extends State<SubordinateDetailPage> {
                     Text(member.name, style: const TextStyle(color: Palette.deep,
                       fontSize: 19, fontWeight: FontWeight.w900)),
                     const SizedBox(height: 5),
+                    if (!member.isActive)
+                      const Text('账号已停用', key: Key('subordinate_account_disabled'),
+                        style: TextStyle(color: Palette.coral, fontWeight: FontWeight.w800)),
                     _field('部门 / 组织', member.departmentName),
                     if (member.teamName.isNotEmpty)
                       _field('团队', member.teamName),
@@ -123,7 +126,7 @@ class _SubordinateDetailPageState extends State<SubordinateDetailPage> {
           ),
           const SizedBox(height: 12),
           BusinessPanel(
-            title: '当前任务', count: null,
+            title: member.isActive ? '当前任务' : '任务记录', count: null,
             trailing:member.visibleIssueCount>0?Container(
               padding:const EdgeInsets.symmetric(horizontal:7,vertical:4),
               decoration:BoxDecoration(color:const Color(0xFFD63D39),borderRadius:BorderRadius.circular(13)),
