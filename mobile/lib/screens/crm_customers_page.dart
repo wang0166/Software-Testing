@@ -58,69 +58,22 @@ class _CrmCustomersPageState extends State<CrmCustomersPage> {
   }
 
   Future<void> _create() async {
-    final name = TextEditingController(), remark = TextEditingController();
-    final form = GlobalKey<FormState>();
-    String category = 'PERSON', business = '会员服务', tier = '普通客户';
+    final values = await showDialog<Map<String, String>>(
+      context: context, builder: (_) => const _CreateCustomerDialog());
+    if (values == null || !mounted) return;
     try {
-      final values = await showDialog<Map<String, String>>(
-        context: context, builder: (context) => StatefulBuilder(
-          builder: (context, update) => AlertDialog(
-            title: const Text('新增客户档案'),
-            content: SizedBox(width: (MediaQuery.sizeOf(context).width - 128).clamp(180.0, 380.0), child: SingleChildScrollView(child: Form(
-              key: form, child: Column(mainAxisSize: MainAxisSize.min, children: [
-                TextFormField(controller: name, maxLength: 60,
-                  decoration: const InputDecoration(labelText: '客户名称 *'),
-                  validator: (v) => (v?.trim().length ?? 0) < 2 ? '至少填写两个字符' : null),
-                const SizedBox(height: 8),
-                DropdownButtonFormField<String>(initialValue: category, isExpanded: true,
-                  decoration: const InputDecoration(labelText: '客户类型'),
-                  items: const [DropdownMenuItem(value: 'PERSON', child: Text('个人客户')),
-                    DropdownMenuItem(value: 'COMPANY', child: Text('企业客户'))],
-                  onChanged: (v) => update(() => category = v ?? category)),
-                const SizedBox(height: 12),
-                DropdownButtonFormField<String>(initialValue: business, isExpanded: true,
-                  decoration: const InputDecoration(labelText: '主要业务'),
-                  items: _businesses.skip(1).map((v) => DropdownMenuItem(
-                    value: v, child: Text(v))).toList(),
-                  onChanged: (v) => update(() => business = v ?? business)),
-                const SizedBox(height: 12),
-                DropdownButtonFormField<String>(initialValue: tier, isExpanded: true,
-                  decoration: const InputDecoration(labelText: '客户/会员等级'),
-                  items: ['普通客户', '银卡会员', '金卡会员', '尊享会员', '演出年卡', '企业客户']
-                    .map((v) => DropdownMenuItem(value: v, child: Text(v))).toList(),
-                  onChanged: (v) => update(() => tier = v ?? tier)),
-                const SizedBox(height: 12),
-                TextFormField(controller: remark, maxLines: 2, maxLength: 200,
-                  decoration: const InputDecoration(labelText: '客户备注（选填）')),
-                const Text('敏感联系方式、订单及合同材料须由授权后端安全保存。',
-                  style: TextStyle(fontSize: 11, color: Palette.muted)),
-              ])))),
-            actions: [
-              TextButton(onPressed: () => Navigator.pop(context), child: const Text('取消')),
-              FilledButton(onPressed: () {
-                if (form.currentState?.validate() != true) return;
-                Navigator.pop(context, {'name': name.text.trim(), 'category': category,
-                  'business': business, 'tier': tier, 'remark': remark.text.trim()});
-              }, child: const Text('保存档案')),
-            ],
-          ),
-        ),
-      );
-      if (values == null || !mounted) return;
-      try {
-        await widget.app.crmGateway.createCustomer(widget.app.user!,
-          name: values['name']!, category: values['category']!,
-          business: values['business']!, tier: values['tier']!,
-          remark: values['remark']!);
-        if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-          content: Text('客户档案已保存')));
-        await _fetch(reset: true);
-      } catch (e) {
-        if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text('保存失败：$e')));
-      }
-    } finally { name.dispose(); remark.dispose(); }
+      await widget.app.crmGateway.createCustomer(widget.app.user!,
+        name: values['name']!, category: values['category']!,
+        business: values['business']!, tier: values['tier']!,
+        remark: values['remark']!);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('客户档案已保存')));
+      await _fetch(reset: true);
+    } catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text('保存失败：$e')));
+    }
   }
 
   Widget _filterChip(String title, String value) => Padding(
@@ -266,4 +219,69 @@ class _CrmCustomersPageState extends State<CrmCustomersPage> {
         },
       ));
   }
+}
+
+class _CreateCustomerDialog extends StatefulWidget {
+  const _CreateCustomerDialog();
+  @override State<_CreateCustomerDialog> createState() => _CreateCustomerDialogState();
+}
+
+class _CreateCustomerDialogState extends State<_CreateCustomerDialog> {
+  final _name = TextEditingController();
+  final _remark = TextEditingController();
+  final _form = GlobalKey<FormState>();
+  String _category = 'PERSON', _business = '会员服务', _tier = '普通客户';
+
+  @override void dispose() {
+    _name.dispose();
+    _remark.dispose();
+    super.dispose();
+  }
+
+  @override Widget build(BuildContext context) => AlertDialog(
+    title: const Text('新增客户档案'),
+    content: SizedBox(
+      width: (MediaQuery.sizeOf(context).width - 128).clamp(180.0, 380.0),
+      child: SingleChildScrollView(child: Form(
+        key: _form,
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          TextFormField(key: const Key('crm_customer_name'), controller: _name,
+            maxLength: 60, decoration: const InputDecoration(labelText: '客户名称 *'),
+            validator: (value) => (value?.trim().length ?? 0) < 2 ? '至少填写两个字符' : null),
+          const SizedBox(height: 8),
+          DropdownButtonFormField<String>(initialValue: _category, isExpanded: true,
+            decoration: const InputDecoration(labelText: '客户类型'),
+            items: const [DropdownMenuItem(value: 'PERSON', child: Text('个人客户')),
+              DropdownMenuItem(value: 'COMPANY', child: Text('企业客户'))],
+            onChanged: (value) => setState(() => _category = value ?? _category)),
+          const SizedBox(height: 12),
+          DropdownButtonFormField<String>(initialValue: _business, isExpanded: true,
+            decoration: const InputDecoration(labelText: '主要业务'),
+            items: _CrmCustomersPageState._businesses.skip(1).map((value) =>
+              DropdownMenuItem(value: value, child: Text(value))).toList(),
+            onChanged: (value) => setState(() => _business = value ?? _business)),
+          const SizedBox(height: 12),
+          DropdownButtonFormField<String>(initialValue: _tier, isExpanded: true,
+            decoration: const InputDecoration(labelText: '客户/会员等级'),
+            items: ['普通客户', '银卡会员', '金卡会员', '尊享会员', '演出年卡', '企业客户']
+              .map((value) => DropdownMenuItem(value: value, child: Text(value))).toList(),
+            onChanged: (value) => setState(() => _tier = value ?? _tier)),
+          const SizedBox(height: 12),
+          TextFormField(key: const Key('crm_customer_remark'), controller: _remark,
+            maxLines: 2, maxLength: 200,
+            decoration: const InputDecoration(labelText: '客户备注（选填）')),
+          const Text('敏感联系方式、订单及合同材料须由授权后端安全保存。',
+            style: TextStyle(fontSize: 11, color: Palette.muted)),
+        ]),
+      )),
+    ),
+    actions: [
+      TextButton(onPressed: () => Navigator.pop(context), child: const Text('取消')),
+      FilledButton(key: const Key('crm_customer_save'), onPressed: () {
+        if (_form.currentState?.validate() != true) return;
+        Navigator.pop(context, {'name': _name.text.trim(), 'category': _category,
+          'business': _business, 'tier': _tier, 'remark': _remark.text.trim()});
+      }, child: const Text('保存档案')),
+    ],
+  );
 }

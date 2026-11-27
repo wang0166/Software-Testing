@@ -502,7 +502,7 @@ public class TaskService {
                     currentUser.id(), requestId);
             ChangeRequestViewDto approved = requireChangeRequest(requestId);
             if ("DELETE".equals(created.action())) {
-                jdbcTemplate.update("DELETE FROM tasks WHERE id = ?", created.taskId());
+                deleteTaskWithHandovers(created.taskId());
                 auditTrail.success("删除任务", "TASK", created.taskId(), AuditTrail.SYSTEM,
                         "创始人变更自动通过，删除任务 #" + created.taskId(), List.of());
             } else {
@@ -554,10 +554,7 @@ public class TaskService {
                     currentUser.id(), trim(request == null ? null : request.comment()), requestId);
             ChangeRequestViewDto approved = requireChangeRequest(requestId);
             // 交接记录引用任务接收记录且使用 RESTRICT；审批删除任务时先清理该任务的交接记录。
-            jdbcTemplate.update("DELETE FROM task_handovers WHERE original_assignment_id IN " +
-                    "(SELECT id FROM task_assignments WHERE task_id=?) OR new_assignment_id IN " +
-                    "(SELECT id FROM task_assignments WHERE task_id=?)",existing.taskId(),existing.taskId());
-            jdbcTemplate.update("DELETE FROM tasks WHERE id = ?", existing.taskId());
+            deleteTaskWithHandovers(existing.taskId());
             auditTrail.success("通过删除申请", "TASK", requestId, AuditTrail.USER,
                     "通过删除申请 #" + requestId + "，任务 #" + existing.taskId(),
                     List.of(new AuditChangeDto("status", "PENDING", "APPROVED")));
@@ -607,7 +604,7 @@ public class TaskService {
             throw new BusinessException(ErrorCode.NOT_SENDER);
         }
         if ("DELETE".equals(request.action())) {
-            jdbcTemplate.update("DELETE FROM tasks WHERE id = ?", request.taskId());
+            deleteTaskWithHandovers(request.taskId());
             return;
         }
 
@@ -635,6 +632,13 @@ public class TaskService {
                         + "AND a.execution_status = 'NOT_STARTED' AND a.review_status = 'NONE' "
                         + "AND NOT EXISTS (SELECT 1 FROM task_progress_updates p WHERE p.assignment_id = a.id)",
                 args.toArray());
+    }
+
+    private void deleteTaskWithHandovers(Long taskId) {
+        jdbcTemplate.update("DELETE FROM task_handovers WHERE original_assignment_id IN "
+                + "(SELECT id FROM task_assignments WHERE task_id=?) OR new_assignment_id IN "
+                + "(SELECT id FROM task_assignments WHERE task_id=?)", taskId, taskId);
+        jdbcTemplate.update("DELETE FROM tasks WHERE id = ?", taskId);
     }
 
     private TaskRef requireTaskRef(Long taskId) {

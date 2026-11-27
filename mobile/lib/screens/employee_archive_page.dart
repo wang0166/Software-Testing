@@ -43,63 +43,13 @@ class _EmployeeArchivePageState extends State<EmployeeArchivePage> {
   }
 
   Future<void> _create() async {
-    final form = GlobalKey<FormState>();
-    final name = TextEditingController(), dept = TextEditingController(),
-      duty = TextEditingController();
-    DateTime? end;
-    try {
-      final data = await showDialog<Map<String, String>>(context: context,
-        builder: (ctx) => StatefulBuilder(builder: (ctx, update) => AlertDialog(
-          title: const Text('新增员工档案'),
-          content: SizedBox(width: (MediaQuery.sizeOf(context).width - 128).clamp(180.0, 380.0), child: SingleChildScrollView(
-            child: Form(key: form, child: Column(mainAxisSize: MainAxisSize.min,
-              children: [
-                TextFormField(controller: name, maxLength: 40,
-                  decoration: const InputDecoration(labelText: '员工姓名 *'),
-                  validator: (v) => (v?.trim().length ?? 0) < 2 ? '请填写员工姓名' : null),
-                TextFormField(controller: dept, maxLength: 40,
-                  decoration: const InputDecoration(labelText: '所属部门 *'),
-                  validator: (v) => (v?.trim().isEmpty ?? true) ? '请填写部门' : null),
-                TextFormField(controller: duty, maxLength: 120, maxLines: 2,
-                  decoration: const InputDecoration(labelText: '岗位职责 *'),
-                  validator: (v) => (v?.trim().isEmpty ?? true) ? '请填写职责' : null),
-                OutlinedButton.icon(onPressed: () async {
-                  final picked = await showDatePicker(context: ctx,
-                    initialDate: end ?? DateTime.now(),
-                    firstDate: DateTime(2020), lastDate: DateTime(2100));
-                  if (picked != null) { update(() => end = picked); }
-                }, icon: const Icon(Icons.event),
-                  label: Text(end == null ? '选择合同到期日（选填）' :
-                    '${end!.year}-${end!.month.toString().padLeft(2, '0')}-${end!.day.toString().padLeft(2, '0')}')),
-                const SizedBox(height: 8),
-                const Text('此处仅创建档案元数据；劳动合同扫描件需在后端文件系统安全归档。',
-                  style: TextStyle(fontSize: 11, color: Palette.muted)),
-              ])))),
-          actions: [TextButton(onPressed: () => Navigator.pop(ctx),
-            child: const Text('取消')),
-            FilledButton(onPressed: () {
-              if (form.currentState?.validate() != true) { return; }
-              final date = end == null ? '' :
-                '${end!.year}-${end!.month.toString().padLeft(2, '0')}-${end!.day.toString().padLeft(2, '0')}';
-              Navigator.pop(ctx, {'name': name.text.trim(),
-                'department': dept.text.trim(), 'duty': duty.text.trim(),
-                'contractEnd': date});
-            }, child: const Text('保存档案'))],
-        )));
-      if (data == null || !mounted) { return; }
-      try {
-        await widget.app.crmGateway.createEmployee(widget.app.user!,
-          name: data['name']!, department: data['department']!,
-          duty: data['duty']!, contractEnd: data['contractEnd']!);
-        if (!mounted) { return; }
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-          content: Text('员工档案已保存，合同材料仍待归档')));
-        await _fetch(reset: true);
-      } catch (e) {
-        if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text('保存失败：$e')));
-      }
-    } finally { name.dispose(); dept.dispose(); duty.dispose(); }
+    final saved = await showDialog<bool>(context: context,
+      builder: (_) => _CreateEmployeeDialog(app: widget.app));
+    if (saved == true && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('员工档案已保存，合同材料仍待归档')));
+      await _fetch(reset: true);
+    }
   }
 
   Widget _header(CrmAccess access) => Column(
@@ -196,6 +146,79 @@ class _EmployeeArchivePageState extends State<EmployeeArchivePage> {
           return TextButton(onPressed: () => _fetch(), child: const Text('加载更多员工'));
         }));
   }
+}
+
+class _CreateEmployeeDialog extends StatefulWidget {
+  final AppState app;
+  const _CreateEmployeeDialog({required this.app});
+  @override State<_CreateEmployeeDialog> createState() => _CreateEmployeeDialogState();
+}
+
+class _CreateEmployeeDialogState extends State<_CreateEmployeeDialog> {
+  final _form = GlobalKey<FormState>();
+  final _name = TextEditingController();
+  final _dept = TextEditingController();
+  final _duty = TextEditingController();
+  DateTime? _end;
+  bool _saving = false;
+  String? _error;
+
+  @override void dispose() {
+    _name.dispose(); _dept.dispose(); _duty.dispose();
+    super.dispose();
+  }
+
+  Future<void> _save() async {
+    if (_saving || _form.currentState?.validate() != true) return;
+    setState(() { _saving = true; _error = null; });
+    final date = _end == null ? '' :
+      '${_end!.year}-${_end!.month.toString().padLeft(2, '0')}-${_end!.day.toString().padLeft(2, '0')}';
+    try {
+      await widget.app.crmGateway.createEmployee(widget.app.user!,
+        name: _name.text.trim(), department: _dept.text.trim(),
+        duty: _duty.text.trim(), contractEnd: date);
+      if (mounted) Navigator.pop(context, true);
+    } catch (error) {
+      if (mounted) setState(() => _error = '保存失败：$error');
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  @override Widget build(BuildContext context) => AlertDialog(
+    title: const Text('新增员工档案'),
+    content: SizedBox(width: (MediaQuery.sizeOf(context).width - 128).clamp(180.0, 380.0),
+      child: SingleChildScrollView(child: Form(key: _form,
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          TextFormField(key: const Key('hr_employee_name'), controller: _name, maxLength: 40,
+            decoration: const InputDecoration(labelText: '员工姓名 *'),
+            validator: (value) => (value?.trim().length ?? 0) < 2 ? '请填写员工姓名' : null),
+          TextFormField(controller: _dept, maxLength: 40,
+            decoration: const InputDecoration(labelText: '所属部门 *'),
+            validator: (value) => (value?.trim().isEmpty ?? true) ? '请填写部门' : null),
+          TextFormField(controller: _duty, maxLength: 120, maxLines: 2,
+            decoration: const InputDecoration(labelText: '岗位职责 *'),
+            validator: (value) => (value?.trim().isEmpty ?? true) ? '请填写职责' : null),
+          OutlinedButton.icon(onPressed: _saving ? null : () async {
+            final picked = await showDatePicker(context: context,
+              initialDate: _end ?? DateTime.now(),
+              firstDate: DateTime(2020), lastDate: DateTime(2100));
+            if (picked != null && mounted) setState(() => _end = picked);
+          }, icon: const Icon(Icons.event),
+            label: Text(_end == null ? '选择合同到期日（选填）' :
+              '${_end!.year}-${_end!.month.toString().padLeft(2, '0')}-${_end!.day.toString().padLeft(2, '0')}')),
+          if (_error != null) Text(_error!, style: const TextStyle(color: Palette.coral)),
+          const SizedBox(height: 8),
+          const Text('此处仅创建档案元数据；劳动合同扫描件需在后端文件系统安全归档。',
+            style: TextStyle(fontSize: 11, color: Palette.muted)),
+        ])))),
+    actions: [
+      TextButton(onPressed: _saving ? null : () => Navigator.pop(context),
+        child: const Text('取消')),
+      FilledButton(key: const Key('hr_employee_save'), onPressed: _saving ? null : _save,
+        child: Text(_saving ? '保存中…' : '保存档案')),
+    ],
+  );
 }
 
 class _EmployeeActivityDetail extends StatelessWidget {

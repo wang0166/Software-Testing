@@ -3,6 +3,9 @@ server:
   forward-headers-strategy: framework
 
 app:
+  admin:
+    # 正式环境没有既有管理员时，缺少强初始口令将阻止启动。
+    require-init-password: true
   security:
     # 正式环境拒绝明文 HTTP；反向代理必须把原始 HTTPS 协议正确转发给应用。
     require-https: true

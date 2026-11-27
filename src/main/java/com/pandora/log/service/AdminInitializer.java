@@ -10,6 +10,8 @@ import org.springframework.stereotype.Component;
 
 import com.pandora.log.entity.User;
 import com.pandora.log.mapper.UserMapper;
+import com.pandora.log.common.BusinessException;
+import com.pandora.log.security.PasswordPolicy;
 import com.pandora.log.security.PasswordService;
 
 @Component
@@ -21,17 +23,23 @@ public class AdminInitializer implements ApplicationRunner {
 
     private final UserMapper userMapper;
     private final PasswordService passwordService;
+    private final PasswordPolicy passwordPolicy;
     private final String initUsername;
     private final String initPassword;
+    private final boolean requireInitPassword;
 
     public AdminInitializer(UserMapper userMapper,
             PasswordService passwordService,
+            PasswordPolicy passwordPolicy,
             @Value("${app.admin.init-username:admin}") String initUsername,
-            @Value("${app.admin.init-password:}") String initPassword) {
+            @Value("${app.admin.init-password:}") String initPassword,
+            @Value("${app.admin.require-init-password:false}") boolean requireInitPassword) {
         this.userMapper = userMapper;
         this.passwordService = passwordService;
+        this.passwordPolicy = passwordPolicy;
         this.initUsername = initUsername;
         this.initPassword = initPassword;
+        this.requireInitPassword = requireInitPassword;
     }
 
     @Override
@@ -40,8 +48,17 @@ public class AdminInitializer implements ApplicationRunner {
             return;
         }
         if (initPassword == null || initPassword.isBlank()) {
+            if (requireInitPassword) {
+                throw new IllegalStateException(
+                        "系统中不存在管理员账号，正式环境必须提供符合要求的 ADMIN_INIT_PASSWORD");
+            }
             log.warn("系统中不存在管理员账号，且未提供 ADMIN_INIT_PASSWORD，已跳过初始管理员创建");
             return;
+        }
+        try {
+            passwordPolicy.validate(initPassword);
+        } catch (BusinessException exception) {
+            throw new IllegalStateException("ADMIN_INIT_PASSWORD 不符合 12–128 位强密码要求", exception);
         }
 
         User admin = new User();

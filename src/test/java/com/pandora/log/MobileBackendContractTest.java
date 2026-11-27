@@ -225,9 +225,9 @@ class MobileBackendContractTest extends EmbeddedPostgresSupport {
     }
     @Test void oldRecoveryApprovalDiesWhenAdministratorResetsPassword() throws Exception {
         long id=resetRequest();String token=ok(post("/api/password-requests/"+id+"/review"),admin,review("APPROVED")).path("recoveryToken").asText();
-        ok(put("/api/users/"+employeeId+"/password"),admin,Map.of("password","admin-replacement"));
+        ok(put("/api/users/"+employeeId+"/password"),admin,Map.of("password","Admin!Replacement123"));
         response(post("/api/auth/password-reset"),null,Map.of("token",token,"newPassword","not-authorized"),400);
-        login("member","admin-replacement");
+        login("member","Admin!Replacement123");
     }
     @Test void simultaneousApprovalsAndRecoveriesHaveOnlyOneWinner() throws Exception {
         long id=resetRequest();
@@ -434,6 +434,14 @@ class MobileBackendContractTest extends EmbeddedPostgresSupport {
                 .isEqualTo("APPROVED");
         assertThat(ok(get("/api/audits").param("objectType","TASK").param("action","修改任务"),admin,null)
                 .path("total").asInt()).isEqualTo(1);
+
+        ok(patch("/api/users/"+employeeId+"/status"),admin,Map.of("status",0));
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM task_handovers h JOIN task_assignments a "
+                + "ON a.id=h.original_assignment_id WHERE a.task_id=?",Long.class,taskId)).isEqualTo(1L);
+        JsonNode delete=ok(post("/api/tasks/"+taskId+"/change-requests"),founder,Map.of("action","DELETE"));
+        assertThat(delete.path("status").asText()).isEqualTo("PENDING");
+        response(get("/api/tasks/"+taskId),founder,null,404);
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM task_handovers",Long.class)).isZero();
     }
 
     @Test void crmScopesTransactionalBenefitsActivitiesAndRevenueMatchMobileContract() throws Exception {
@@ -521,6 +529,17 @@ class MobileBackendContractTest extends EmbeddedPostgresSupport {
         String handoverId=handover.path("id").asText();
         assertThat(ok(get("/api/tasks/handovers/"+handoverId+"/candidates"),leader,null)
                 .path("items").findValuesAsText("id")).contains(String.valueOf(successor));
+
+        JsonNode beforeStart=response(post("/api/tasks/handovers/"+handoverId+"/confirm"),leader,Map.of(
+                "newAssigneeId",successor,"note","截止时间边界",
+                "deadline",today.plusDays(1)+"T09:00:00"),400);
+        assertThat(beforeStart.path("code").asInt()).isEqualTo(40001);
+        assertThat(beforeStart.path("message").asText()).contains("晚于任务开始时间");
+        JsonNode withSeconds=response(post("/api/tasks/handovers/"+handoverId+"/confirm"),leader,Map.of(
+                "newAssigneeId",successor,"note","秒精度边界",
+                "deadline",today.plusDays(2)+"T18:00:01"),400);
+        assertThat(withSeconds.path("code").asInt()).isEqualTo(40001);
+        assertThat(withSeconds.path("message").asText()).contains("精确到分钟");
 
         String changedDeadline=today.plusDays(4).toString();
         JsonNode completed=ok(post("/api/tasks/handovers/"+handoverId+"/confirm"),leader,Map.of(

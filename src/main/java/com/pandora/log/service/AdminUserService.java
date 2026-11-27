@@ -1,6 +1,5 @@
 package com.pandora.log.service;
 
-import java.nio.charset.StandardCharsets;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
@@ -12,6 +11,7 @@ import org.springframework.transaction.annotation.Transactional;
 import com.pandora.log.common.*;
 import com.pandora.log.dto.AdminDtos.*;
 import com.pandora.log.security.PasswordService;
+import com.pandora.log.security.PasswordPolicy;
 
 @Service
 public class AdminUserService {
@@ -27,12 +27,13 @@ public class AdminUserService {
     private final JdbcTemplate jdbc;
     private final AdminSupport support;
     private final PasswordService passwords;
+    private final PasswordPolicy passwordPolicy;
     private final TaskHandoverService handovers;
 
     public AdminUserService(JdbcTemplate jdbc, AdminSupport support, PasswordService passwords,
-            TaskHandoverService handovers) {
+            PasswordPolicy passwordPolicy, TaskHandoverService handovers) {
         this.jdbc = jdbc; this.support = support; this.passwords = passwords;
-        this.handovers = handovers;
+        this.passwordPolicy = passwordPolicy; this.handovers = handovers;
     }
 
     public PageResult<UserDto> list(String keyword, String role, String status, Long departmentId, Long teamId,
@@ -74,7 +75,7 @@ public class AdminUserService {
     @Transactional
     public IdDto create(CreateUserRequest request) {
         support.require("user:manage"); support.lock();
-        validatePassword(request.password());
+        passwordPolicy.validate(request.password());
         if (support.exists("SELECT EXISTS(SELECT 1 FROM users WHERE username=?)", request.username())) {
             throw new BusinessException(ErrorCode.USERNAME_EXISTS);
         }
@@ -121,7 +122,7 @@ public class AdminUserService {
     @Transactional
     public void password(Long id, PasswordRequest request) {
         support.require("user:manage"); support.lock(); find(id);
-        validatePassword(request.password());
+        passwordPolicy.validate(request.password());
         jdbc.update("UPDATE users SET password_hash=?, failed_attempts=0, locked_until=NULL, "
                 + "auth_version=auth_version+1, updated_at=now() WHERE id=?", passwords.encode(request.password()), id);
         revokeRefresh(id);
@@ -206,12 +207,6 @@ public class AdminUserService {
 
     private static void validateRole(String role) {
         if (!ROLES.contains(role)) AdminSupport.invalid("role 非法");
-    }
-    private static void validatePassword(String password) {
-        if (password == null || password.isBlank() || password.length() < 6
-                || password.getBytes(StandardCharsets.UTF_8).length > 72) {
-            AdminSupport.invalid("密码至少 6 位且不能全为空格，UTF-8 编码不得超过 72 字节");
-        }
     }
     private static String blankToNull(String value) { return value == null || value.isBlank() ? null : value; }
 }
