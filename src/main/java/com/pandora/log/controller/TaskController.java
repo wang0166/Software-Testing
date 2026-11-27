@@ -84,7 +84,9 @@ public class TaskController {
         return ApiResponse.success(taskService.myDispatchRequests(page, size));
     }
 
-    @GetMapping("/dispatch-requests/reviewable")
+    // Older installed Android builds request /inbox; keep it mapped to the
+    // same permission-scoped pending list as the current /reviewable route.
+    @GetMapping({"/dispatch-requests/reviewable", "/dispatch-requests/inbox"})
     public ApiResponse<PageResult<DispatchRequestViewDto>> reviewableDispatchRequests(
             @RequestParam(required = false) Integer page,
             @RequestParam(required = false) Integer size) {
