@@ -384,7 +384,7 @@ class _TasksPageState extends State<TasksPage> {
       builder: (ctx) => AlertDialog(
         title: Text(item.isRequest ? '撤回派发申请？' : '提交删除任务申请？'),
         content: Text(item.isRequest ? '待审核的申请将被撤回。'
-          : '删除需管理员审核，在审核通过前原任务仍有效。'),
+          : '删除需有权限的上级审核，在审核通过前原任务仍有效。'),
         actions: [
           TextButton(onPressed: () => Navigator.pop(ctx, false),
             child: const Text('取消')),

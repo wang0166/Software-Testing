@@ -104,10 +104,15 @@ public class TaskHandoverService {
                 request.note().isBlank() || request.note().trim().length() > 1000) {
             throw new BusinessException(ErrorCode.VALIDATION_FAILED);
         }
-        LocalDateTime deadline = parseDeadline(request.deadline());
         HandoverRow row = requireVisible(handoverId, user, true);
         if (!"PENDING".equals(row.status())) {
             throw new BusinessException(ErrorCode.HANDOVER_ALREADY_COMPLETED);
+        }
+        LocalDateTime deadline = parseDeadline(request.deadline());
+        if (deadline != null && (!deadline.isAfter(row.startDate())
+                || deadline.getSecond() != 0 || deadline.getNano() != 0)) {
+            throw new BusinessException(ErrorCode.VALIDATION_FAILED,
+                    "交接截止时间必须晚于任务开始时间，且精确到分钟");
         }
         CandidateScope scope = candidateScope(user, row);
         List<Object> args = new ArrayList<>();
@@ -161,7 +166,7 @@ public class TaskHandoverService {
         args.addAll(Arrays.asList(scope.args()));
         String suffix = lock ? " FOR UPDATE OF h" : "";
         List<HandoverRow> rows = jdbc.query(
-                "SELECT h.id,h.original_user_id,h.original_assignment_id,h.status,t.id AS task_id," +
+                "SELECT h.id,h.original_user_id,h.original_assignment_id,h.status,t.id AS task_id,t.start_date," +
                         "a.execution_status,COALESCE(latest.progress_percent," +
                         "CASE WHEN a.execution_status='COMPLETED' THEN 100 ELSE 0 END) AS progress_percent," +
                         "COALESCE(latest.note,'') AS progress_note,old.department_id,old.team_id " +
@@ -173,7 +178,8 @@ public class TaskHandoverService {
                 (rs, i) -> new HandoverRow(rs.getLong("id"), rs.getLong("original_user_id"),
                         rs.getLong("original_assignment_id"), rs.getString("status"), rs.getLong("task_id"),
                         rs.getString("execution_status"), rs.getInt("progress_percent"),
-                        rs.getString("progress_note"), nullableLong(rs, "department_id"),
+                        rs.getString("progress_note"), rs.getObject("start_date", LocalDateTime.class),
+                        nullableLong(rs, "department_id"),
                         nullableLong(rs, "team_id")), args.toArray());
         if (rows.isEmpty()) throw new BusinessException(ErrorCode.TASK_ACCESS_DENIED);
         return rows.get(0);
@@ -247,6 +253,7 @@ public class TaskHandoverService {
     }
     private record HandoverRow(Long id, Long originalUserId, Long originalAssignmentId, String status,
             Long taskId, String executionStatus, int progressPercent, String progressNote,
+            LocalDateTime startDate,
             Long departmentId, Long teamId) {
     }
 }

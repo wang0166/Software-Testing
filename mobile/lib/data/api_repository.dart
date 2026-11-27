@@ -53,24 +53,37 @@ class ApiRepository implements PandoraRepository {
   }
   dynamic _data(Map<String,dynamic> response)=>response['data'];
   List<dynamic> _items(dynamic data) { if(data is List) return data; final j=mapOf(data);return listOf(j['items']); }
+  List<dynamic> _pageItems(dynamic data) {
+    if (data is List) return data;
+    if (data is! Map || !data.containsKey('items') || data['items'] is! List) {
+      throw const AppFailure('服务器分页响应格式异常，请重试或联系管理员');
+    }
+    return List<dynamic>.from(data['items'] as List);
+  }
   Future<List<dynamic>> _allPages(String path, {Map<String,String>? query,
     bool fetchAll = false}) async {
-    const pageSize=50;
+    const pageSize=50, maxPages=1000;
     final out=<dynamic>[];
     String? previousPage;
-    for (var page = 1; page <= (fetchAll ? 100 : 10); page++) {
+    for (var page = 1; page <= maxPages; page++) {
       final data=_data(await _request('GET',path,query:{...?query,'page':'$page','size':'$pageSize'}));
-      final items=_items(data);
-      if (fetchAll) {
-        final signature = jsonEncode(items);
-        if (signature == previousPage) break;
-        previousPage = signature;
+      final items=_pageItems(data);
+      final signature = jsonEncode(items);
+      if (signature == previousPage) {
+        throw const AppFailure('服务器重复返回同一分页，请重试');
       }
+      previousPage = signature;
       out.addAll(items);
       final total = mapOf(data)['total'];
+      if (items.isEmpty && total != null && out.length < intOf(total)) {
+        throw const AppFailure('服务器分页数据不完整，请重试');
+      }
       if (items.isEmpty || (total == null
         ? items.length < pageSize : out.length >= intOf(total))) {
         break;
+      }
+      if (page == maxPages) {
+        throw const AppFailure('分页结果过多，请缩小查询范围后重试');
       }
     }
     return out;

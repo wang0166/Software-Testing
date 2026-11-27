@@ -132,7 +132,7 @@ class _SubordinateTaskDetailPageState extends State<SubordinateTaskDetailPage> {
             ),
           )),
           const SizedBox(height:12),
-          const Text('此页面为上级只读视图。任务进度由执行者更新，任务定义修改仍走管理员审核。',
+          const Text('此页面为上级只读视图。任务进度由执行者更新，任务定义修改仍走有权限的上级审核。',
             style:TextStyle(color:Palette.muted,fontSize:11,height:1.6)),
         ],
       )),

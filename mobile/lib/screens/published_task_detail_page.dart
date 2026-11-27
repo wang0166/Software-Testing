@@ -96,7 +96,7 @@ class _PublishedTaskDetailPageState extends State<PublishedTaskDetailPage> {
                 Text('截止：${task.deadline.replaceFirst('T',' ')}',style:const TextStyle(color:Palette.muted,fontSize:12)),
                 Text('接收人数：${task.assigneeCount}',style:const TextStyle(color:Palette.muted,fontSize:12)),
                 if(task.changePending) const Padding(padding:EdgeInsets.only(top:10),
-                  child:Text('修改或删除申请正在等待管理员审核，已生效任务暂不变更。',
+                  child:Text('修改或删除申请正在等待有权限的上级审核，已生效任务暂不变更。',
                     style:TextStyle(color:Palette.coral,fontSize:12))),
                 if (task.isRequest && task.reviewerName.isNotEmpty)
                   Text('审核人：${task.reviewerName}',
@@ -149,7 +149,7 @@ class _PublishedTaskDetailPageState extends State<PublishedTaskDetailPage> {
             )),
           ],
           const SizedBox(height:14),
-          const Text('修改任务内容、接收人员或删除任务，请返回“我发布的任务”发起管理员审核。执行进度由接收人填报。',
+          const Text('修改任务内容、接收人员或删除任务，请返回“我发布的任务”发起上级审核。执行进度由接收人填报。',
             style:TextStyle(color:Palette.muted,fontSize:11,height:1.6)),
         ],
       )),

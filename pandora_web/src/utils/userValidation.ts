@@ -29,12 +29,21 @@ export function nameError(value: string): string {
 
 export function passwordError(value: string): string {
   if (!value.trim()) return '请填写或生成密码';
-  if (new TextEncoder().encode(value).length > 72) return '密码的 UTF-8 编码最多 72 字节';
-  if ([...value].length < 12) return '密码至少 12 位';
-  if (/[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/u.test(value)) return '密码不能包含控制字符';
-  if (!/[A-Z]/.test(value) || !/[a-z]/.test(value) || !/[0-9]/.test(value) || !/[\p{P}\p{S}]/u.test(value)) {
-    return '密码须包含大小写字母、数字和符号';
+  const length = [...value].length;
+  if (length < 12 || length > 128) return '密码须为 12–128 个字符';
+  if (/\s|[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/u.test(value)) return '密码不能包含空白或控制字符';
+  if (!/[A-Z]/.test(value) || !/[a-z]/.test(value) || !/[0-9]/.test(value)
+      || !/[\x21-\x2F\x3A-\x40\x5B-\x60\x7B-\x7E]/.test(value)) {
+    return '密码须包含大小写字母、数字和英文特殊符号';
   }
+  const normalized = value.toLowerCase();
+  const compact = normalized.replace(/[^a-z0-9]/g, '');
+  const simplified = compact.replace(/0/g, 'o').replace(/1/g, 'i')
+    .replace(/3/g, 'e').replace(/4/g, 'a').replace(/5/g, 's');
+  const common = new Set(['123456', '12345678', '123456789', '1234567890', '111111', '000000',
+    'password', 'password1', 'password123', 'qwerty', 'qwerty123', 'abc123', 'admin', 'admin123',
+    'letmein', 'welcome', 'welcome123', 'iloveyou', 'p@ssword', 'p@ssw0rd', 'passw0rd', 'changeme']);
+  if (common.has(normalized) || common.has(compact) || common.has(simplified)) return '不能使用常见弱密码';
   return '';
 }
 

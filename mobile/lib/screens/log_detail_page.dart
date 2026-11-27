@@ -17,7 +17,7 @@ class _LogDetailPageState extends State<LogDetailPage> {
   final _text=TextEditingController();
   bool _sending=false;
   int? _replyTo;
-  @override void initState(){super.initState();_log=widget.log;_reload();}
+  @override void initState(){super.initState();_log=widget.log;_reload();_refreshLog();}
   @override void dispose(){_text.dispose();super.dispose();}
   bool get _directManager {
     final me = widget.app.user!;
@@ -34,6 +34,16 @@ class _LogDetailPageState extends State<LogDetailPage> {
     _comments = widget.app.user!.id == _log.authorId || _canComment
       ? widget.app.repo.comments(_log.id)
       : Future.value(<LogComment>[]);
+  }
+  Future<void> _refreshLog() async {
+    try {
+      final current = await widget.app.repo.logs(date: _log.logDate);
+      if (!mounted) return;
+      final matching = current.where((entry) => entry.id == _log.id);
+      if (matching.isNotEmpty) setState(() => _log = matching.first);
+    } catch (_) {
+      // 列表传入的记录仍可显示；刷新失败不覆盖已有内容。
+    }
   }
   Future<void> _send() async {
     if(_sending||_text.text.trim().isEmpty)return;

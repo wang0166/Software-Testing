@@ -23,7 +23,7 @@ public final class AdminDtos {
     public record CreateUserRequest(
             @NotBlank @Pattern(regexp = "[a-z0-9_]{3,20}") String username,
             @NotBlank @Pattern(regexp = "1[0-9]{10}") String phone,
-            @NotBlank @Size(min = 6, max = 72) String password,
+            @NotBlank @Size(min = 12, max = 128) String password,
             @NotBlank @Size(max = 64) String realName,
             @NotBlank String role, Long departmentId, Long teamId,
             @Pattern(regexp = "|男|女") String gender,
@@ -33,7 +33,7 @@ public final class AdminDtos {
     public record UpdateUserRequest(@NotBlank @Size(max = 64) String realName,
             @NotBlank String role, Long departmentId, Long teamId) implements StrictRequest { }
     public record UserStatusRequest(@NotNull @Min(0) @Max(1) Integer status) implements StrictRequest { }
-    public record PasswordRequest(@NotBlank @Size(min = 6, max = 72) String password) implements StrictRequest {
+    public record PasswordRequest(@NotBlank @Size(min = 12, max = 128) String password) implements StrictRequest {
         @Override public String toString() { return "PasswordRequest[redacted]"; }
     }
     public record CompanyDto(Long id, String name, Long founderId) { }

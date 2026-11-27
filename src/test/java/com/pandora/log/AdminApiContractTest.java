@@ -24,7 +24,7 @@ import com.pandora.log.support.EmbeddedPostgresSupport;
 @AutoConfigureMockMvc
 class AdminApiContractTest extends EmbeddedPostgresSupport {
     private static final String URL = createDatabase("pandora_admin_api_test");
-    private static final String PASSWORD = "test-initial-pass";
+    private static final String PASSWORD = "Test!Initial123";
     @DynamicPropertySource static void database(DynamicPropertyRegistry r) {
         r.add("app.log-deadline-job.enabled", () -> "false");
         r.add("spring.datasource.url", () -> URL);
@@ -137,11 +137,12 @@ class AdminApiContractTest extends EmbeddedPostgresSupport {
     @Test void resetsPasswordAndRevokesAccessAndRefreshSessions() throws Exception {
         long id = ok(post("/api/users"),user("reset_target","EMPLOYEE",department,team)).path("data").path("id").asLong();
         JsonNode session = login("reset_target",PASSWORD).path("data");
-        ok(put("/api/users/"+id+"/password"),Map.of("password","replacement-pass"));
+        assertStatus(put("/api/users/"+id+"/password"),Map.of("password","replacement-pass"),token,400,40001);
+        ok(put("/api/users/"+id+"/password"),Map.of("password","Replacement!Pass123"));
         assertStatus(get("/api/auth/me"),null,session.path("accessToken").asText(),401,40102);
         assertStatus(post("/api/auth/refresh"),Map.of("refreshToken",session.path("refreshToken").asText()),null,401,40102);
         assertThat(login("reset_target",PASSWORD).path("code").asInt()).isEqualTo(40101);
-        assertThat(login("reset_target","replacement-pass").path("code").asInt()).isZero();
+        assertThat(login("reset_target","Replacement!Pass123").path("code").asInt()).isZero();
         assertStatus(put("/api/users/"+id+"/password"),Map.of("password","密".repeat(25)),token,400,40001);
     }
 

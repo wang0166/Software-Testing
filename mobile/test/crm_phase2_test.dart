@@ -114,4 +114,24 @@ void main() {
     expect(find.text('人员与业务档案'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
+
+  testWidgets('新增客户弹窗退场后才释放输入控件', (tester) async {
+    await tester.binding.setSurfaceSize(const Size(360, 720));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    final app = AppState();
+    await tester.runAsync(() => app.login('founder', 'demo123456'));
+    await tester.pumpWidget(MaterialApp(home: Scaffold(
+      body: CrmCustomersPage(app: app))));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const Key('crm_add_customer')));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byKey(const Key('crm_customer_name')), '新增长名称客户');
+    await tester.enterText(find.byKey(const Key('crm_customer_remark')), '用于验证弹窗退场生命周期');
+    await tester.tap(find.byKey(const Key('crm_customer_save')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('客户档案已保存'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
 }

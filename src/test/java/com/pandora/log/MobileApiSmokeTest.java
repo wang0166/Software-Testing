@@ -42,7 +42,7 @@ class MobileApiSmokeTest extends EmbeddedPostgresSupport {
 
     private static final String JDBC_URL = createDatabase("pandora_mobile_api_test");
 
-    private static final String ADMIN_PASSWORD = "test-admin-pass";
+    private static final String ADMIN_PASSWORD = "Test!AdminPass123";
     private static final String PASSWORD = "member-pass";
 
     @DynamicPropertySource
