@@ -1,0 +1,38 @@
+指标 | 扩展前 | 扩展后
+LINE | 2172/2785（77.99%） | 2355/2785（84.56%）
+BRANCH | 690/1259（54.81%） | 794/1259（63.07%）
+METHOD | 550/644（85.40%） | 572/644（88.82%）
+INSTRUCTION | 13551/17316（78.26%） | 14592/17316（84.27%）
+
+类 | 行覆盖（前） | 行覆盖（后） | 分支覆盖（前） | 分支覆盖（后）
+PageQuery | 7/7（100.00%） | 7/7（100.00%） | 6/8（75.00%） | 8/8（100.00%）
+CalendarService | 77/91（84.62%） | 80/91（87.91%） | 26/40（65.00%） | 29/40（72.50%）
+DailyItemService | 57/70（81.43%） | 68/70（97.14%） | 28/62（45.16%） | 45/62（72.58%）
+ConfigService | 6/39（15.38%） | 35/39（89.74%） | 0/18（0.00%） | 15/18（83.33%）
+LogService | 172/188（91.49%） | 172/188（91.49%） | 70/98（71.43%） | 71/98（72.45%）
+TaskService | 673/826（81.48%） | 680/826（82.32%） | 231/430（53.72%） | 237/430（55.12%）
+AiMapService | 15/126（11.90%） | 90/126（71.43%） | 0/60（0.00%） | 32/60（53.33%）
+RolePermissionService | 5/56（8.93%） | 52/56（92.86%） | 0/30（0.00%） | 27/30（90.00%）
+AuditService | 7/39（17.95%） | 12/39（30.77%） | 0/14（0.00%） | 1/14（7.14%）
+
+主要剩余分支缺口（按未覆盖分支数排序）
+com.pandora.log.service.TaskService | 未覆盖分支 193
+com.pandora.log.service.AiMapService | 未覆盖分支 28
+com.pandora.log.service.LogService | 未覆盖分支 27
+com.pandora.log.service.ContentService | 未覆盖分支 22
+com.pandora.log.service.AdminUserService | 未覆盖分支 21
+com.pandora.log.service.DeepSeekClient | 未覆盖分支 18
+com.pandora.log.service.PasswordRequestService | 未覆盖分支 17
+com.pandora.log.service.DailyItemService | 未覆盖分支 17
+com.pandora.log.service.AdminAuditService | 未覆盖分支 15
+com.pandora.log.service.AdminOrganizationService | 未覆盖分支 14
+com.pandora.log.service.AuditService | 未覆盖分支 13
+com.pandora.log.service.CalendarService | 未覆盖分支 11
+com.pandora.log.service.PersonalTaskService | 未覆盖分支 9
+com.pandora.log.service.StatsService | 未覆盖分支 9
+com.pandora.log.service.AdminMatterService | 未覆盖分支 6
+com.pandora.log.service.AuthService | 未覆盖分支 4
+com.pandora.log.audit.AdminAuditInterceptor | 未覆盖分支 4
+com.pandora.log.controller.LogController | 未覆盖分支 4
+com.pandora.log.controller.AiController | 未覆盖分支 4
+com.pandora.log.controller.TaskController | 未覆盖分支 3

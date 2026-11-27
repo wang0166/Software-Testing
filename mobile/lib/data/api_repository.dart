@@ -326,7 +326,7 @@ class ApiRepository implements PandoraRepository {
     return status;
   }
   @override Future<List<DispatchReview>> dispatchReviewInbox() async =>
-    (await _allPages('/tasks/dispatch-requests/inbox', fetchAll: true))
+    (await _allPages('/tasks/dispatch-requests/reviewable', fetchAll: true))
       .map(DispatchReview.fromJson).where((item) => item.request.isWaiting).toList();
 
   @override Future<void> reviewDispatchRequest(int requestId, {required bool approve}) async {

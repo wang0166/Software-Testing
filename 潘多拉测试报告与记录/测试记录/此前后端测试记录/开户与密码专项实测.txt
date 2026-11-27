@@ -1,0 +1,31 @@
+账号创建与密码更换实测结果
+运行入口 JUnit 5、MockMvc 和测试专用嵌入式 PostgreSQL。
+非法用户名 17 条。预期拒绝开户。实际均返回 HTTP 400、业务码 40001，用户表行数不变。
+合法用户名 4 条。预期开户成功且用户名原样入库。实际均返回 HTTP 200、业务码 0，并按新账号 ID 读到了原输入。
+同名不同密码 1 条。实际返回 HTTP 409、业务码 40906，同名记录只有一条，原密码通过登录，重复开户的密码返回 40101。
+连续重置两次 1 条。实际初始密码和中间密码最终均返回 40101，仅最新密码登录返回业务码 0。
+本轮 23 条自动化测试通过，人工复核待记录。
+
+acceptsValidUsernameAtLengthBoundaries(String)[1] | 通过
+acceptsValidUsernameAtLengthBoundaries(String)[2] | 通过
+acceptsValidUsernameAtLengthBoundaries(String)[3] | 通过
+acceptsValidUsernameAtLengthBoundaries(String)[4] | 通过
+onlyLatestPasswordWorksAfterTwoResets | 通过
+duplicateUsernameWithDifferentPasswordCannotCreateOrReplaceAccount | 通过
+rejectsInvalidUsernameWithoutCreatingAccount(String)[1] | 通过
+rejectsInvalidUsernameWithoutCreatingAccount(String)[2] | 通过
+rejectsInvalidUsernameWithoutCreatingAccount(String)[3] | 通过
+rejectsInvalidUsernameWithoutCreatingAccount(String)[4] | 通过
+rejectsInvalidUsernameWithoutCreatingAccount(String)[5] | 通过
+rejectsInvalidUsernameWithoutCreatingAccount(String)[6] | 通过
+rejectsInvalidUsernameWithoutCreatingAccount(String)[7] | 通过
+rejectsInvalidUsernameWithoutCreatingAccount(String)[8] | 通过
+rejectsInvalidUsernameWithoutCreatingAccount(String)[9] | 通过
+rejectsInvalidUsernameWithoutCreatingAccount(String)[10] | 通过
+rejectsInvalidUsernameWithoutCreatingAccount(String)[11] | 通过
+rejectsInvalidUsernameWithoutCreatingAccount(String)[12] | 通过
+rejectsInvalidUsernameWithoutCreatingAccount(String)[13] | 通过
+rejectsInvalidUsernameWithoutCreatingAccount(String)[14] | 通过
+rejectsInvalidUsernameWithoutCreatingAccount(String)[15] | 通过
+rejectsInvalidUsernameWithoutCreatingAccount(String)[16] | 通过
+rejectsInvalidUsernameWithoutCreatingAccount(String)[17] | 通过

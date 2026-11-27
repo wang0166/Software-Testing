@@ -1,0 +1,25 @@
+[INFO] Tests run: 35, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 55.46 s -- in com.pandora.log.AdminApiContractTest
+[INFO] Tests run: 17, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 12.23 s -- in com.pandora.log.AuthContractTest
+[INFO] Tests run: 8, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.045 s -- in com.pandora.log.common.PageQueryBoundaryTest
+[INFO] Tests run: 12, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 19.77 s -- in com.pandora.log.DatabaseMigrationTest
+[INFO] Tests run: 4, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 11.93 s -- in com.pandora.log.LocalMigrationCompatibilityTest
+[INFO] Tests run: 5, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 5.175 s -- in com.pandora.log.MobileApiSmokeTest
+[INFO] Tests run: 23, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 29.89 s -- in com.pandora.log.MobileBackendContractTest
+[INFO] Tests run: 3, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.009 s -- in com.pandora.log.security.CurrentUserContextTest
+[INFO] Tests run: 4, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.006 s -- in com.pandora.log.security.JwtServiceTest
+[INFO] Tests run: 4, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.391 s -- in com.pandora.log.security.PasswordServiceTest
+[INFO] Tests run: 13, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.053 s -- in com.pandora.log.service.AiMapBoundaryTest
+[INFO] Tests run: 12, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.036 s -- in com.pandora.log.service.CalendarBoundaryTest
+[INFO] Tests run: 18, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.033 s -- in com.pandora.log.service.ConfigWriteBoundaryTest
+[INFO] Tests run: 16, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.032 s -- in com.pandora.log.service.DailyItemBoundaryTest
+[INFO] Tests run: 3, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.008 s -- in com.pandora.log.service.LogDeadlineServiceTest
+[INFO] Tests run: 3, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.041 s -- in com.pandora.log.service.LoginAttemptPolicyTest
+[INFO] Tests run: 28, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.041 s -- in com.pandora.log.service.LogServiceUnitTest
+[INFO] Tests run: 8, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.008 s -- in com.pandora.log.service.RolePermissionBoundaryTest
+[INFO] Tests run: 9, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.013 s -- in com.pandora.log.service.StatsServiceUnitTest
+[INFO] Tests run: 6, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.003 s -- in com.pandora.log.service.SystemConfigServiceTest
+[INFO] Tests run: 14, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.016 s -- in com.pandora.log.service.TaskWorkflowUnitTest
+[INFO] Tests run: 245, Failures: 0, Errors: 0, Skipped: 0
+[INFO] Analyzed bundle 'pandora-log-backend' with 170 classes
+[INFO] BUILD SUCCESS
+[INFO] Finished at: 2026-11-20T15:55:01+08:00

@@ -1,0 +1,170 @@
+[PageQueryBoundaryTest]
+normalizesPageAndSizeWithoutOffsetOverflow(Integer, Integer, int, int, long)[1] | 通过
+normalizesPageAndSizeWithoutOffsetOverflow(Integer, Integer, int, int, long)[2] | 通过
+normalizesPageAndSizeWithoutOffsetOverflow(Integer, Integer, int, int, long)[3] | 通过
+normalizesPageAndSizeWithoutOffsetOverflow(Integer, Integer, int, int, long)[4] | 通过
+normalizesPageAndSizeWithoutOffsetOverflow(Integer, Integer, int, int, long)[5] | 通过
+normalizesPageAndSizeWithoutOffsetOverflow(Integer, Integer, int, int, long)[6] | 通过
+normalizesPageAndSizeWithoutOffsetOverflow(Integer, Integer, int, int, long)[7] | 通过
+normalizesPageAndSizeWithoutOffsetOverflow(Integer, Integer, int, int, long)[8] | 通过
+
+[CalendarBoundaryTest]
+returnsInclusiveDatesEvenWithoutItems(String, String, int)[1] | 通过
+returnsInclusiveDatesEvenWithoutItems(String, String, int)[2] | 通过
+returnsInclusiveDatesEvenWithoutItems(String, String, int)[3] | 通过
+returnsInclusiveDatesEvenWithoutItems(String, String, int)[4] | 通过
+rejectsOutOfRangeOrMalformedDatesBeforeQuery(String, String)[1] | 通过
+rejectsOutOfRangeOrMalformedDatesBeforeQuery(String, String)[2] | 通过
+rejectsOutOfRangeOrMalformedDatesBeforeQuery(String, String)[3] | 通过
+rejectsOutOfRangeOrMalformedDatesBeforeQuery(String, String)[4] | 通过
+rejectsOutOfRangeOrMalformedDatesBeforeQuery(String, String)[5] | 通过
+rejectsOutOfRangeOrMalformedDatesBeforeQuery(String, String)[6] | 通过
+rejectsOutOfRangeOrMalformedDatesBeforeQuery(String, String)[7] | 通过
+rejectsOutOfRangeOrMalformedDatesBeforeQuery(String, String)[8] | 通过
+
+[DailyItemBoundaryTest]
+updatePreservesOmittedFieldsAndAcceptsExplicitFalseAndBlankNote | 通过
+deleteUsesBothItemAndOwner | 通过
+rejectsBlankAndOversizedFields(int, int)[1] | 通过
+rejectsBlankAndOversizedFields(int, int)[2] | 通过
+rejectsBlankAndOversizedFields(int, int)[3] | 通过
+rejectsBlankAndOversizedFields(int, int)[4] | 通过
+acceptsBoundaryLengthsAfterTrimming(int, int)[1] | 通过
+acceptsBoundaryLengthsAfterTrimming(int, int)[2] | 通过
+acceptsBoundaryLengthsAfterTrimming(int, int)[3] | 通过
+rejectsMissingDateAndMissingRequest | 通过
+rejectsReversedDatesBeforeAnyQuery | 通过
+missingItemCannotBeUpdatedOrDeleted | 通过
+supportsOptionalAndEqualDateBounds(LocalDate, LocalDate, String, int)[1] | 通过
+supportsOptionalAndEqualDateBounds(LocalDate, LocalDate, String, int)[2] | 通过
+supportsOptionalAndEqualDateBounds(LocalDate, LocalDate, String, int)[3] | 通过
+supportsOptionalAndEqualDateBounds(LocalDate, LocalDate, String, int)[4] | 通过
+
+[ConfigWriteBoundaryTest]
+rejectsInvalidValuesBeforeAnyWrite(String, String)[1] | 通过
+rejectsInvalidValuesBeforeAnyWrite(String, String)[2] | 通过
+rejectsInvalidValuesBeforeAnyWrite(String, String)[3] | 通过
+rejectsInvalidValuesBeforeAnyWrite(String, String)[4] | 通过
+rejectsInvalidValuesBeforeAnyWrite(String, String)[5] | 通过
+rejectsInvalidValuesBeforeAnyWrite(String, String)[6] | 通过
+rejectsInvalidValuesBeforeAnyWrite(String, String)[7] | 通过
+rejectsInvalidValuesBeforeAnyWrite(String, String)[8] | 通过
+rejectsInvalidValuesBeforeAnyWrite(String, String)[9] | 通过
+rejectsInvalidValuesBeforeAnyWrite(String, String)[10] | 通过
+rejectsInvalidValuesBeforeAnyWrite(String, String)[11] | 通过
+persistsNormalizedValuesAndRecordsAudit(String, String, String)[1] | 通过
+persistsNormalizedValuesAndRecordsAudit(String, String, String)[2] | 通过
+persistsNormalizedValuesAndRecordsAudit(String, String, String)[3] | 通过
+persistsNormalizedValuesAndRecordsAudit(String, String, String)[4] | 通过
+persistsNormalizedValuesAndRecordsAudit(String, String, String)[5] | 通过
+blankKeyIsRejectedBeforeLookup | 通过
+unknownKeyIsNotCreated | 通过
+
+[LogServiceUnitTest]
+getReturnsVisibleLog | 通过
+createRejectsMissingAndAsciiWhitespaceOnlyContent(String)[1] | 通过
+createRejectsMissingAndAsciiWhitespaceOnlyContent(String)[2] | 通过
+createRejectsMissingAndAsciiWhitespaceOnlyContent(String)[3] | 通过
+createRejectsMissingAndAsciiWhitespaceOnlyContent(String)[4] | 通过
+createRejectsMissingAndAsciiWhitespaceOnlyContent(String)[5] | 通过
+listRejectsInvalidDateBoundaryBeforeQueryingDatabase | 通过
+getRejectsLogOutsideVisibleScope | 通过
+submitTransitionsOwnedDraftToSubmitted | 通过
+updateRejectsAlreadySubmittedLog | 通过
+submitIsIdempotentForAlreadySubmittedLog | 通过
+createAcceptsLastNanosecondBeforeDeadline | 通过
+getHidesMissingResource | 通过
+updateChangesOwnedTodayDraftAndTrimsContent | 通过
+createRejectsExactDeadlineBoundary | 通过
+submitRejectsHistoricalDraft | 通过
+createUsesNewShanghaiDateAtMidnight | 通过
+createMapsDailyUniqueConstraintToBusinessConflict | 通过
+updateRejectsAnotherUsersLog | 通过
+createTrimsContentAndReturnsCreatedDraft | 通过
+createRejectsAfterDeadlineBeforeMidnight(String)[1] | 通过
+createRejectsAfterDeadlineBeforeMidnight(String)[2] | 通过
+updateRejectsHistoricalDraft | 通过
+createRejectsUserWithoutWritePermission | 通过
+createRejectsBlankBoundaryInput | 通过
+listAppliesEmployeeScopeAndValidatedFilters | 通过
+submitReturnsConcurrentSubmissionResult | 通过
+listRejectsUnknownStatusEquivalenceClass | 通过
+
+[TaskWorkflowUnitTest]
+inviteReviewRejectsSecondInvitationWhilePending | 通过
+progressMovesStartedTaskToCompleted | 通过
+inviteReviewMovesCompletedTaskToPending | 通过
+reviewApprovesPendingTaskAndAddsHistory | 通过
+reviewDoesNotAppendHistoryWhenConditionalWriteLosesRace | 通过
+approvedTaskCannotBeInvitedAgain | 通过
+reviewRejectsUnsupportedDecision | 通过
+progressRepeatedAtSameStateDoesNotWrite | 通过
+progressReturnsCompletedStateIfAnotherRequestWonRace | 通过
+progressRejectsSkippingInProgress | 通过
+reviewReturnsTaskToInProgressAndNormalizesComment | 通过
+inviteReviewRejectsUnfinishedTask | 通过
+progressRejectsWhenConditionalWriteDoesNotReachTarget | 通过
+reviewDoesNotChangeAnAlreadyProcessedTask | 通过
+
+[AiMapBoundaryTest]
+recordsStubbedUpstreamFailure | 通过
+explicitRefreshBypassesCacheAndSubsequentReadUsesNewResult | 通过
+cacheHitsJustBeforeExpiryAndRefreshesAtExactExpiry | 通过
+rejectsCallerWithoutAnalysisPermissionBeforeModelCall | 通过
+rejectsMalformedOrMissingSummariesAndAllowsRetry(String)[1] | 通过
+rejectsMalformedOrMissingSummariesAndAllowsRetry(String)[2] | 通过
+rejectsMalformedOrMissingSummariesAndAllowsRetry(String)[3] | 通过
+rejectsMalformedOrMissingSummariesAndAllowsRetry(String)[4] | 通过
+rejectsMalformedOrMissingSummariesAndAllowsRetry(String)[5] | 通过
+rejectsMalformedOrMissingSummariesAndAllowsRetry(String)[6] | 通过
+rejectsMalformedOrMissingSummariesAndAllowsRetry(String)[7] | 通过
+keepsSeparateCacheEntriesForDifferentUsers | 通过
+parsesFencedJsonAndTrimsArrayItems | 通过
+
+[RolePermissionBoundaryTest]
+listsRolesWithAndWithoutPermissions | 通过
+nullPermissionsStillRestoreRequiredAdminPermissions | 通过
+rejectsMissingRoleBeforeDatabaseAccess(String)[1] | 通过
+rejectsMissingRoleBeforeDatabaseAccess(String)[2] | 通过
+rejectsMissingRoleBeforeDatabaseAccess(String)[3] | 通过
+mapsDatabaseConstraintFailureAndDoesNotLogSuccess | 通过
+replacesPermissionsAfterRemovingWhitespaceNullAndDuplicates | 通过
+rejectsUnknownRoleBeforeReplacement | 通过
+
+[AdminApiContractTest]
+filtersAndPaginatesTeamMembersOnServerByStableId | 通过
+rejectsNonAdminAndUnauthenticatedAccess | 通过
+acceptsValidUsernameAtLengthBoundaries(String)[1] | 通过
+acceptsValidUsernameAtLengthBoundaries(String)[2] | 通过
+acceptsValidUsernameAtLengthBoundaries(String)[3] | 通过
+acceptsValidUsernameAtLengthBoundaries(String)[4] | 通过
+replacesTeamLeaderAtomicallyAndPreventsConcurrentDuplicateOwners | 通过
+onlyLatestPasswordWorksAfterTwoResets | 通过
+validatesRoleOwnershipAndSynchronizesOwnerPointers | 通过
+duplicateUsernameWithDifferentPasswordCannotCreateOrReplaceAccount | 通过
+maintainsOrganizationsAndRefusesDeletingOrMovingPopulatedUnits | 通过
+resetsPasswordAndRevokesAccessAndRefreshSessions | 通过
+disablesImmediatelyAndDoesNotResurrectOldTokensOnReenable | 通过
+auditsSuccessAndFailuresWithoutPasswordsOrPrivatePayloads | 通过
+persistsPhoneIndependentUsernameAndPasswordHashWithoutCredentialResponses | 通过
+preservesLegacyMatterNullsAndPersistsShanghaiHours | 通过
+rejectsInvalidMatterDatesOffsetsFractionsAndReverseHours | 通过
+protectsLastAdminAndRejectsImmutableOrUnknownFields | 通过
+rejectsInvalidUsernameWithoutCreatingAccount(String)[1] | 通过
+rejectsInvalidUsernameWithoutCreatingAccount(String)[2] | 通过
+rejectsInvalidUsernameWithoutCreatingAccount(String)[3] | 通过
+rejectsInvalidUsernameWithoutCreatingAccount(String)[4] | 通过
+rejectsInvalidUsernameWithoutCreatingAccount(String)[5] | 通过
+rejectsInvalidUsernameWithoutCreatingAccount(String)[6] | 通过
+rejectsInvalidUsernameWithoutCreatingAccount(String)[7] | 通过
+rejectsInvalidUsernameWithoutCreatingAccount(String)[8] | 通过
+rejectsInvalidUsernameWithoutCreatingAccount(String)[9] | 通过
+rejectsInvalidUsernameWithoutCreatingAccount(String)[10] | 通过
+rejectsInvalidUsernameWithoutCreatingAccount(String)[11] | 通过
+rejectsInvalidUsernameWithoutCreatingAccount(String)[12] | 通过
+rejectsInvalidUsernameWithoutCreatingAccount(String)[13] | 通过
+rejectsInvalidUsernameWithoutCreatingAccount(String)[14] | 通过
+rejectsInvalidUsernameWithoutCreatingAccount(String)[15] | 通过
+rejectsInvalidUsernameWithoutCreatingAccount(String)[16] | 通过
+rejectsInvalidUsernameWithoutCreatingAccount(String)[17] | 通过
+
